@@ -27,6 +27,8 @@ import com.belleui.kit.ListDialog
 import com.belleui.kit.ListState
 import com.belleui.kit.MenuItem
 import com.belleui.kit.Row
+import com.belleui.kit.Sounds
+import com.belleui.kit.ThemeStore
 import com.belleui.kit.Screen
 import com.belleui.kit.TabDef
 import com.belleui.kit.Tool
@@ -51,6 +53,19 @@ class RootScreen(private val act: StylesActivity) : Screen() {
     private val list = ListState()
     private val types = intArrayOf(RingtoneManager.TYPE_RINGTONE, RingtoneManager.TYPE_NOTIFICATION, RingtoneManager.TYPE_ALARM)
     private val toneTitles = arrayOfNulls<String>(3)
+
+    private val accents = listOf(
+        "Belle blue" to 0xFF1080DD.toInt(), "Teal" to 0xFF27B3A0.toInt(), "Green" to 0xFF4C9A2E.toInt(), "Orange" to 0xFFE8761A.toInt(),
+        "Red" to 0xFFD0342C.toInt(), "Magenta" to 0xFFD0338A.toInt(), "Purple" to 0xFF8A4CB5.toInt(), "Steel" to 0xFF5C7A99.toInt(),
+    )
+    private val styles by lazy { act.getSharedPreferences("styles", android.content.Context.MODE_PRIVATE) }
+
+    private fun accentName(): String {
+        val a = styles.getInt("accent", 0)
+        return if (a == 0) "Belle blue" else accents.firstOrNull { it.second == a }?.first ?: "Custom"
+    }
+
+    private fun soundsOn() = styles.getBoolean("sounds", true)
 
     /** key, label, subtitle for the three feedback switches */
     private val switches = listOf(
@@ -77,6 +92,8 @@ class RootScreen(private val act: StylesActivity) : Screen() {
         val g = shell.ui.gfx
         val out = ArrayList<Row>()
         out.add(Row("Wallpaper", "Pictures for Home and lock screen", icon = g.get("qgn_menu_photos"), drill = true))
+        out.add(Row("Theme colour", accentName() + " - all Belle apps and the launcher", icon = g.get("qgn_menu_theme"), drill = true))
+        out.add(Row("Navigation sounds", "Soft clicks as you move and choose", icon = g.get("qgn_prop_set_tones_sub"), check = soundsOn()))
         out.add(Row("Ringtone", toneTitles[0] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
         out.add(Row("Notification tone", toneTitles[1] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
         out.add(Row("Alarm tone", toneTitles[2] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
@@ -94,14 +111,28 @@ class RootScreen(private val act: StylesActivity) : Screen() {
     private fun open(i: Int) {
         when {
             i == 0 -> shell.push(WallpaperScreen(act))
-            i in 1..3 -> shell.push(TonesScreen(act, types[i - 1], listOf("Ringtone", "Notification tone", "Alarm tone")[i - 1]))
+            i == 1 -> shell.showOverlay(ListDialog("Theme colour", accents.map { it.first }, accents.indexOfFirst { it.first == accentName() }) { k ->
+                val a = accents[k].second
+                ThemeStore.apply(act, a, soundsOn())
+                styles.edit().putInt("accent", a).apply()
+                shell.toast("${accents[k].first} - other apps update when you open them")
+                shell.invalidate()
+            })
+            i == 2 -> {
+                val on = !soundsOn()
+                styles.edit().putBoolean("sounds", on).apply()
+                ThemeStore.apply(act, styles.getInt("accent", 0).let { if (it == 0) Belle.DEFAULT_BLUE else it }, on)
+                if (styles.getInt("accent", 0) == 0) styles.edit().remove("accent").apply()
+                if (on) Sounds.play(Sounds.SELECT)
+            }
+            i in 3..5 -> shell.push(TonesScreen(act, types[i - 3], listOf("Ringtone", "Notification tone", "Alarm tone")[i - 3]))
             else -> {
                 if (!act.canWriteSettings()) {
                     act.askWriteSettings()
                     shell.toast("Allow \"Modify system settings\" for Styles, then come back")
                     return
                 }
-                val key = switches[i - 4].first
+                val key = switches[i - 6].first
                 try {
                     Settings.System.putInt(act.contentResolver, key, if (switchOn(key)) 0 else 1)
                 } catch (_: Exception) {

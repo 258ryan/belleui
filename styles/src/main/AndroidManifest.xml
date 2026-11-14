@@ -16,6 +16,11 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.BelleApp">
 
+        <provider
+            android:name=".ThemeProvider"
+            android:authorities="com.belleui.styles.theme"
+            android:exported="true" />
+
         <activity
             android:name=".StylesActivity"
             android:exported="true"
