@@ -87,3 +87,9 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### Files (`belle/files`)
+
+A Symbian-style file manager. A home page of drives (phone memory, memory card, USB) with free-space bars and quick places (Downloads, Pictures, Camera, Music, Videos, Documents), then drill-down folders with the original Symbian folder and file icons. Mark items, copy, cut, paste, delete, rename, new folder, details, sort and hidden files; opens files with the matching app.
+Gamepad: D-pad up/down browse, right or A opens, left or B goes up, Y marks and moves on, Start pastes (or makes a new folder), X opens the options menu.
+Own workflow `files.yml` builds only this app and publishes `files-latest`.
