@@ -22,8 +22,27 @@ import kotlin.math.sin
 
 /** Belle measurements (Qt Components nHD profile, 1 px = 1 device px) and colours. */
 object Belle {
-    const val BLUE = 0xFF1080DD.toInt()
-    const val BLUE_LIGHT = 0xFF5CB4F8.toInt()
+    const val DEFAULT_BLUE = 0xFF1080DD.toInt()
+
+    /** The accent colour. Belle blue unless a theme colour was chosen in the Styles app. */
+    @JvmField var BLUE = DEFAULT_BLUE
+    @JvmField var BLUE_LIGHT = 0xFF5CB4F8.toInt()
+
+    /** Bumped whenever the accent changes, so cached tinted graphics are rebuilt. */
+    @JvmField @Volatile var accentVersion = 0
+
+    /** Navigation sounds on or off (set in Styles). */
+    @JvmField @Volatile var soundsOn = true
+
+    fun setAccent(a: Int) {
+        BLUE = a
+        BLUE_LIGHT = Color.rgb(
+            Color.red(a) + ((255 - Color.red(a)) * 0.4f).toInt(),
+            Color.green(a) + ((255 - Color.green(a)) * 0.4f).toInt(),
+            Color.blue(a) + ((255 - Color.blue(a)) * 0.4f).toInt(),
+        )
+        accentVersion++
+    }
     const val TEXT_MID = 0xFF999999.toInt()
     const val SEPARATOR = 0xFF444444.toInt()
     const val PANEL = 0xFF1B1B1B.toInt()
