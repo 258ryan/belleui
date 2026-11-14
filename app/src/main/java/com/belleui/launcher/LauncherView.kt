@@ -653,7 +653,9 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun homeTileRect(i: Int, out: RectF): RectF {
         val cw = width / 4f
-        out.set(i * cw + 6f * sc, cBot - 116f * sc, (i + 1) * cw - 6f * sc, cBot - 20f * sc)
+        // same footprint as an Applications grid cell, so the highlight matches
+        val h = menuCellH() - 6f * sc
+        out.set(i * cw + 6f * sc, cBot - 12f * sc - h, (i + 1) * cw - 6f * sc, cBot - 12f * sc)
         return out
     }
 
@@ -868,7 +870,7 @@ class LauncherView(private val act: Activity) : View(act) {
         val w = width.toFloat()
         // light scrims behind text only, so any wallpaper stays readable
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, cTop + 150f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 150), Shader.TileMode.CLAMP)
+        p.shader = LinearGradient(0f, cTop + 140f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 150), Shader.TileMode.CLAMP)
         c.drawRect(0f, cTop + 150f * sc, w, cBot, p)
         p.shader = null
         val m = 14f * sc
@@ -910,16 +912,20 @@ class LauncherView(private val act: Activity) : View(act) {
             homeTileRect(i, tmp)
             val app = favs.getOrNull(i)
             if (app != null) {
-                drawIcon(c, app.icon, tmp.centerX(), tmp.top + 38f * sc, 62f * sc)
-                shadowText(c, app.label, tmp.centerX(), tmp.bottom - 9f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tmp.width() - 8f * sc)
+                val isz = 70f * sc
+                val iconTop = tmp.top + (tmp.height() + 6f * sc - (isz + 26f * sc)) / 2f
+                drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f, isz)
+                shadowText(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, Color.WHITE, Paint.Align.CENTER, width / 4f - 8f * sc)
             } else {
                 p.style = Paint.Style.STROKE
                 p.strokeWidth = 1.5f * sc
                 p.color = al(Color.WHITE, 80)
-                rf.set(tmp.centerX() - 26f * sc, tmp.top + 12f * sc, tmp.centerX() + 26f * sc, tmp.top + 64f * sc)
-                c.drawRoundRect(rf, 15f * sc, 15f * sc, p)
+                val isz = 70f * sc
+                val iconTop = tmp.top + (tmp.height() + 6f * sc - (isz + 26f * sc)) / 2f
+                rf.set(tmp.centerX() - 30f * sc, iconTop + 5f * sc, tmp.centerX() + 30f * sc, iconTop + isz - 5f * sc)
+                c.drawRoundRect(rf, 18f * sc, 18f * sc, p)
                 p.style = Paint.Style.FILL
-                text(c, "+", tmp.centerX(), tmp.top + 50f * sc, 36f * sc, al(Color.WHITE, 90), Paint.Align.CENTER, face = light)
+                text(c, "+", tmp.centerX(), baselineFor(rf.centerY(), 40f * sc, light), 40f * sc, al(Color.WHITE, 90), Paint.Align.CENTER, face = light)
             }
         }
     }
