@@ -21,6 +21,11 @@ class GamesActivity : BelleActivity() {
     var games: List<Game> = emptyList()
         private set
 
+    /** Titles grouped by system, in the usual system order; rebuilt once per scan. */
+    @Volatile
+    var bySystem: List<Pair<GameSystem, List<Game>>> = emptyList()
+        private set
+
     /** Bumped whenever the library or any stat changes, so cached shelves rebuild. */
     var version = 0
     var scanning = false
@@ -55,6 +60,7 @@ class GamesActivity : BelleActivity() {
         scanning = true
         Thread {
             val list = if (hasAccess()) Scanner.scan(prefs.roots) else emptyList()
+            bySystem = Systems.all.mapNotNull { sys -> list.filter { it.system === sys }.takeIf { it.isNotEmpty() }?.let { sys to it } }
             games = list
             scanning = false
             version++
@@ -70,7 +76,7 @@ class GamesActivity : BelleActivity() {
     fun play(g: Game): String? {
         val err = emus.launch(g)
         if (err == null) {
-            val s = prefs.stat(g.path)
+            val s = prefs.stat(g.rep.path)
             s.launches++
             s.lastPlayed = System.currentTimeMillis()
             prefs.save()
@@ -82,7 +88,7 @@ class GamesActivity : BelleActivity() {
     }
 
     fun toggleFavourite(g: Game) {
-        val s = prefs.stat(g.path)
+        val s = prefs.stat(g.rep.path)
         s.fav = !s.fav
         prefs.save()
         version++
@@ -111,7 +117,7 @@ class GamesActivity : BelleActivity() {
         launched?.let { g ->
             val dt = SystemClock.elapsedRealtime() - launchedAt
             if (dt in 5_000..43_200_000) {
-                prefs.stat(g.path).playMs += dt
+                prefs.stat(g.rep.path).playMs += dt
                 prefs.save()
                 version++
             }
