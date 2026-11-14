@@ -18,6 +18,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Build
 import android.provider.Settings
 import android.text.TextPaint
 import android.text.TextUtils
@@ -194,6 +195,9 @@ class LauncherView(private val act: Activity) : View(act) {
 
     init {
         isFocusable = true
+        // The launcher draws its own focus; stop Android outlining the whole view in the accent colour.
+        if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+        foreground = null
         refreshClock()
         readWifi()
     }
