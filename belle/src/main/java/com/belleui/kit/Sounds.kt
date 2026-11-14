@@ -2,18 +2,18 @@ package com.belleui.kit
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.SoundPool
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.SystemClock
-import java.io.ByteArrayOutputStream
-import java.io.File
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 
 /**
  * Short, soft navigation sounds in the Symbian manner: a light tick for moving, a two-note click for
- * choosing, a falling click for going back. They are made in code (no sound files shipped) and played
- * through a SoundPool at a low volume, on the system-sound stream so silent mode mutes them.
+ * choosing, a falling click for going back. They are made in code (no sound files) and kept in memory
+ * as small static AudioTracks, played at a low volume on the system-sound stream so silent mode mutes them.
+ * Anything going wrong here only means silence, never a crash.
  */
 object Sounds {
     const val TICK = 0
@@ -22,40 +22,49 @@ object Sounds {
     const val OPEN = 3
     const val ERROR = 4
 
-    private var pool: SoundPool? = null
-    private val ids = IntArray(5)
-    private val loaded = BooleanArray(5)
+    private val tracks = arrayOfNulls<AudioTrack>(5)
+    @Volatile
+    private var ready = false
+    private var started = false
     private var last = 0L
     private const val RATE = 22050
 
     @Synchronized
-    fun init(ctx: Context) {
-        if (pool != null) return
-        val p = SoundPool.Builder()
-            .setMaxStreams(3)
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-            .build()
-        p.setOnLoadCompleteListener { _, id, status -> if (status == 0) for (i in ids.indices) if (ids[i] == id) loaded[i] = true }
-        pool = p
-        val dir = File(ctx.cacheDir, "belle_sounds").also { it.mkdirs() }
-        val names = arrayOf("tick", "select", "back", "open", "error")
-        for (i in names.indices) {
-            val f = File(dir, "${names[i]}_v1.wav")
-            if (!f.exists()) f.writeBytes(wav(synth(i)))
-            ids[i] = p.load(f.path, 1)
-        }
+    fun init(@Suppress("UNUSED_PARAMETER") ctx: Context) {
+        if (started) return
+        started = true
+        // built off the main thread so start-up never waits for it
+        Thread {
+            try {
+                for (i in tracks.indices) {
+                    val pcm = synth(i)
+                    val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+                    val fmt = AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
+                    val t = AudioTrack.Builder().setAudioAttributes(attrs).setAudioFormat(fmt).setBufferSizeInBytes(pcm.size * 2).setTransferMode(AudioTrack.MODE_STATIC).build()
+                    t.write(pcm, 0, pcm.size)
+                    tracks[i] = t
+                }
+                ready = true
+            } catch (_: Throwable) {
+            }
+        }.start()
     }
 
     fun play(kind: Int) {
-        if (!Belle.soundsOn) return
-        val p = pool ?: return
-        if (!loaded[kind]) return
+        if (!Belle.soundsOn || !ready) return
+        val t = tracks[kind] ?: return
         val now = SystemClock.uptimeMillis()
         // fast scrolling must not turn into a buzz
         if (kind == TICK && now - last < 45) return
         last = now
-        val v = when (kind) { TICK -> 0.28f; SELECT -> 0.42f; BACK -> 0.36f; OPEN -> 0.36f; else -> 0.4f }
-        p.play(ids[kind], v, v, 1, 0, 1f)
+        try {
+            val v = when (kind) { TICK -> 0.28f; SELECT -> 0.42f; BACK -> 0.36f; OPEN -> 0.36f; else -> 0.4f }
+            t.stop()
+            t.reloadStaticData()
+            t.setVolume(v)
+            t.play()
+        } catch (_: Throwable) {
+        }
     }
 
     /** A decaying sine burst; [f0] glides to [f1]. */
@@ -87,17 +96,5 @@ object Sounds {
             }
         }
         return s.toShortArray()
-    }
-
-    private fun wav(pcm: ShortArray): ByteArray {
-        val data = pcm.size * 2
-        val o = ByteArrayOutputStream()
-        fun i32(v: Int) { o.write(v and 255); o.write(v shr 8 and 255); o.write(v shr 16 and 255); o.write(v shr 24 and 255) }
-        fun i16(v: Int) { o.write(v and 255); o.write(v shr 8 and 255) }
-        o.write("RIFF".toByteArray()); i32(36 + data); o.write("WAVEfmt ".toByteArray())
-        i32(16); i16(1); i16(1); i32(RATE); i32(RATE * 2); i16(2); i16(16)
-        o.write("data".toByteArray()); i32(data)
-        for (v in pcm) i16(v.toInt())
-        return o.toByteArray()
     }
 }
