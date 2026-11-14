@@ -1,0 +1,35 @@
+name: Build System settings app
+# This branch has its own workflow: it builds only the Settings module and publishes only its own release.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :settings:assembleDebug
+      - run: cp settings/build/outputs/apk/debug/settings-debug.apk BelleUI-Settings.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-settings-${{ github.run_number }}
+          path: BelleUI-Settings.apk
+          if-no-files-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete settings-latest --yes --cleanup-tag || true
+          gh release create settings-latest BelleUI-Settings.apk \
+            --title "BelleUI System settings (latest build)" \
+            --notes "System settings built from branch belle/settings at ${GITHUB_SHA::7}." \
+            --prerelease --target "$GITHUB_SHA"

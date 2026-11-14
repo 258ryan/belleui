@@ -124,3 +124,8 @@ An Ovi Store-style games hub: a Featured tab with a hero banner and shelves (rec
 A Symbian-style file manager. A home page of drives (phone memory, memory card, USB) with free-space bars and quick places (Downloads, Pictures, Camera, Music, Videos, Documents), then drill-down folders with the original Symbian folder and file icons. Mark items, copy, cut, paste, delete, rename, new folder, details, sort and hidden files; opens files with the matching app.
 Gamepad: D-pad up/down browse, right or A opens, left or B goes up, Y marks and moves on, Start pastes (or makes a new folder), X opens the options menu.
 Own workflow `files.yml` builds only this app and publishes `files-latest`.
+### System settings (`belle/settings`)
+
+A settings app that covers the everyday things so you rarely need Android's own: **Storage** (drive usage bars, media breakdown), **Apps** (installed / system tabs, detail page with open, app info and uninstall), **Connectivity** (live Wi-Fi, Bluetooth, airplane, mobile, NFC and IP state, opening the system quick panels to toggle), **Battery** (level, status, time to full, current, health, temperature, voltage, battery saver), **Display** (brightness, auto-brightness, screen timeout, auto-rotate, wallpaper) and **Sound** (media, ringtone, alarm and notification volumes, ringer mode), **About** (device, Android, kernel, processor, memory, screen, uptime), plus a link to Android settings for the rest.
+Left / right adjust a bar; A opens. Brightness and timeout need the one-time "modify system settings" permission, which the app asks for.
+Own workflow `settings.yml` builds only this app and publishes `settings-latest`.
