@@ -321,7 +321,7 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
         }
         alarmList.draw(c, ui, r, alarms.size) { i ->
             val a = alarms[i]
-            Row(timeText(a.hour, a.minute), repeatText(a.days) + if (a.label.isNotEmpty()) " - ${a.label}" else "", iconKind = Ic.BELL, iconColor = 0xFFE8761A.toInt(), dim = !a.enabled, rightReserve = 84f)
+            Row(timeText(a.hour, a.minute), repeatText(a.days) + if (a.label.isNotEmpty()) " - ${a.label}" else "", icon = ui.gfx.get("qgn_menu_wclk"), iconKind = Ic.BELL, iconColor = 0xFFE8761A.toInt(), dim = !a.enabled, rightReserve = 84f)
         }
         val vis = alarmList.visible(ui, r.height())
         for (i in alarms.indices) {
