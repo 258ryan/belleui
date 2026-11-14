@@ -1,0 +1,57 @@
+name: Build the whole-set Magisk module
+# Manual: builds every app and packs them into one Magisk module (release module-latest).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: belle/all
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon assembleDebug
+      - name: Pack the module
+        run: |
+          rm -rf module && cp -r magisk/all module
+          mkdir -p module/system/priv-app module/system/app module/extra
+          put() { # module, folder name, priv|app
+            f="$1/build/outputs/apk/debug/$1-debug.apk"
+            [ "$1" = app ] && f="app/build/outputs/apk/debug/app-debug.apk"
+            if [ ! -f "$f" ]; then echo "missing $f"; exit 1; fi
+            d="module/system/$3/$2"; mkdir -p "$d"; cp "$f" "$d/$2.apk"
+          }
+          put app BelleUILauncher priv-app
+          put settings BelleUISettings priv-app
+          put files BelleUIFiles priv-app
+          put picker BelleUIPicker priv-app
+          for pair in music:Music clock:Clock gallery:Gallery browser:Browser games:Games styles:Styles keyboard:Keyboard video:Video notes:Notes calc:Calculator recorder:Recorder; do
+            put "${pair%%:*}" "BelleUI${pair##*:}" app
+          done
+          cp vector/build/outputs/apk/debug/vector-debug.apk module/extra/BelleUI-Chooser-Vector.apk
+          rm -f module/README.md
+          (cd module && zip -qr ../BelleUI-Complete-Magisk.zip .)
+          ls -la BelleUI-Complete-Magisk.zip
+          unzip -l BelleUI-Complete-Magisk.zip | tail -25
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-complete-module
+          path: BelleUI-Complete-Magisk.zip
+          if-no-files-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete module-latest --yes --cleanup-tag || true
+          gh release create module-latest BelleUI-Complete-Magisk.zip \
+            --title "BelleUI complete (Magisk module)" \
+            --notes "The Belle launcher and every Belle app as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot." \
+            --prerelease --target "$GITHUB_SHA"
