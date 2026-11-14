@@ -1,6 +1,10 @@
 package com.belleui.games
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
@@ -32,23 +36,35 @@ private fun playTime(ms: Long): String {
 private fun size(bytes: Long): String =
     if (bytes >= 1_000_000_000) "%.1f GB".format(bytes / 1e9) else if (bytes >= 1_000_000) "%.0f MB".format(bytes / 1e6) else "${bytes / 1000} kB"
 
-/** Art (or a placeholder) for a game, fitted into [box]. */
-private fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game, box: RectF) {
-    val bmp = act.art.get(g) { shell.invalidate() }
-    if (bmp != null) {
-        ui.drawBitmapFit(c, bmp, box)
-        return
-    }
+/** Box art cut to the Belle icon shape (the same superellipse the app icons use), with the icon's gloss and rim. */
+private fun maskedArt(c: Canvas, ui: Ui, bmp: Bitmap, r: RectF) {
+    val shape = Path(ui.squircle(r))
+    c.save()
+    c.clipPath(shape)
+    ui.drawBitmapCover(c, bmp, r)
+    c.restore()
     ui.p.style = Paint.Style.FILL
+    ui.p.shader = RadialGradient(r.centerX(), r.top, r.width() * 0.7f, ui.al(Color.WHITE, 70), ui.al(Color.WHITE, 0), Shader.TileMode.CLAMP)
+    c.drawPath(shape, ui.p)
     ui.p.shader = null
-    ui.p.color = 0xFF1E1E1E.toInt()
-    c.drawRoundRect(box, 6f * ui.sc, 6f * ui.sc, ui.p)
-    ui.p.color = g.system.color
-    c.drawRect(box.left, box.top, box.right, box.top + 6f * ui.sc, ui.p)
-    val s = min(box.width(), box.height()) * 0.62f
-    ui.tmp.set(box.centerX() - s / 2, box.centerY() - s / 2 + 4f * ui.sc, box.centerX() + s / 2, box.centerY() + s / 2 + 4f * ui.sc)
-    ui.gfx.draw(c, "qgn_menu_games", ui.tmp)
-    ui.text(c, g.system.short, box.left + 6f * ui.sc, box.top + 24f * ui.sc, 14f * ui.sc, ui.al(Color.WHITE, 230), face = ui.medium)
+    ui.p.style = Paint.Style.STROKE
+    ui.p.strokeWidth = 1.2f * ui.sc
+    ui.p.color = ui.al(Color.BLACK, 120)
+    c.drawPath(shape, ui.p)
+    ui.p.style = Paint.Style.FILL
+}
+
+/** The largest square that fits [box], centred. */
+private fun square(box: RectF): RectF {
+    val s = min(box.width(), box.height())
+    return RectF(box.centerX() - s / 2, box.centerY() - s / 2, box.centerX() + s / 2, box.centerY() + s / 2)
+}
+
+/** Art for a game in an icon-shaped tile; a coloured icon frame stands in until (or unless) there is art. */
+private fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game, box: RectF) {
+    val sq = square(box)
+    val bmp = act.art.get(g) { shell.invalidate() }
+    if (bmp != null) maskedArt(c, ui, bmp, sq) else ui.iconFrame(c, sq, g.system.color, Ic.PLAY)
 }
 
 /**
@@ -93,7 +109,7 @@ class GameList(private val act: GamesActivity, private val showSystem: Boolean) 
             val x = rr.left + Belle.PADDING * sc
             ui.tmp.set(x, rr.centerY() - 25f * sc, x + 50f * sc, rr.centerY() + 25f * sc)
             val bmp = act.art.get(games[i]) { shell.invalidate() }
-            if (bmp != null) ui.drawBitmapCover(c, bmp, ui.tmp)
+            if (bmp != null) maskedArt(c, ui, bmp, ui.tmp)
         }
         c.restore()
         // the letter being jumped to
@@ -173,7 +189,7 @@ private fun startGame(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: 
 
 class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
-    override val tabs = listOf(TabDef("Home", Ic.HOME), TabDef("Games", Ic.LIST), TabDef("Systems", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
+    override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Games", Ic.LIST), TabDef("Systems", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
     private val gameList = GameList(act, true)
@@ -401,23 +417,35 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         }
     }
 
-    // ---- Featured: a hero banner and shelves, like a store front ---------------------------------
+    // ---- Store front: a hero banner, shelves of games, and tiles to browse by genre and system ----------
 
-    private inner class Shelf(val title: String, val games: List<Game>)
+    private inner class Tile(val title: String, val sub: String, val color: Int, val kind: Int, val game: Game?, val open: (() -> Unit)?)
+    private inner class Shelf(val title: String, val tiles: List<Tile>)
+
+    private fun genreOf(g: Game): String? {
+        val raw = g.rep.meta?.genre ?: g.meta?.genre ?: return null
+        val first = raw.split('/', ',', ';', '&').first().trim()
+        if (first.isEmpty()) return null
+        return first.lowercase().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
+    }
+
+    private val genreColors = intArrayOf(0xFFD0342C.toInt(), 0xFF3E5CC8.toInt(), 0xFF1F9D63.toInt(), 0xFFE8761A.toInt(), 0xFF8A4CB5.toInt(), 0xFF2FA6B8.toInt(), 0xFFC2185B.toInt(), 0xFF5C8A3A.toInt())
 
     private inner class Featured {
         private var built = -1
         private var shelves: List<Shelf> = emptyList()
         private var shelfSel = 0
-        private val hsel = IntArray(4)
-        private val hTarget = IntArray(4)
-        private val hAnim = FloatArray(4)
+        private val hsel = IntArray(12)
+        private val hTarget = IntArray(12)
+        private val hAnim = FloatArray(12)
         private var vAnim = 0f
         private var vTarget = 0f
-        private val hits = ArrayList<Pair<RectF, Game>>()
+        private val hits = ArrayList<Pair<RectF, Tile>>()
 
         private val heroH get() = 176f
-        private val shelfH get() = 190f
+        private val shelfH get() = 204f
+
+        private fun gameTile(g: Game) = Tile(g.title, g.system.name, g.system.color, Ic.PLAY, g, null)
 
         private fun build() {
             if (built == act.version) return
@@ -427,15 +455,32 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             val recent = all.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 }.sortedByDescending { st.peek(it.rep.path)!!.lastPlayed }.take(14)
             val favs = all.filter { st.peek(it.rep.path)?.fav == true }.sortedBy { it.title.lowercase() }.take(14)
             val added = all.sortedByDescending { it.modified }.take(14)
-            val hero = (recent.take(3) + favs + added).distinctBy { it.path }.take(6)
+            val rated = all.filter { (it.rep.meta?.rating ?: 0f) > 0f }.sortedByDescending { it.rep.meta?.rating ?: 0f }.take(14)
+            val fresh = all.filter { (st.peek(it.rep.path)?.launches ?: 0) == 0 }.shuffled(kotlin.random.Random(7)).take(14)
+            val hero = (recent.take(3) + favs + rated.take(3) + added).distinctBy { it.path }.take(6)
             val list = ArrayList<Shelf>()
-            list.add(Shelf("Featured", hero))
-            if (recent.isNotEmpty()) list.add(Shelf("Recently played", recent))
-            if (favs.isNotEmpty()) list.add(Shelf("Favourites", favs))
-            list.add(Shelf("Recently added", added))
-            shelves = list.take(4)
+            list.add(Shelf("Featured", hero.map { gameTile(it) }))
+            if (recent.isNotEmpty()) list.add(Shelf("Continue playing", recent.map { gameTile(it) }))
+            if (favs.isNotEmpty()) list.add(Shelf("Favourites", favs.map { gameTile(it) }))
+            if (rated.size >= 3) list.add(Shelf("Top rated", rated.map { gameTile(it) }))
+            list.add(Shelf("Recently added", added.map { gameTile(it) }))
+            if (fresh.size >= 3) list.add(Shelf("Try something new", fresh.map { gameTile(it) }))
+            // genres come from gamelist.xml
+            val genres = all.groupBy { genreOf(it) }.filterKeys { it != null }.toList().sortedByDescending { it.second.size }.take(24)
+            if (genres.isNotEmpty()) {
+                list.add(Shelf("Browse by genre", genres.mapIndexed { i, (name, games) ->
+                    val n = name!!
+                    Tile(n, "${games.size} game${if (games.size == 1) "" else "s"}", genreColors[(n.hashCode() and 0x7fffffff) % genreColors.size], Ic.STAR, null) {
+                        shell.push(GameListScreen(act, n, { games }, true, null))
+                    }
+                }))
+            }
+            list.add(Shelf("Browse by system", act.bySystem.map { (sys, games) ->
+                Tile(sys.short, "${games.size} game${if (games.size == 1) "" else "s"}", sys.color, Ic.GRID, null) { shell.push(SystemScreen(act, sys)) }
+            }))
+            shelves = list.take(11)
             shelfSel = shelfSel.coerceIn(0, shelves.size - 1)
-            for (i in hsel.indices) hsel[i] = hsel[i].coerceIn(0, max(0, (shelves.getOrNull(i)?.games?.size ?: 1) - 1))
+            for (i in hsel.indices) hsel[i] = hsel[i].coerceIn(0, max(0, (shelves.getOrNull(i)?.tiles?.size ?: 1) - 1))
         }
 
         private fun tops(): FloatArray {
@@ -467,7 +512,8 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
         private fun drawHero(c: Canvas, ui: Ui, r: RectF, top: Float, shelf: Shelf) {
             val sc = ui.sc
-            val g = shelf.games.getOrNull(hsel[0]) ?: return
+            val tile = shelf.tiles.getOrNull(hsel[0]) ?: return
+            val g = tile.game ?: return
             val card = RectF(r.left + 14f * sc, top + 8f * sc, r.right - 14f * sc, top + 154f * sc)
             if (shelfSel == 0) ui.highlight(c, RectF(card).apply { inset(-5f * sc, -5f * sc) }, 14f)
             ui.p.style = Paint.Style.FILL
@@ -476,26 +522,28 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             c.drawRoundRect(card, 8f * sc, 8f * sc, ui.p)
             ui.p.color = g.system.color
             c.drawRect(card.left, card.top + 8f * sc, card.left + 5f * sc, card.bottom - 8f * sc, ui.p)
-            val art = RectF(card.left + 18f * sc, card.top + 10f * sc, card.left + 18f * sc + 126f * sc, card.bottom - 10f * sc)
+            val side = card.height() - 20f * sc
+            val art = RectF(card.left + 20f * sc, card.top + 10f * sc, card.left + 20f * sc + side, card.top + 10f * sc + side)
             drawArt(c, ui, act, shell, g, art)
             val x = art.right + 20f * sc
             val maxW = card.right - x - 16f * sc
-            ui.text(c, if ((act.prefs.peek(g.rep.path)?.launches ?: 0) > 0) "CONTINUE PLAYING" else "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
+            val played = (act.prefs.peek(g.rep.path)?.launches ?: 0) > 0
+            ui.text(c, if (played) "CONTINUE PLAYING" else "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
             ui.text(c, g.title, x, card.top + 62f * sc, 26f * sc, maxW = maxW)
-            ui.text(c, g.system.name, x, card.top + 88f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+            val genre = genreOf(g)
+            ui.text(c, g.system.name + (genre?.let { " - $it" } ?: ""), x, card.top + 88f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
             val st = act.prefs.peek(g.rep.path)
             val line = if (st != null && st.launches > 0) "Played ${st.launches}x - ${playTime(st.playMs)}" else "Not played yet"
             ui.text(c, line, x, card.top + 112f * sc, 16f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
             val btn = RectF(card.right - 130f * sc, card.bottom - 52f * sc, card.right - 14f * sc, card.bottom - 10f * sc)
             ui.pushButton(c, btn, "Play", shelfSel == 0)
-            // page dots
-            val n = shelf.games.size
+            val n = shelf.tiles.size
             val cx = card.centerX()
             for (i in 0 until n) {
                 ui.p.color = if (i == hsel[0]) Color.WHITE else ui.al(Color.WHITE, 90)
                 c.drawCircle(cx + (i - (n - 1) / 2f) * 14f * sc, card.bottom + 12f * sc, 3.2f * sc, ui.p)
             }
-            hits.add(RectF(card) to g)
+            hits.add(RectF(card) to tile)
         }
 
         private fun drawShelf(c: Canvas, ui: Ui, r: RectF, si: Int, top: Float, shelf: Shelf) {
@@ -511,17 +559,23 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             if (hsel[si] < hTarget[si]) hTarget[si] = hsel[si] else if (hsel[si] >= hTarget[si] + vis) hTarget[si] = hsel[si] - vis + 1
             hAnim[si] += (hTarget[si] - hAnim[si]) * ui.k
             if (abs(hTarget[si] - hAnim[si]) < 0.004f) hAnim[si] = hTarget[si].toFloat() else ui.busy = true
-            for ((i, g) in shelf.games.withIndex()) {
+            for ((i, t) in shelf.tiles.withIndex()) {
                 val x = r.left + 18f * sc + (i - hAnim[si]) * pitch
                 if (x + tile < r.left || x > r.right) continue
                 val box = RectF(x, top + 46f * sc, x + tile, top + 46f * sc + tile)
                 val sel = shelfSel == si && hsel[si] == i
-                if (sel) ui.highlight(c, RectF(box.left - 6f * sc, box.top - 6f * sc, box.right + 6f * sc, box.bottom + 32f * sc), 12f)
+                val hit = RectF(box.left - 6f * sc, box.top - 6f * sc, box.right + 6f * sc, box.bottom + 50f * sc)
+                if (sel) ui.highlight(c, hit, 12f)
                 val art = if (sel) RectF(box).apply { inset(4f * sc, 4f * sc) } else box
-                drawArt(c, ui, act, shell, g, art)
-                ui.text(c, g.title, box.centerX(), box.bottom + 20f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tile)
-                hits.add(RectF(box.left - 6f * sc, box.top - 6f * sc, box.right + 6f * sc, box.bottom + 32f * sc) to g)
+                if (t.game != null) drawArt(c, ui, act, shell, t.game, art) else ui.iconFrame(c, art, t.color, t.kind)
+                ui.text(c, t.title, box.centerX(), box.bottom + 20f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tile + 8f * sc)
+                ui.text(c, t.sub, box.centerX(), box.bottom + 38f * sc, 13f * sc, Belle.TEXT_MID, Paint.Align.CENTER, tile + 8f * sc, face = ui.light)
+                hits.add(hit to t)
             }
+        }
+
+        private fun use(t: Tile) {
+            if (t.game != null) startGame(act, shell, t.game) else t.open?.invoke()
         }
 
         fun act(a: Act): Boolean {
@@ -530,23 +584,23 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             when (a) {
                 Act.UP -> if (shelfSel > 0) shelfSel-- else return false
                 Act.DOWN -> if (shelfSel < shelves.size - 1) shelfSel++ else return false
-                Act.LEFT -> if (shelfSel == 0) hsel[0] = (hsel[0] - 1 + sh.games.size) % sh.games.size else if (hsel[shelfSel] > 0) hsel[shelfSel]--
-                Act.RIGHT -> if (shelfSel == 0) hsel[0] = (hsel[0] + 1) % sh.games.size else if (hsel[shelfSel] < sh.games.size - 1) hsel[shelfSel]++
-                Act.OK -> sh.games.getOrNull(hsel[shelfSel])?.let { startGame(act, shell, it) }
+                Act.LEFT -> if (shelfSel == 0) hsel[0] = (hsel[0] - 1 + sh.tiles.size) % sh.tiles.size else if (hsel[shelfSel] > 0) hsel[shelfSel]--
+                Act.RIGHT -> if (shelfSel == 0) hsel[0] = (hsel[0] + 1) % sh.tiles.size else if (hsel[shelfSel] < sh.tiles.size - 1) hsel[shelfSel]++
+                Act.OK -> sh.tiles.getOrNull(hsel[shelfSel])?.let { use(it) }
                 else -> return false
             }
             return true
         }
 
         fun tap(x: Float, y: Float): Boolean {
-            for ((rect, g) in hits) if (rect.contains(x, y)) {
-                startGame(act, shell, g)
+            for ((rect, t) in hits) if (rect.contains(x, y)) {
+                use(t)
                 return true
             }
             return false
         }
 
-        fun focused(): Game? = shelves.getOrNull(shelfSel)?.games?.getOrNull(hsel[shelfSel])
+        fun focused(): Game? = shelves.getOrNull(shelfSel)?.tiles?.getOrNull(hsel[shelfSel])?.game
 
         fun scroll(d: Int) {
             shelfSel = (shelfSel + d).coerceIn(0, max(0, shelves.size - 1))
@@ -555,10 +609,20 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 }
 
 /** A system's games, as a list; A starts one. */
-class SystemScreen(private val act: GamesActivity, private val system: GameSystem) : Screen() {
-    override val title get() = system.name
-    private val gameList = GameList(act, false)
-    private val games get() = act.bySystem.firstOrNull { it.first === system }?.second ?: emptyList()
+fun SystemScreen(act: GamesActivity, system: GameSystem): Screen =
+    GameListScreen(act, system.name, { act.bySystem.firstOrNull { it.first === system }?.second ?: emptyList() }, false, system)
+
+/** Any list of games - a system, a genre - with the same controls: A plays, X menu, L1/R1 letters. */
+class GameListScreen(
+    private val act: GamesActivity,
+    private val name: String,
+    private val source: () -> List<Game>,
+    showSystem: Boolean,
+    private val system: GameSystem?,
+) : Screen() {
+    override val title get() = name
+    private val gameList = GameList(act, showSystem)
+    private val games get() = source()
 
     override fun tools(): List<Tool> {
         val g = gameList.selected(games)
@@ -570,7 +634,7 @@ class SystemScreen(private val act: GamesActivity, private val system: GameSyste
 
     override fun menu(): List<MenuItem> {
         val items = ArrayList<MenuItem>(gameMenu(act, shell, gameList.selected(games)))
-        if (system.emu == Emu.PPSSPP) {
+        if (system?.emu == Emu.PPSSPP) {
             items.add(MenuItem("PSP opens in: " + if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch") { act.prefs.pspWithPpsspp = !act.prefs.pspWithPpsspp })
         }
         return items
