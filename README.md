@@ -12,7 +12,8 @@ looks right at other 4:3 sizes. No third-party dependencies.
 
 | Page | What it is |
 |------|------------|
-| Home | Clock, date, battery widget, 4 favourite tiles (defaults: phone, messages, browser, camera) |
+| Hub | To the left of Home: every notification that has arrived (kept after you dismiss it), grouped Today / Yesterday, as cards over your wallpaper |
+| Home | Two widgets (clock, date, battery, storage or notifications - you choose) and 4 favourite tiles (defaults: phone, messages, browser, camera) |
 | Menu | 4x3 Symbian-style grid of all apps, scrolls vertically |
 | Recent | Asha-style list of recently opened apps |
 
@@ -89,3 +90,8 @@ is the original download and can be deleted.
 ## CI
 
 The launcher has its own workflow (`launcher.yml`): it builds only the launcher and publishes `launcher-latest`; other apps live on their own branches with their own workflows, so a change to one never rebuilds the rest.
+
+## Hub and home widgets
+
+- **Hub:** press left past the first Home tile (or L1) to reach it. It lists the notifications your apps post, newest first, with app icon, title, text and time, and keeps them after you clear them from the shade. A opens the notification (or its app); X offers Remove, Clear all and Notification access. The first time, press A on the Hub to open Android's notification-access screen and switch BelleUI Hub on - Android only lets an app read notifications with that permission.
+- **Home widgets:** X on any Home tile > **Edit widgets** (or X on an empty tile) chooses what the left and right slots show: Clock, Date, Battery, Storage or Notifications. Tapping a widget opens its app (the Notifications widget jumps to the Hub). These are BelleUI's own widgets; hosting other apps' Android widgets is not built.

@@ -19,6 +19,10 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
+import android.util.LruCache
+import java.util.Calendar
 import android.provider.Settings
 import android.media.AudioManager
 import android.net.wifi.WifiManager
@@ -141,6 +145,25 @@ class LauncherView(private val act: Activity) : View(act) {
     private var bgShader: Shader? = null
     private var lastNs = System.nanoTime()
     private var scrollAccum = 0f
+
+    // ---- Hub page (notification history, left of Home) ----
+    private class HubItem(val header: String?, val note: Note?)
+    private var hubItems: List<HubItem> = emptyList()
+    private var hubBuiltVersion = -1
+    private var hubBuiltDay = -1
+    private var hubSel = 0
+    private var hubScroll = 0f
+    private var hubScrollTarget = 0f
+    private val hubHits = ArrayList<Pair<RectF, Int>>()
+    private val noteIcons = LruCache<String, Bitmap>(40)
+    private val appLabels = HashMap<String, String>()
+    private var frameK = 0.3f
+    private var hubTick = false
+
+    // ---- home widgets ----
+    private val homeWidgetRects = arrayOf(RectF(), RectF())
+    private var storageFree = 0L
+    private var storageTotal = 1L
     private val gfx = BelleGfx(act)
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -241,6 +264,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun onResumed() {
+        readStorage()
         refreshClock()
         readWifi()
         if (loaded) refreshLists()
@@ -392,7 +416,7 @@ class LauncherView(private val act: Activity) : View(act) {
         when (a) {
             Act.PREV -> setPage(page - 1)
             Act.NEXT -> setPage(page + 1)
-            Act.MENU -> setPage(if (page >= 1) 0 else 1)
+            Act.MENU -> setPage(if (page != 0) 0 else 1)
             Act.SETTINGS -> openQuick(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
@@ -401,9 +425,9 @@ class LauncherView(private val act: Activity) : View(act) {
         invalidate()
     }
 
-    /** 0 = Home; 1 / 2 = the Applications / Recent tabs of the apps view (switched in place, no slide). */
+    /** -1 = Hub (left of Home); 0 = Home; 1 / 2 = the Applications / Recent tabs of the apps view (switched in place, no slide). */
     private fun setPage(p: Int) {
-        page = p.coerceIn(0, 2)
+        page = p.coerceIn(-1, 2)
         if (page >= 1) tab = page else tabFocus = false
     }
 
@@ -412,8 +436,18 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun navigate(a: Act) {
         when (page) {
+            -1 -> when (a) {
+                Act.UP -> hubStep(-1)
+                Act.DOWN -> hubStep(1)
+                Act.RIGHT -> setPage(0)
+                Act.OK -> {
+                    if (!HubStore.hasAccess(act)) tryStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    else hubItems.getOrNull(hubSel)?.note?.let { openNote(it) }
+                }
+                else -> {}
+            }
             0 -> when (a) {
-                Act.LEFT -> if (homeSel > 0) homeSel--
+                Act.LEFT -> if (homeSel > 0) homeSel-- else setPage(-1)
                 Act.RIGHT -> if (homeSel < 3) homeSel++ else setPage(1)
                 Act.OK -> {
                     val app = favs.getOrNull(homeSel)
@@ -501,11 +535,24 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         var hit = false
         when (page) {
-            0 -> for (i in 0..3) if (homeTileRect(i, tmp).contains(x, y)) {
-                homeSel = i
-                hit = favs.getOrNull(i) != null
+            -1 -> for ((rect, idx) in hubHits) if (rect.contains(x, y)) {
+                hubSel = idx
+                hit = true
                 if (!selectOnly) perform(Act.OK)
                 break
+            }
+            0 -> {
+                var onWidget = false
+                for (k in 0..1) if (!selectOnly && homeWidgetRects[k].contains(x, y)) {
+                    widgetTap(if (k == 0) repo.widgetLeft else repo.widgetRight)
+                    onWidget = true
+                }
+                if (!onWidget) for (i in 0..3) if (homeTileRect(i, tmp).contains(x, y)) {
+                    homeSel = i
+                    hit = favs.getOrNull(i) != null
+                    if (!selectOnly) perform(Act.OK)
+                    break
+                }
             }
             1 -> {
                 val cw = width / 4f
@@ -557,6 +604,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun selectedApp(): AppEntry? = when (page) {
+        -1 -> null
         0 -> favs.getOrNull(homeSel)
         1 -> menuApps.getOrNull(menuSel)
         else -> recents.getOrNull(recentSel)
@@ -568,13 +616,18 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun settingsLetter() = if (repo.swapPad) "X" else "Y"
 
     private fun openOptions() {
+        if (page == -1) {
+            openHubOptions()
+            return
+        }
         val app = selectedApp()
         if (app == null) {
-            openQuick(0)
+            if (page == 0) openHomeMenu() else openQuick(0)
             return
         }
         val items = ArrayList<PopupItem>()
         items += PopupItem("Open") { launch(app) }
+        if (page == 0) items += PopupItem("Edit widgets") { openWidgetEditor(0) }
         if (page == 1) items += PopupItem("Move") {
             reorder = true
             showToast("D-pad moves, ${okLetter()} drops")
@@ -870,6 +923,7 @@ class LauncherView(private val act: Activity) : View(act) {
         lastNs = now
         if (dt > 0.05f || dt <= 0f) dt = 0.016f
         val k = 1f - exp(-dt * 18f)
+        frameK = k
         var busy = false
 
         pageAnim += (pagePos() - pageAnim) * k
@@ -894,13 +948,14 @@ class LauncherView(private val act: Activity) : View(act) {
         p.style = Paint.Style.FILL
         p.shader = null
 
-        for (i in 0..1) {
+        for (i in -1..1) {
             val d = i - pageAnim
             if (abs(d) >= 1f) continue
             c.save()
             c.clipRect(0f, cTop, w, cBot)
             c.translate(d * w, 0f)
             when (i) {
+                -1 -> drawHub(c)
                 0 -> drawHome(c)
                 else -> if (tab == 2) drawRecent(c) else drawMenu(c)
             }
@@ -920,7 +975,10 @@ class LauncherView(private val act: Activity) : View(act) {
             drawToast(c, w)
             busy = true
         }
-        if (busy) postInvalidateOnAnimation()
+        if (busy) postInvalidateOnAnimation() else if (hubTick) {
+            hubTick = false
+            postInvalidateDelayed(2000)
+        }
     }
 
     // ---- page 0: home ----------------------------------------------------------------------
@@ -960,33 +1018,10 @@ class LauncherView(private val act: Activity) : View(act) {
         val ww = (w - 2 * m - gap) / 2f
         val top = cTop + 14f * sc
         val wh = 92f * sc
-
-        // clock widget
-        rf.set(m, top, m + ww, top + wh)
-        widgetPlate(c, rf)
-        val cy = rf.centerY()
-        val tsz = 46f * sc
-        val tx = rf.left + 18f * sc
-        text(c, clockStr, tx, baselineFor(cy, tsz), tsz, Color.WHITE)
-        var colX = tx + measure(clockStr, tsz)
-        if (ampmStr.isNotEmpty()) {
-            text(c, ampmStr, colX + 6f * sc, baselineFor(cy, tsz), 16f * sc, theme.accentLight)
-            colX += 6f * sc + measure(ampmStr, 16f * sc)
-        }
-        val dx = max(colX + 16f * sc, rf.left + 150f * sc)
-        text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = rf.right - dx - 10f * sc)
-        text(c, dayMonthStr, dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, 0xFF999999.toInt(), maxW = rf.right - dx - 10f * sc, face = light)
-
-        // battery widget
-        rf.set(m + ww + gap, top, w - m, top + wh)
-        widgetPlate(c, rf)
-        val bcy = rf.centerY()
-        val bw = 60f * sc
-        val bh = bw * 18f / 24f
-        drawBattery(c, rf.left + 18f * sc, bcy - bh / 2f, bw, bh)
-        val px = rf.left + 18f * sc + bw + 16f * sc
-        text(c, "$batteryPct%", px, baselineFor(bcy - 8f * sc, 40f * sc), 40f * sc, Color.WHITE)
-        text(c, if (charging) "Charging" else "Battery", px, baselineFor(bcy + 24f * sc, 18f * sc, light), 18f * sc, 0xFF999999.toInt(), face = light)
+        homeWidgetRects[0].set(m, top, m + ww, top + wh)
+        homeWidgetRects[1].set(m + ww + gap, top, w - m, top + wh)
+        drawWidget(c, repo.widgetLeft, homeWidgetRects[0])
+        drawWidget(c, repo.widgetRight, homeWidgetRects[1])
 
         // shortcuts straight on the wallpaper
         drawFocus(c, homeFocus.cur, 12f * sc)
@@ -1010,6 +1045,334 @@ class LauncherView(private val act: Activity) : View(act) {
                 text(c, "+", tmp.centerX(), baselineFor(rf.centerY(), 40f * sc, light), 40f * sc, al(Color.WHITE, 90), Paint.Align.CENTER, face = light)
             }
         }
+    }
+
+    // ---- home widgets ----------------------------------------------------------------------------
+
+    private val widgetNames = arrayOf("Clock", "Date", "Battery", "Storage", "Notifications")
+
+    private fun readStorage() {
+        try {
+            val st = StatFs(Environment.getDataDirectory().path)
+            storageFree = st.availableBytes
+            storageTotal = max(1L, st.totalBytes)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun gb(b: Long) = if (b >= 1_000_000_000L) "%.1f GB".format(b / 1e9) else "%.0f MB".format(b / 1e6)
+
+    private fun isToday(t: Long): Boolean {
+        val d0 = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return t >= d0
+    }
+
+    private fun drawWidget(c: Canvas, type: Int, r: RectF) {
+        widgetPlate(c, r)
+        val cy = r.centerY()
+        val grey = 0xFF999999.toInt()
+        val left = r.left + 18f * sc
+        when (type) {
+            WIDGET_DATE -> {
+                val dsz = 56f * sc
+                text(c, dayStr, left, baselineFor(cy, dsz), dsz, Color.WHITE)
+                val dx = left + measure(dayStr, dsz) + 16f * sc
+                text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = r.right - dx - 10f * sc)
+                text(c, dayMonthStr.substringAfter(' ', dayMonthStr), dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, grey, maxW = r.right - dx - 10f * sc, face = light)
+            }
+            WIDGET_BATTERY -> {
+                val bw = 60f * sc
+                val bh = bw * 18f / 24f
+                drawBattery(c, left, cy - bh / 2f, bw, bh)
+                val px = left + bw + 16f * sc
+                text(c, "$batteryPct%", px, baselineFor(cy - 8f * sc, 40f * sc), 40f * sc, Color.WHITE)
+                text(c, if (charging) "Charging" else "Battery", px, baselineFor(cy + 24f * sc, 18f * sc, light), 18f * sc, grey, face = light)
+            }
+            WIDGET_STORAGE -> {
+                text(c, "Storage", left, baselineFor(r.top + 22f * sc, 17f * sc, light), 17f * sc, grey, face = light)
+                text(c, "${gb(storageFree)} free", left, baselineFor(r.top + 48f * sc, 26f * sc), 26f * sc, Color.WHITE, maxW = r.width() - 36f * sc)
+                tmp.set(left, r.bottom - 30f * sc, r.right - 18f * sc, r.bottom - 10f * sc)
+                drawBar(c, tmp, (storageTotal - storageFree).toFloat() / storageTotal)
+            }
+            WIDGET_NOTES -> {
+                HubStore.load(act)
+                val today = HubStore.notes.count { isToday(it.time) }
+                val num = if (HubStore.hasAccess(act)) "$today" else "!"
+                val nsz = 50f * sc
+                text(c, num, left, baselineFor(cy, nsz), nsz, Color.WHITE)
+                val nx = left + measure(num, nsz) + 14f * sc
+                val head = when {
+                    !HubStore.hasAccess(act) -> "Allow access"
+                    today == 1 -> "notification today"
+                    else -> "notifications today"
+                }
+                text(c, head, nx, baselineFor(cy - 12f * sc, 18f * sc), 18f * sc, Color.WHITE, maxW = r.right - nx - 10f * sc)
+                text(c, HubStore.notes.firstOrNull()?.title?.ifBlank { null } ?: "Tap to open the Hub", nx, baselineFor(cy + 14f * sc, 16f * sc, light), 16f * sc, grey, maxW = r.right - nx - 10f * sc, face = light)
+            }
+            else -> { // clock
+                val tsz = 46f * sc
+                text(c, clockStr, left, baselineFor(cy, tsz), tsz, Color.WHITE)
+                var colX = left + measure(clockStr, tsz)
+                if (ampmStr.isNotEmpty()) {
+                    text(c, ampmStr, colX + 6f * sc, baselineFor(cy, tsz), 16f * sc, theme.accentLight)
+                    colX += 6f * sc + measure(ampmStr, 16f * sc)
+                }
+                val dx = max(colX + 16f * sc, r.left + 150f * sc)
+                text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = r.right - dx - 10f * sc)
+                text(c, dayMonthStr, dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, grey, maxW = r.right - dx - 10f * sc, face = light)
+            }
+        }
+    }
+
+    /** Belle progress bar at its natural 20px height. */
+    private fun drawBar(c: Canvas, r: RectF, frac: Float) {
+        nine(c, "qtg_fr_progressbar_track", r, 20, 10f)
+        if (frac > 0.01f) {
+            val f = RectF(r.left, r.top, r.left + max(r.height(), r.width() * frac.coerceIn(0f, 1f)), r.bottom)
+            nine(c, "qtg_fr_progressbar_fill", f, 20, 10f)
+        }
+    }
+
+    private fun openOther(pkg: String) {
+        val i = act.packageManager.getLaunchIntentForPackage(pkg)
+        if (i != null) tryStart(i) else showToast("That app isn't installed")
+    }
+
+    private fun widgetTap(type: Int) {
+        when (type) {
+            WIDGET_NOTES -> setPage(-1)
+            WIDGET_STORAGE -> openOther("com.belleui.files")
+            WIDGET_BATTERY -> openOther("com.belleui.settings")
+            else -> openOther("com.belleui.clock")
+        }
+    }
+
+    /** Home widgets: choose what each of the two slots shows. */
+    private fun openWidgetEditor(sel: Int) {
+        fun next(cur: Int, other: Int): Int {
+            var n = (cur + 1) % widgetNames.size
+            if (n == other) n = (n + 1) % widgetNames.size
+            return n
+        }
+        popup = Popup("Home widgets", listOf(
+            PopupItem("Left: ${widgetNames[repo.widgetLeft]}") {
+                repo.widgetLeft = next(repo.widgetLeft, repo.widgetRight)
+                openWidgetEditor(0)
+            },
+            PopupItem("Right: ${widgetNames[repo.widgetRight]}") {
+                repo.widgetRight = next(repo.widgetRight, repo.widgetLeft)
+                openWidgetEditor(1)
+            },
+            PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
+            PopupItem("Done") { },
+        ), sel)
+    }
+
+    /** X on an empty Home slot. */
+    private fun openHomeMenu() {
+        popup = Popup("Home", listOf(
+            PopupItem("Edit widgets") { openWidgetEditor(0) },
+            PopupItem("Quick settings") { openQuick(0) },
+            PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
+        ), 0, menu = true)
+    }
+
+    // ---- Hub: everything that notified you, over the wallpaper ----------------------------------------
+
+    private fun dayLabel(t: Long): String {
+        val d0 = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return when {
+            t >= d0 -> "Today"
+            t >= d0 - 86_400_000L -> "Yesterday"
+            else -> DateFormat.format("EEE d MMM", t).toString()
+        }
+    }
+
+    private fun buildHub() {
+        HubStore.load(act)
+        val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+        if (hubBuiltVersion == HubStore.version && hubBuiltDay == day) return
+        hubBuiltVersion = HubStore.version
+        hubBuiltDay = day
+        val out = ArrayList<HubItem>()
+        var last = ""
+        for (n in HubStore.notes.toList()) {
+            val l = dayLabel(n.time)
+            if (l != last) {
+                out.add(HubItem(l, null))
+                last = l
+            }
+            out.add(HubItem(null, n))
+        }
+        hubItems = out
+        if (hubItems.getOrNull(hubSel)?.note == null) hubSel = hubItems.indexOfFirst { it.note != null }.coerceAtLeast(0)
+    }
+
+    private fun hubStep(dir: Int) {
+        var i = hubSel + dir
+        while (i in hubItems.indices) {
+            if (hubItems[i].note != null) {
+                hubSel = i
+                return
+            }
+            i += dir
+        }
+    }
+
+    private fun openNote(n: Note) {
+        try {
+            val pi = HubStore.intents[n.key]
+            if (pi != null) {
+                pi.send()
+                return
+            }
+        } catch (_: Exception) {
+        }
+        val i = act.packageManager.getLaunchIntentForPackage(n.pkg)
+        if (i != null) tryStart(i) else showToast("Can't open that app")
+    }
+
+    private fun openHubOptions() {
+        val note = hubItems.getOrNull(hubSel)?.note
+        val items = ArrayList<PopupItem>()
+        if (note != null) {
+            items += PopupItem("Open") { openNote(note) }
+            items += PopupItem("Remove") {
+                HubStore.remove(act, note)
+                showToast("Removed")
+            }
+            items += PopupItem("Clear all") {
+                HubStore.clear(act)
+                showToast("Hub cleared")
+            }
+        }
+        items += PopupItem(if (HubStore.hasAccess(act)) "Notification access" else "Allow notification access") {
+            tryStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+        items += PopupItem("Quick settings") { openQuick(0) }
+        popup = Popup("Hub", items, 0, menu = true)
+    }
+
+    private fun appLabel(pkg: String): String = appLabels.getOrPut(pkg) {
+        try { act.packageManager.getApplicationLabel(act.packageManager.getApplicationInfo(pkg, 0)).toString() } catch (_: Exception) { pkg }
+    }
+
+    private fun noteIcon(pkg: String): Bitmap? {
+        noteIcons.get(pkg)?.let { return it }
+        return try {
+            val d = act.packageManager.getApplicationIcon(pkg)
+            val b = Bitmap.createBitmap(72, 72, Bitmap.Config.ARGB_8888)
+            d.setBounds(0, 0, 72, 72)
+            d.draw(Canvas(b))
+            noteIcons.put(pkg, b)
+            b
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun card(c: Canvas, r: RectF) {
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 165)
+        c.drawRoundRect(r, 10f * sc, 10f * sc, p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1f * sc
+        p.color = al(Color.WHITE, 45)
+        c.drawRoundRect(r, 10f * sc, 10f * sc, p)
+        p.style = Paint.Style.FILL
+    }
+
+    /** The Hub / Today page: not a black page like Apps and Recent, but cards over your wallpaper. */
+    private fun drawHub(c: Canvas) {
+        val w = width.toFloat()
+        val m = 12f * sc
+        val grey = 0xFF999999.toInt()
+        hubHits.clear()
+        buildHub()
+        hubTick = true
+
+        val hr = RectF(m, cTop + 10f * sc, w - m, cTop + 88f * sc)
+        card(c, hr)
+        val now = System.currentTimeMillis()
+        shadowText(c, DateFormat.format("EEEE", now).toString(), hr.left + 16f * sc, baselineFor(hr.top + 28f * sc, 26f * sc), 26f * sc, Color.WHITE)
+        text(c, DateFormat.format("d MMMM", now).toString(), hr.left + 16f * sc, baselineFor(hr.top + 58f * sc, 18f * sc, light), 18f * sc, grey, face = light)
+        text(c, clockStr + (if (ampmStr.isEmpty()) "" else " $ampmStr"), hr.right - 16f * sc, baselineFor(hr.top + 34f * sc, 36f * sc), 36f * sc, Color.WHITE, Paint.Align.RIGHT)
+        val count = hubItems.count { it.note != null }
+        text(c, if (count == 0) "No notifications" else "$count notification${if (count == 1) "" else "s"}", hr.right - 16f * sc, baselineFor(hr.top + 60f * sc, 16f * sc, light), 16f * sc, grey, Paint.Align.RIGHT, face = light)
+
+        val panelTop = hr.bottom + 8f * sc
+        val avail = cBot - 10f * sc - panelTop
+        val access = HubStore.hasAccess(act)
+        if (!access || count == 0) {
+            val cardR = RectF(m, panelTop, w - m, panelTop + min(avail, 120f * sc))
+            card(c, cardR)
+            text(c, if (access) "Nothing yet" else "See your notifications here", cardR.centerX(), baselineFor(cardR.centerY() - 16f * sc, 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER)
+            text(c, if (access) "New notifications will collect on this page" else "Press ${okLetter()} to allow notification access", cardR.centerX(), baselineFor(cardR.centerY() + 18f * sc, 17f * sc, light), 17f * sc, grey, Paint.Align.CENTER, maxW = cardR.width() - 30f * sc, face = light)
+            return
+        }
+
+        val rowH = 62f * sc
+        val headH = 28f * sc
+        var total = 0f
+        for (it in hubItems) total += if (it.header != null) headH else rowH
+        val panelH = min(avail, total + 12f * sc)
+        val panel = RectF(m, panelTop, w - m, panelTop + panelH)
+        card(c, panel)
+
+        // keep the selected notification in view
+        var y = 6f * sc
+        var selTop = 0f
+        var selBottom = 0f
+        for ((i, it) in hubItems.withIndex()) {
+            val h = if (it.header != null) headH else rowH
+            if (i == hubSel) {
+                selTop = y
+                selBottom = y + h
+            }
+            y += h
+        }
+        if (selBottom - hubScrollTarget > panelH - 6f * sc) hubScrollTarget = selBottom - panelH + 6f * sc
+        if (selTop - hubScrollTarget < 6f * sc) hubScrollTarget = selTop - 6f * sc
+        hubScrollTarget = hubScrollTarget.coerceIn(0f, max(0f, total + 12f * sc - panelH))
+        hubScroll += (hubScrollTarget - hubScroll) * frameK
+        if (abs(hubScrollTarget - hubScroll) < 0.5f) hubScroll = hubScrollTarget else postInvalidateOnAnimation()
+
+        c.save()
+        c.clipRect(panel)
+        var yy = panel.top + 6f * sc - hubScroll
+        for ((i, it) in hubItems.withIndex()) {
+            val h = if (it.header != null) headH else rowH
+            if (yy + h >= panel.top && yy <= panel.bottom) {
+                if (it.header != null) {
+                    text(c, it.header, panel.left + 16f * sc, baselineFor(yy + h / 2f, 15f * sc, medium), 15f * sc, theme.accentLight, face = medium)
+                    p.color = al(Color.WHITE, 40)
+                    c.drawRect(panel.left + 12f * sc, yy + h - 2f * sc, panel.right - 12f * sc, yy + h - 1f * sc, p)
+                } else {
+                    val n = it.note!!
+                    val rr = RectF(panel.left + 6f * sc, yy + 1f * sc, panel.right - 6f * sc, yy + h - 1f * sc)
+                    if (i == hubSel) drawFocus(c, rr, 10f * sc)
+                    val isz = 38f * sc
+                    noteIcon(n.pkg)?.let { b ->
+                        rf.set(rr.left + 10f * sc, rr.centerY() - isz / 2f, rr.left + 10f * sc + isz, rr.centerY() + isz / 2f)
+                        c.drawBitmap(b, null, rf, iconPaint)
+                    }
+                    val tx = rr.left + 10f * sc + isz + 12f * sc
+                    val meta = appLabel(n.pkg) + "  " + DateFormat.format(if (DateFormat.is24HourFormat(act)) "HH:mm" else "h:mm a", n.time)
+                    val mw = min(measure(meta, 14f * sc, light), rr.width() * 0.4f)
+                    text(c, meta, rr.right - 12f * sc, baselineFor(rr.top + 22f * sc, 14f * sc, light), 14f * sc, if (i == hubSel) Color.WHITE else grey, Paint.Align.RIGHT, maxW = rr.width() * 0.4f, face = light)
+                    text(c, n.title.ifBlank { appLabel(n.pkg) }, tx, baselineFor(rr.top + 22f * sc, 18f * sc, medium), 18f * sc, Color.WHITE, maxW = rr.right - tx - mw - 24f * sc, face = medium)
+                    if (n.text.isNotBlank()) text(c, n.text.replace('\n', ' '), tx, baselineFor(rr.top + 46f * sc, 15f * sc, light), 15f * sc, if (i == hubSel) Color.WHITE else 0xFFBBBBBB.toInt(), maxW = rr.right - tx - 14f * sc, face = light)
+                    hubHits.add(RectF(rr) to i)
+                }
+            }
+            yy += h
+        }
+        c.restore()
     }
 
     // ---- page 1: applications (tab 1) -- black page, 70px icon frames, 18px labels -----------------
@@ -1148,6 +1511,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- chrome -------------------------------------------------------------------------------------
 
     private fun pageTitle() = when (page) {
+        -1 -> "Hub"
         0 -> "Home"
         1 -> "Applications"
         else -> "Recent"
@@ -1400,6 +1764,11 @@ class LauncherView(private val act: Activity) : View(act) {
         const val HEADER = 50f   // list starts under the tab bar
         const val ROW = 70f      // heightListItem
         const val POPUP_ROW = 64f // heightMenuItem
+        const val WIDGET_CLOCK = 0
+        const val WIDGET_DATE = 1
+        const val WIDGET_BATTERY = 2
+        const val WIDGET_STORAGE = 3
+        const val WIDGET_NOTES = 4
         const val ICON_BACK = 0
         const val ICON_GRID = 1
         const val ICON_MENU = 2
