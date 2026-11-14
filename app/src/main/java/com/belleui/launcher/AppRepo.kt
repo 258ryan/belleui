@@ -3,6 +3,7 @@ package com.belleui.launcher
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BlurMaskFilter
@@ -29,6 +30,8 @@ class AppEntry(
     val label: String,
     val component: ComponentName,
     val icon: Bitmap,
+    /** ApplicationInfo.category (API 26+), -1 if unknown. */
+    val category: Int = -1,
 )
 
 /** Installed apps plus the user's layout (order, hidden, favourites, recents). */
@@ -51,7 +54,7 @@ class AppRepo(private val ctx: Context) {
                     val label = ri.loadLabel(pm).toString()
                     val custom = loadCustomIcon(cn.packageName) ?: loadPackIcon(cn.packageName, label)
                     val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm), label))
-                    AppEntry(cn.flattenToString(), label, cn, icon)
+                    AppEntry(cn.flattenToString(), label, cn, icon, if (Build.VERSION.SDK_INT >= 26) ri.activityInfo.applicationInfo.category else -1)
                 } catch (_: Throwable) {
                     null // one bad app must never take the whole list down
                 }
@@ -277,6 +280,22 @@ class AppRepo(private val ctx: Context) {
         get() = prefs.getBoolean("swapPad", false)
         set(v) = prefs.edit().putBoolean("swapPad", v).apply()
 
+    /** 0 = all apps, 1 = games, 2 = media, 3 = everything else. */
+    var catFilter: Int
+        get() = prefs.getInt("catFilter", 0).coerceIn(0, 3)
+        set(v) = prefs.edit().putInt("catFilter", v).apply()
+
+    private fun matchesFilter(a: AppEntry): Boolean {
+        val media = a.category == ApplicationInfo.CATEGORY_AUDIO || a.category == ApplicationInfo.CATEGORY_VIDEO || a.category == ApplicationInfo.CATEGORY_IMAGE
+        val game = a.category == ApplicationInfo.CATEGORY_GAME
+        return when (catFilter) {
+            1 -> game
+            2 -> media
+            3 -> !game && !media
+            else -> true
+        }
+    }
+
     var showHidden: Boolean
         get() = prefs.getBoolean("showHidden", false)
         set(v) = prefs.edit().putBoolean("showHidden", v).apply()
@@ -290,6 +309,7 @@ class AppRepo(private val ctx: Context) {
         val hidden = getList("hidden").toSet()
         return apps
             .filter { includeHidden || it.key !in hidden }
+            .filter { matchesFilter(it) }
             .sortedWith(compareBy<AppEntry>({ rank[it.key] ?: Int.MAX_VALUE }, { it.label.lowercase() }))
     }
 

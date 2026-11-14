@@ -85,3 +85,7 @@ named after the package with `_` written as `__` and `.` written as `_`
 The artwork comes from the "N9ish" theme pack by speactra (openrepos.net). Check its licence
 before making this repository public or redistributing the APK. `share.zip` in the repo root
 is the original download and can be deleted.
+
+## CI
+
+The launcher has its own workflow (`launcher.yml`): it builds only the launcher and publishes `launcher-latest`; other apps live on their own branches with their own workflows, so a change to one never rebuilds the rest.
