@@ -34,17 +34,22 @@ class PlaybackService : Service() {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Playback", NotificationManager.IMPORTANCE_LOW))
         }
+        goForeground()
+        Player.listen(this, listener)
+    }
+
+    /** Every startForegroundService() must be answered with startForeground(), even when the service is already running. */
+    private fun goForeground() {
         val n = build()
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else {
             startForeground(ID, n)
         }
-        Player.listen(this, listener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        update()
+        goForeground()
         return START_NOT_STICKY
     }
 
