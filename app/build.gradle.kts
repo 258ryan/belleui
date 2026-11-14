@@ -28,3 +28,8 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    // Belle theme graphics live in the shared kit's assets
+    implementation(project(":belle"))
+}

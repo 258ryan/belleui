@@ -83,3 +83,7 @@ named after the package with `_` written as `__` and `.` written as `_`
 The artwork comes from the "N9ish" theme pack by speactra (openrepos.net). Check its licence
 before making this repository public or redistributing the APK. `share.zip` in the repo root
 is the original download and can be deleted.
+
+## Belle kit (`:belle`) and apps
+
+`belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
