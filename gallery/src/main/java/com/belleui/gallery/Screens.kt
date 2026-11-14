@@ -70,6 +70,9 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
         if (!started) {
             started = true
             load()
+        } else if (act.libraryDirty) {
+            act.libraryDirty = false
+            load()
         }
     }
 
@@ -81,6 +84,7 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
                 shell.invalidate()
             } else {
                 Thread {
+                    if (act.library.folders.isNotEmpty()) act.library.indexFolders()
                     act.library.load()
                     albums = act.library.albums()
                     shell.post {
@@ -92,7 +96,10 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
         }
     }
 
-    override fun menu() = listOf(MenuItem("Refresh") { load() })
+    override fun menu() = listOf(
+        MenuItem("Refresh") { load() },
+        MenuItem("Choose folders") { shell.push(FoldersScreen(act)) },
+    )
 
     private fun message(c: Canvas, ui: Ui, r: RectF, text: String) {
         val lines = text.split("\n")
