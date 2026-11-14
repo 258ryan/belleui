@@ -166,3 +166,6 @@ Home can show one large Belle widget instead of two small ones: **Flip clock**, 
 
 ### Belle picker (Magisk module)
 `magisk/picker` + `picker/`: a Belle-style, gamepad-friendly replacement for Android's folder and file picker, packed as a Magisk module (release `picker-latest`). It installs the picker as a system app, so every app that asks for a folder (open document tree), a file (open document / get content) or a place to save a file gets it. It hands the app access to just what you chose, through its own documents provider. Needs Magisk 20.4+ and Android 11+; reboot after flashing. Untested on hardware: if anything misbehaves, disable or remove the module in Magisk (safe mode also turns modules off).
+
+### Belle Chooser (Vector module)
+`vector/`: a Vector (Xposed) module that restyles Android's "Open with" and Share lists in the Belle look (dark panel, blue highlight, gamepad focus). It only changes how the list looks; which apps appear and what happens when one is chosen stay Android's own. Install the APK, turn it on in Vector (Modules), tick "System Framework" (and "Android System" if listed) as scope, reboot. Check the Vector log for "BelleChooser" to see if the hook ran. Built against the classic Xposed API, which Vector still runs.
