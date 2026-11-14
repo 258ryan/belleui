@@ -2,6 +2,10 @@ name: Build APK
 on:
   push:
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,14 +17,37 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew --no-daemon assembleDebug
-      # one APK per module on this branch: launcher (app-debug.apk) plus the app, if any
+
+      # one APK per module, plus a single zip with everything
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          for pair in app:Launcher music:Music clock:Clock gallery:Gallery browser:Browser; do
+            mod="${pair%%:*}"; name="${pair##*:}"
+            f="$mod/build/outputs/apk/debug/$mod-debug.apk"
+            if [ -f "$f" ]; then cp "$f" "dist/BelleUI-$name.apk"; fi
+          done
+          cat > dist/README.txt <<'TXT'
+          BelleUI - debug-signed APKs. Install each with: adb install -r <file>.apk
+          Launcher: press Home and choose BelleUI as the default home app.
+          Music / Gallery ask for media access the first time. Clock alarms need notification permission.
+          TXT
+          (cd dist && zip -q ../BelleUI-all-apks.zip *.apk README.txt)
+          ls -la dist BelleUI-all-apks.zip
+
       - uses: actions/upload-artifact@v4
         with:
-          name: belleui-apks-${{ github.run_number }}
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            music/build/outputs/apk/debug/*.apk
-            clock/build/outputs/apk/debug/*.apk
-            gallery/build/outputs/apk/debug/*.apk
-            browser/build/outputs/apk/debug/*.apk
+          name: belleui-all-apks-${{ github.run_number }}
+          path: BelleUI-all-apks.zip
           if-no-files-found: error
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/belle/all'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apks-latest --yes --cleanup-tag || true
+          gh release create apks-latest BelleUI-all-apks.zip dist/*.apk \
+            --title "BelleUI - all apps (latest build)" \
+            --notes "Debug APKs for the launcher, Music, Clock, Gallery and Browser, built from branch belle/all at ${GITHUB_SHA::7}. BelleUI-all-apks.zip contains all of them." \
+            --prerelease --target "$GITHUB_SHA"
