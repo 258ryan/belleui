@@ -95,6 +95,19 @@ object Ic {
     const val SLIDESHOW = 70
     const val GALLERY = 71
     const val NEW_TIMER = 72
+    const val COPY = 80
+    const val CUT = 81
+    const val PASTE = 82
+    const val EDIT = 83
+    const val DETAILS = 84
+    const val SORT = 85
+    const val EJECT = 86
+    const val BLUETOOTH = 87
+    const val SIGNAL = 88
+    const val LOCK = 89
+    const val SYNC = 90
+    const val CALL = 91
+    const val UNMARK = 92
 
     val stock = mapOf(
         BACK to "toolbar_back", MENU to "toolbar_menu", SETTINGS to "toolbar_settings", ADD to "toolbar_add",
@@ -113,6 +126,10 @@ object Ic {
         HISTORY_BACK to "qgn_indi_browser_tb_history_back", HISTORY_FORWARD to "qgn_indi_browser_tb_history_fw",
         FULLSCREEN to "qgn_indi_browser_tb_full", IMAGES to "qgn_indi_browser_tb_images", SLIDESHOW to "qgn_indi_lgal_tb_slideshow",
         GALLERY to "qgn_indi_tb_gallery", NEW_TIMER to "qgn_indi_tb_new_timer",
+        COPY to "qtg_toolbar_copy", CUT to "qtg_toolbar_cut", PASTE to "qtg_toolbar_paste", EDIT to "qtg_toolbar_edit",
+        DETAILS to "qtg_toolbar_details", SORT to "qgn_indi_tb_fmgr_sort", EJECT to "qgn_indi_tb_fmgr_eject",
+        BLUETOOTH to "qtg_toolbar_bluetooth_on", SIGNAL to "qtg_toolbar_signal_on", LOCK to "qtg_toolbar_lock",
+        SYNC to "qtg_toolbar_sync", CALL to "qtg_toolbar_call", UNMARK to "qtg_toolbar_unmark",
     )
 }
 
