@@ -17,6 +17,7 @@ import com.belleui.kit.Screen
 import com.belleui.kit.TabDef
 import com.belleui.kit.Tool
 import com.belleui.kit.Ui
+import android.os.SystemClock
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
@@ -50,19 +51,120 @@ private fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.ki
     ui.text(c, g.system.short, box.left + 6f * ui.sc, box.top + 24f * ui.sc, 14f * ui.sc, ui.al(Color.WHITE, 230), face = ui.medium)
 }
 
-/** Game tiles in a grid, shared by Games and a system's page. */
-class GameGrid(private val act: GamesActivity) {
-    val grid = GridState(5, 1.22f)
+/**
+ * A Belle list of games: box art, title and a line of detail. A starts the game straight away;
+ * L1 / R1 jump to the previous / next letter of the alphabet.
+ */
+class GameList(private val act: GamesActivity, private val showSystem: Boolean) {
+    val list = ListState(72f)
+    private val rr = RectF()
+    private var letter = ""
+    private var letterUntil = 0L
+
+    private fun initial(g: Game): String {
+        val ch = g.title.firstOrNull()?.uppercaseChar() ?: '#'
+        return if (ch in 'A'..'Z') ch.toString() else "#"
+    }
+
+    private fun detail(g: Game): String {
+        val st = act.prefs.peek(g.rep.path)
+        val parts = ArrayList<String>(3)
+        if (st?.fav == true) parts.add("Favourite")
+        if (st != null && st.launches > 0) parts.add("Played ${st.launches}x")
+        if (g.variants.size > 1) parts.add("${g.variants.size} versions")
+        if (parts.isEmpty()) parts.add(if (showSystem) g.system.name else "Not played yet")
+        return parts.joinToString(" - ")
+    }
+
+    fun selected(games: List<Game>): Game? = games.getOrNull(list.sel.coerceIn(0, max(0, games.size - 1)))
 
     fun draw(c: Canvas, ui: Ui, r: RectF, games: List<Game>, shell: com.belleui.kit.BelleShell) {
-        grid.draw(c, ui, r, games.size) { cv, cell, i, selected ->
+        list.draw(c, ui, r, games.size) { i ->
             val g = games[i]
-            val pad = (if (selected) 10f else 5f) * ui.sc
-            val box = RectF(cell.left + pad, cell.top + pad, cell.right - pad, cell.bottom - 30f * ui.sc)
-            drawArt(cv, ui, act, shell, g, box)
-            ui.text(cv, g.title, cell.centerX(), cell.bottom - 10f * ui.sc, 15f * ui.sc, Color.WHITE, Paint.Align.CENTER, cell.width() - 8f * ui.sc)
+            Row(g.title, detail(g), iconKind = Ic.PLAY, iconColor = g.system.color, right = if (showSystem) g.system.short else null)
+        }
+        // box art over the icon slot, cropped to a square
+        val vis = list.visible(ui, r.height())
+        val sc = ui.sc
+        c.save()
+        c.clipRect(r)
+        for (i in max(0, list.top - 1)..min(games.size - 1, list.top + vis + 1)) {
+            list.rowRect(ui, r, i, rr)
+            val x = rr.left + Belle.PADDING * sc
+            ui.tmp.set(x, rr.centerY() - 25f * sc, x + 50f * sc, rr.centerY() + 25f * sc)
+            val bmp = act.art.get(games[i]) { shell.invalidate() }
+            if (bmp != null) ui.drawBitmapCover(c, bmp, ui.tmp)
+        }
+        c.restore()
+        // the letter being jumped to
+        if (SystemClock.uptimeMillis() < letterUntil) {
+            val box = RectF(r.centerX() - 60f * sc, r.centerY() - 60f * sc, r.centerX() + 60f * sc, r.centerY() + 60f * sc)
+            ui.nine(c, "qtg_fr_popup", box, 40, 20f)
+            ui.text(c, letter, box.centerX(), ui.baselineFor(box.centerY(), 64f * sc), 64f * sc, Color.WHITE, Paint.Align.CENTER)
+            ui.busy = true
         }
     }
+
+    /** Handles list movement and the letter jump; OK is left to the caller. */
+    fun act(a: Act, games: List<Game>, vis: Int): Boolean {
+        if (games.isEmpty()) return false
+        if (a == Act.PREV || a == Act.NEXT) {
+            val cur = list.sel.coerceIn(0, games.size - 1)
+            val here = initial(games[cur])
+            var i = cur
+            if (a == Act.NEXT) {
+                while (i < games.size - 1 && initial(games[i]) == here) i++
+            } else {
+                while (i > 0 && initial(games[i - 1]) == here) i--
+                if (i == cur && i > 0) {
+                    val prev = initial(games[i - 1])
+                    while (i > 0 && initial(games[i - 1]) == prev) i--
+                    i = max(0, i - 0)
+                    // land on the first game of the previous letter
+                    while (i > 0 && initial(games[i - 1]) == initial(games[i])) i--
+                }
+            }
+            list.sel = i
+            list.ensure(games.size, vis)
+            letter = initial(games[i])
+            letterUntil = SystemClock.uptimeMillis() + 900
+            return true
+        }
+        return list.act(a, games.size, vis)
+    }
+
+    fun hit(ui: Ui, r: RectF, y: Float, count: Int) = list.hit(ui, r, y, count)
+
+    fun scroll(d: Int, count: Int, vis: Int) = list.scrollBy(d, count, vis)
+}
+
+/** The menu items that belong to one game, shared by every screen that lists games. */
+private fun gameMenu(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game?): List<MenuItem> {
+    if (g == null) return emptyList()
+    val items = ArrayList<MenuItem>()
+    val fav = act.prefs.peek(g.rep.path)?.fav == true
+    items.add(MenuItem(if (fav) "Remove from favourites" else "Add to favourites") { act.toggleFavourite(g); shell.invalidate() })
+    items.add(MenuItem("Details") { shell.push(GameScreen(act, g)) })
+    if (g.variants.size > 1) {
+        items.add(MenuItem("Play another version...") {
+            val labels = g.variants.map { v -> v.label }
+            shell.showOverlay(ListDialog("Version or disc", labels, 0) { i ->
+                val err = act.play(g.variants[i])
+                shell.toast(err ?: "Starting ${g.title}...")
+            })
+        })
+    }
+    if (act.emus.emulatorFor(g) == Emu.RETROARCH) {
+        items.add(MenuItem("Core: ${act.prefs.core(g.system)}") {
+            shell.showOverlay(ListDialog("Core for ${g.system.short}", g.system.cores, g.system.cores.indexOf(act.prefs.core(g.system))) { i -> act.prefs.setCore(g.system, g.system.cores[i]) })
+        })
+    }
+    return items
+}
+
+private fun startGame(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game) {
+    val err = act.play(g)
+    shell.toast(err ?: "Starting ${g.title}...")
 }
 
 // ================================================================================================
@@ -71,10 +173,10 @@ class GameGrid(private val act: GamesActivity) {
 
 class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
-    override val tabs = listOf(TabDef("Featured", Ic.FAVOURITE), TabDef("Games", Ic.GRID), TabDef("Systems", Ic.LIST), TabDef("Emulators", Ic.TOOLS))
+    override val tabs = listOf(TabDef("Home", Ic.HOME), TabDef("Games", Ic.LIST), TabDef("Systems", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
-    private val gameGrid = GameGrid(act)
+    private val gameList = GameList(act, true)
     private val systemList = ListState()
     private val emuList = ListState()
     private var remoteStatus: String? = null
@@ -97,15 +199,26 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         if (tab == 3) checkRemote()
     }
 
-    override fun tools() = listOf(
-        Tool(Ic.REFRESH, { rescan() }),
-        Tool(Ic.TOOLS, { shell.push(SettingsScreen(act)) }),
-    )
+    /** The game the highlight is on, for the buttons and the menu. */
+    private fun focused(): Game? = when (tab) {
+        0 -> if (act.games.isEmpty()) null else featured.focused()
+        1 -> gameList.selected(act.games)
+        else -> null
+    }
 
-    override fun menu() = listOf(
-        MenuItem("Rescan library") { rescan() },
-        MenuItem("Settings") { shell.push(SettingsScreen(act)) },
-    )
+    override fun tools(): List<Tool> {
+        val g = focused()
+        return listOf(
+            Tool(Ic.FAVOURITE, { focused()?.let { act.toggleFavourite(it); shell.toast("Favourites updated"); shell.invalidate() } }, g != null),
+            Tool(Ic.PLAY, { focused()?.let { startGame(act, shell, it) } }, g != null),
+        )
+    }
+
+    override fun menu(): List<MenuItem> =
+        gameMenu(act, shell, focused()) + listOf(
+            MenuItem("Rescan library") { rescan() },
+            MenuItem("Settings") { shell.push(SettingsScreen(act)) },
+        )
 
     private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
 
@@ -134,7 +247,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             message(c, ui, r, msg)
             return
         }
-        if (tab == 0) featured.draw(c, ui, r) else gameGrid.draw(c, ui, r, act.games, shell)
+        if (tab == 0) featured.draw(c, ui, r) else gameList.draw(c, ui, r, act.games, shell)
     }
 
     // ---- systems ----------------------------------------------------------------------------
@@ -222,10 +335,10 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             1 -> {
                 if (act.games.isEmpty()) return false
                 if (a == Act.OK) {
-                    openGame(act.games[gameGrid.grid.sel.coerceIn(0, act.games.size - 1)])
+                    gameList.selected(act.games)?.let { startGame(act, shell, it) }
                     true
                 } else {
-                    gameGrid.grid.act(a, act.games.size, rect())
+                    gameList.act(a, act.games, gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop))
                 }
             }
             2 -> {
@@ -256,10 +369,10 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         when (tab) {
             0 -> return featured.tap(x, y)
             1 -> {
-                val i = gameGrid.grid.hit(r, x, y, act.games.size)
+                val i = gameList.hit(shell.ui, r, y, act.games.size)
                 if (i < 0) return false
-                gameGrid.grid.sel = i
-                openGame(act.games[i])
+                gameList.list.sel = i
+                startGame(act, shell, act.games[i])
             }
             2 -> {
                 val list = systemsWithGames()
@@ -282,7 +395,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         val d = if (dy > 0) 1 else -1
         when (tab) {
             0 -> featured.scroll(d)
-            1 -> gameGrid.grid.scrollBy(d, act.games.size, rect())
+            1 -> gameList.scroll(d, act.games.size, gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop))
             2 -> systemList.scrollBy(d, systemsWithGames().size, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
             else -> emuList.scrollBy(d, emuRows().size, emuList.visible(shell.ui, shell.contentBottom - shell.contentTop))
         }
@@ -314,7 +427,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             val recent = all.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 }.sortedByDescending { st.peek(it.rep.path)!!.lastPlayed }.take(14)
             val favs = all.filter { st.peek(it.rep.path)?.fav == true }.sortedBy { it.title.lowercase() }.take(14)
             val added = all.sortedByDescending { it.modified }.take(14)
-            val hero = (favs + recent + added).distinctBy { it.path }.take(6)
+            val hero = (recent.take(3) + favs + added).distinctBy { it.path }.take(6)
             val list = ArrayList<Shelf>()
             list.add(Shelf("Featured", hero))
             if (recent.isNotEmpty()) list.add(Shelf("Recently played", recent))
@@ -367,7 +480,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             drawArt(c, ui, act, shell, g, art)
             val x = art.right + 20f * sc
             val maxW = card.right - x - 16f * sc
-            ui.text(c, "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
+            ui.text(c, if ((act.prefs.peek(g.rep.path)?.launches ?: 0) > 0) "CONTINUE PLAYING" else "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
             ui.text(c, g.title, x, card.top + 62f * sc, 26f * sc, maxW = maxW)
             ui.text(c, g.system.name, x, card.top + 88f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
             val st = act.prefs.peek(g.rep.path)
@@ -419,7 +532,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
                 Act.DOWN -> if (shelfSel < shelves.size - 1) shelfSel++ else return false
                 Act.LEFT -> if (shelfSel == 0) hsel[0] = (hsel[0] - 1 + sh.games.size) % sh.games.size else if (hsel[shelfSel] > 0) hsel[shelfSel]--
                 Act.RIGHT -> if (shelfSel == 0) hsel[0] = (hsel[0] + 1) % sh.games.size else if (hsel[shelfSel] < sh.games.size - 1) hsel[shelfSel]++
-                Act.OK -> sh.games.getOrNull(hsel[shelfSel])?.let { openGame(it) }
+                Act.OK -> sh.games.getOrNull(hsel[shelfSel])?.let { startGame(act, shell, it) }
                 else -> return false
             }
             return true
@@ -427,11 +540,13 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
         fun tap(x: Float, y: Float): Boolean {
             for ((rect, g) in hits) if (rect.contains(x, y)) {
-                openGame(g)
+                startGame(act, shell, g)
                 return true
             }
             return false
         }
+
+        fun focused(): Game? = shelves.getOrNull(shelfSel)?.games?.getOrNull(hsel[shelfSel])
 
         fun scroll(d: Int) {
             shelfSel = (shelfSel + d).coerceIn(0, max(0, shelves.size - 1))
@@ -439,49 +554,53 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     }
 }
 
-/** A system's games. */
+/** A system's games, as a list; A starts one. */
 class SystemScreen(private val act: GamesActivity, private val system: GameSystem) : Screen() {
     override val title get() = system.name
-    private val grid = GameGrid(act)
+    private val gameList = GameList(act, false)
     private val games get() = act.bySystem.firstOrNull { it.first === system }?.second ?: emptyList()
 
+    override fun tools(): List<Tool> {
+        val g = gameList.selected(games)
+        return listOf(
+            Tool(Ic.FAVOURITE, { gameList.selected(games)?.let { act.toggleFavourite(it); shell.toast("Favourites updated"); shell.invalidate() } }, g != null),
+            Tool(Ic.PLAY, { gameList.selected(games)?.let { startGame(act, shell, it) } }, g != null),
+        )
+    }
+
     override fun menu(): List<MenuItem> {
-        val items = ArrayList<MenuItem>()
+        val items = ArrayList<MenuItem>(gameMenu(act, shell, gameList.selected(games)))
         if (system.emu == Emu.PPSSPP) {
             items.add(MenuItem("PSP opens in: " + if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch") { act.prefs.pspWithPpsspp = !act.prefs.pspWithPpsspp })
-        }
-        if (system.cores.size > 1 || system.emu == Emu.RETROARCH) {
-            items.add(MenuItem("Core: ${act.prefs.core(system)}") {
-                shell.showOverlay(ListDialog("Core for ${system.short}", system.cores, system.cores.indexOf(act.prefs.core(system))) { i -> act.prefs.setCore(system, system.cores[i]) })
-            })
         }
         return items
     }
 
-    override fun draw(c: Canvas, ui: Ui, r: RectF) = grid.draw(c, ui, r, games, shell)
-
     private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
+    private fun vis() = gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop)
+
+    override fun draw(c: Canvas, ui: Ui, r: RectF) = gameList.draw(c, ui, r, games, shell)
 
     override fun onAct(a: Act): Boolean {
         val g = games
         if (g.isEmpty()) return false
         if (a == Act.OK) {
-            shell.push(GameScreen(act, g[grid.grid.sel.coerceIn(0, g.size - 1)]))
+            gameList.selected(g)?.let { startGame(act, shell, it) }
             return true
         }
-        return grid.grid.act(a, g.size, rect())
+        return gameList.act(a, g, vis())
     }
 
     override fun onTap(x: Float, y: Float): Boolean {
         val g = games
-        val i = grid.grid.hit(rect(), x, y, g.size)
+        val i = gameList.hit(shell.ui, rect(), y, g.size)
         if (i < 0) return false
-        grid.grid.sel = i
-        shell.push(GameScreen(act, g[i]))
+        gameList.list.sel = i
+        startGame(act, shell, g[i])
         return true
     }
 
-    override fun onScroll(dy: Float) = grid.grid.scrollBy(if (dy > 0) 1 else -1, games.size, rect())
+    override fun onScroll(dy: Float) = gameList.scroll(if (dy > 0) 1 else -1, games.size, vis())
 }
 
 // ================================================================================================
