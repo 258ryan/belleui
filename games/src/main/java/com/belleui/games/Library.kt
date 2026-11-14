@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.LruCache
 import java.io.File
 import java.net.HttpURLConnection
@@ -13,6 +14,9 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+
+private val TAG = Regex("[\\(\\[]([^\\)\\]]*)[\\)\\]]")
+private val DISC = Regex("(?:disc|disk|cd)\\s*(\\d+)", RegexOption.IGNORE_CASE)
 
 class Game(
     val path: String,
@@ -28,7 +32,39 @@ class Game(
 
     /** From gamelist.xml if given, else "Super Mario Land (World) [!]" -> "Super Mario Land" */
     val title: String = meta?.name?.takeIf { it.isNotBlank() }
-        ?: rawName.replace(Regex("\\s*[\\(\\[][^\\)\\]]*[\\)\\]]"), "").trim().ifEmpty { rawName }
+        ?: rawName.replace(TAG, "").replace(Regex("\\s+"), " ").trim().ifEmpty { rawName }
+
+    /** "USA, Rev 1" / "Disc 2" - what tells this file apart from other versions of the same title. */
+    val label: String = TAG.findAll(rawName).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() && it != "!" }.joinToString(", ").ifEmpty { File(path).extension.uppercase().ifEmpty { "Default" } }
+
+    val artKey: String = MD5(system.id + "/" + rawName)
+
+    /** Every version and disc of this title, best first (includes this game). Set by the scanner. */
+    var variants: List<Game> = listOf(this)
+
+    /** The version the library shows; stats and favourites are kept on it. */
+    val rep: Game get() = variants[0]
+
+    val titleKey: String = system.id + "/" + (Systems.norm(title).ifEmpty { rawName.lowercase() })
+
+    /** Sorts discs in order, then the preferred region first, then betas and prototypes last. */
+    val rank: Int get() {
+        val l = rawName.lowercase()
+        val disc = DISC.find(rawName)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val region = when {
+            "world" in l || "usa" in l || "(u)" in l -> 0
+            "europe" in l || "(e)" in l -> 1
+            "japan" in l || "(j)" in l -> 2
+            else -> 3
+        }
+        val junk = if (Regex("beta|proto|demo|sample|unl|hack|pirate").containsMatchIn(l)) 20 else 0
+        return disc * 100 + junk + region
+    }
+}
+
+fun MD5(s: String): String {
+    val d = MessageDigest.getInstance("MD5").digest(s.toByteArray())
+    return d.joinToString("") { "%02x".format(it) }
 }
 
 class Stat(var launches: Int = 0, var lastPlayed: Long = 0, var playMs: Long = 0, var fav: Boolean = false)
@@ -98,7 +134,7 @@ class Prefs(ctx: Context) {
 
 /** Finds games under the chosen folders, the way EmulationStation lays a card out. */
 object Scanner {
-    private const val MAX_FILES = 8000
+    private const val MAX_FILES = 40000
 
     /** Blocking; call off the main thread. */
     fun scan(rootPaths: List<String>): List<Game> {
@@ -114,7 +150,10 @@ object Scanner {
             if (depth > 6 || out.size >= MAX_FILES) return
             val files = try { dir.listFiles() } catch (_: SecurityException) { null } ?: return
             // playlists first, so their member discs can be hidden
-            for (f in files) if (f.isFile && f.extension.equals("m3u", true)) hidden.addAll(Es.m3uMembers(f))
+            for (f in files) if (f.isFile) {
+                if (f.extension.equals("m3u", true)) hidden.addAll(Es.m3uMembers(f))
+                else if (f.extension.equals("cue", true) && f.length() < 65536) hidden.addAll(cueMembers(f))
+            }
             for (f in files) {
                 if (f.name.startsWith(".")) continue
                 if (f.isDirectory) {
@@ -141,8 +180,26 @@ object Scanner {
             val own = Systems.byFolder(r.name)
             if (own != null) walk(r, own, r, 0, Es.loadGamelist(r, roots)) else walk(r, null, null, 0, emptyMap())
         }
-        val result = out.filter { it.path !in hidden }.sortedBy { it.title.lowercase() }
+        // one entry per title: regions, revisions and discs of a game are its versions
+        val groups = LinkedHashMap<String, ArrayList<Game>>()
+        for (g in out) if (g.path !in hidden) groups.getOrPut(g.titleKey) { ArrayList() }.add(g)
+        val result = ArrayList<Game>(groups.size)
+        for (list in groups.values) {
+            val sorted = list.sortedWith(compareBy<Game>({ it.rank }, { it.label }))
+            // prefer a version that has gamelist.xml data, unless it is a later disc
+            for (g in sorted) g.variants = sorted
+            result.add(sorted[0])
+        }
+        result.sortBy { it.title.lowercase() }
         return result
+    }
+
+    /** The track files a .cue sheet points at, so they don't show up as games of their own. */
+    private fun cueMembers(f: File): List<String> = try {
+        f.readLines().mapNotNull { Regex("FILE\\s+\"?([^\"]+)\"?\\s+\\w+", RegexOption.IGNORE_CASE).find(it.trim())?.groupValues?.get(1) }
+            .map { File(f.parentFile, it).path }
+    } catch (_: Exception) {
+        emptyList()
     }
 }
 
@@ -156,23 +213,29 @@ fun treeToPath(uri: Uri): String? {
     return if (rel.isEmpty()) base else "$base/$rel"
 }
 
-private val main = Handler(Looper.getMainLooper())
+private val main by lazy { Handler(Looper.getMainLooper()) }
 
-/** Box art from the libretro thumbnail server, cached on disk; null until it is available. */
+/**
+ * Box art: from the card's own scraped images, else the libretro thumbnail server (cached on disk).
+ * Everything that touches files or the network runs on worker threads; [get] only does a memory lookup,
+ * so scrolling a big library stays smooth.
+ */
 class Art(private val ctx: Context, private val prefs: Prefs) {
-    private val mem = LruCache<String, Bitmap>(12 * 1024 * 1024)
-    private val pool = Executors.newFixedThreadPool(2)
-    private val pending = HashSet<String>()
-    private val dir = File(ctx.cacheDir, "art").also { it.mkdirs() }
-
-    private fun key(g: Game): String {
-        val d = MessageDigest.getInstance("MD5").digest((g.system.id + "/" + g.rawName).toByteArray())
-        return d.joinToString("") { "%02x".format(it) }
+    private val mem = object : LruCache<String, Bitmap>(14 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
+    private val queue = object : java.util.concurrent.LinkedBlockingDeque<Runnable>() {
+        // newest request first: what is on screen now matters more than what was scrolled past
+        override fun offer(e: Runnable): Boolean = offerFirst(e)
+    }
+    private val pool = java.util.concurrent.ThreadPoolExecutor(2, 2, 0, java.util.concurrent.TimeUnit.MILLISECONDS, queue)
+    private val busy = HashSet<String>()
+    private val none = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val asked = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val dir = File(ctx.cacheDir, "art").also { it.mkdirs() }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    private val noLocal = HashSet<String>()
     private val imageExts = listOf("png", "jpg", "jpeg", "webp")
     private val artDirs = listOf(
         "images", "media/box2dfront", "media/boxart", "media/covers", "media/images", "media/mixrbv2", "media/screenshots", "media/thumbnails",
@@ -193,52 +256,66 @@ class Art(private val ctx: Context, private val prefs: Prefs) {
         return null
     }
 
+    /** Decoded no larger than needed: a tile is far smaller than a scraped screenshot. */
+    private fun decode(path: String): Bitmap? {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, o)
+        var s = 1
+        while (o.outWidth / (s * 2) >= 300 && o.outHeight / (s * 2) >= 300) s *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = s })
+    }
+
+    /** The art if it is in memory; otherwise null, and it is fetched in the background and [onReady] runs. */
     fun get(g: Game, onReady: () -> Unit): Bitmap? {
-        val k = key(g)
+        val k = g.artKey
         mem.get(k)?.let { return it }
-        if (k !in noLocal) {
-            val local = localArt(g)
-            if (local != null) {
-                val bmp = BitmapFactory.decodeFile(local.path, BitmapFactory.Options().apply { inSampleSize = 2 })
-                if (bmp != null) {
-                    mem.put(k, bmp)
-                    return bmp
-                }
-            }
-            noLocal.add(k)
-        }
-        val file = File(dir, "$k.png")
-        if (file.exists()) {
-            val bmp = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = 2 })
-            if (bmp != null) {
-                mem.put(k, bmp)
-                return bmp
-            }
-        }
-        if (!prefs.downloadArt || File(dir, "$k.miss").exists()) return null
+        if (k in none) return null
+        asked[k] = SystemClock.uptimeMillis()
         synchronized(this) {
-            if (!pending.add(k)) return null
+            if (!busy.add(k)) return null
         }
         pool.execute {
-            var ok = false
+            var bmp: Bitmap? = null
+            var final = true
             try {
-                // libretro's naming replaces these characters with underscores
-                val name = g.rawName.replace(Regex("[&*/:`<>?\\\\|\"]"), "_")
-                val url = URL("https://thumbnails.libretro.com/" + enc(g.system.thumb) + "/Named_Boxarts/" + enc(name) + ".png")
-                val c = url.openConnection() as HttpURLConnection
-                c.connectTimeout = 6000
-                c.readTimeout = 8000
-                if (c.responseCode == 200) {
-                    c.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
-                    ok = true
+                if (SystemClock.uptimeMillis() - (asked[k] ?: 0L) > 1500) {
+                    final = false // scrolled away before it was its turn
+                } else {
+                    bmp = load(g, k)
                 }
-                c.disconnect()
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
             }
-            if (!ok) File(dir, "$k.miss").createNewFile()
-            synchronized(this) { pending.remove(k) }
-            if (ok) main.post(onReady)
+            if (bmp != null) mem.put(k, bmp) else if (final) none.add(k)
+            synchronized(this) { busy.remove(k) }
+            if (bmp != null) main.post(onReady)
         }
         return null
+    }
+
+    private fun load(g: Game, k: String): Bitmap? {
+        localArt(g)?.let { f -> decode(f.path)?.let { return it } }
+        val file = File(dir, "$k.png")
+        if (file.exists()) decode(file.path)?.let { return it }
+        if (!prefs.downloadArt || File(dir, "$k.miss").exists()) return null
+        var ok = false
+        try {
+            // libretro's naming replaces these characters with underscores
+            val name = g.rawName.replace(Regex("[&*/:`<>?\\\\|\"]"), "_")
+            val url = URL("https://thumbnails.libretro.com/" + enc(g.system.thumb) + "/Named_Boxarts/" + enc(name) + ".png")
+            val c = url.openConnection() as HttpURLConnection
+            c.connectTimeout = 6000
+            c.readTimeout = 8000
+            if (c.responseCode == 200) {
+                c.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+                ok = true
+            }
+            c.disconnect()
+        } catch (_: Exception) {
+        }
+        if (!ok) {
+            File(dir, "$k.miss").createNewFile()
+            return null
+        }
+        return decode(file.path)
     }
 }

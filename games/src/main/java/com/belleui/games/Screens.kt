@@ -139,8 +139,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
     // ---- systems ----------------------------------------------------------------------------
 
-    private fun systemsWithGames(): List<Pair<GameSystem, Int>> =
-        Systems.all.map { s -> s to act.games.count { it.system === s } }.filter { it.second > 0 }
+    private fun systemsWithGames(): List<Pair<GameSystem, Int>> = act.bySystem.map { it.first to it.second.size }
 
     private fun drawSystems(c: Canvas, ui: Ui, r: RectF) {
         val list = systemsWithGames()
@@ -150,8 +149,9 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         }
         systemList.draw(c, ui, r, list.size) { i ->
             val (s, n) = list[i]
+            val versions = act.bySystem.getOrNull(i)?.second?.sumOf { it.variants.size } ?: n
             val emu = if (s.emu == Emu.PPSSPP && act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch (${act.prefs.core(s)})"
-            Row(s.name, "$n game${if (n == 1) "" else "s"} - $emu", iconKind = Ic.PLAY, iconColor = s.color, drill = true)
+            Row(s.name, "$n title${if (n == 1) "" else "s"}${if (versions > n) " ($versions files)" else ""} - $emu", iconKind = Ic.PLAY, iconColor = s.color, drill = true)
         }
     }
 
@@ -311,8 +311,8 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             built = act.version
             val all = act.games
             val st = act.prefs
-            val recent = all.filter { (st.peek(it.path)?.launches ?: 0) > 0 }.sortedByDescending { st.peek(it.path)!!.lastPlayed }.take(14)
-            val favs = all.filter { st.peek(it.path)?.fav == true }.sortedBy { it.title.lowercase() }.take(14)
+            val recent = all.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 }.sortedByDescending { st.peek(it.rep.path)!!.lastPlayed }.take(14)
+            val favs = all.filter { st.peek(it.rep.path)?.fav == true }.sortedBy { it.title.lowercase() }.take(14)
             val added = all.sortedByDescending { it.modified }.take(14)
             val hero = (favs + recent + added).distinctBy { it.path }.take(6)
             val list = ArrayList<Shelf>()
@@ -370,7 +370,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             ui.text(c, "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
             ui.text(c, g.title, x, card.top + 62f * sc, 26f * sc, maxW = maxW)
             ui.text(c, g.system.name, x, card.top + 88f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-            val st = act.prefs.peek(g.path)
+            val st = act.prefs.peek(g.rep.path)
             val line = if (st != null && st.launches > 0) "Played ${st.launches}x - ${playTime(st.playMs)}" else "Not played yet"
             ui.text(c, line, x, card.top + 112f * sc, 16f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
             val btn = RectF(card.right - 130f * sc, card.bottom - 52f * sc, card.right - 14f * sc, card.bottom - 10f * sc)
@@ -443,7 +443,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 class SystemScreen(private val act: GamesActivity, private val system: GameSystem) : Screen() {
     override val title get() = system.name
     private val grid = GameGrid(act)
-    private val games get() = act.games.filter { it.system === system }
+    private val games get() = act.bySystem.firstOrNull { it.first === system }?.second ?: emptyList()
 
     override fun menu(): List<MenuItem> {
         val items = ArrayList<MenuItem>()
@@ -488,20 +488,35 @@ class SystemScreen(private val act: GamesActivity, private val system: GameSyste
 // one game
 // ================================================================================================
 
-class GameScreen(private val act: GamesActivity, private val game: Game) : Screen() {
+class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
+    /** The title as the library shows it; [cur] is the version or disc that Play starts. */
+    private val game: Game = game0.rep
+    private var cur: Game = game0
+    private val versions get() = game.variants
+
     override val title get() = game.title
     private val playBtn = RectF()
     private val favBtn = RectF()
 
     private fun fav() = act.prefs.peek(game.path)?.fav == true
 
-    override fun tools() = listOf(
-        Tool(Ic.FAVOURITE, { toggleFav() }),
-        Tool(Ic.PLAY, { play() }),
-    )
+    override fun tools(): List<Tool> {
+        val t = arrayListOf(Tool(Ic.FAVOURITE, { toggleFav() }), Tool(Ic.PLAY, { play() }))
+        if (versions.size > 1) t.add(0, Tool(Ic.LIST, { chooseVersion() }))
+        return t
+    }
+
+    private fun chooseVersion() {
+        val labels = versions.map { v -> v.label + "  (" + size(v.size) + ")" }
+        shell.showOverlay(ListDialog("Version or disc", labels, versions.indexOf(cur).coerceAtLeast(0)) { i ->
+            cur = versions[i]
+            shell.invalidate()
+        })
+    }
 
     override fun menu(): List<MenuItem> {
         val items = ArrayList<MenuItem>()
+        if (versions.size > 1) items.add(MenuItem("Version: ${cur.label}") { chooseVersion() })
         items.add(MenuItem(if (fav()) "Remove from favourites" else "Add to favourites") { toggleFav() })
         items.add(MenuItem("Details") { details() })
         if (game.system.emu == Emu.PPSSPP) {
@@ -521,14 +536,14 @@ class GameScreen(private val act: GamesActivity, private val game: Game) : Scree
     }
 
     private fun play() {
-        val err = act.play(game)
+        val err = act.play(cur)
         shell.toast(err ?: "Starting ${game.title}...")
     }
 
     private fun details() {
         val st = act.prefs.peek(game.path)
         val played = if (st != null && st.launches > 0) "Played ${st.launches}x, ${playTime(st.playMs)}" else "Not played yet"
-        shell.showOverlay(QueryDialog("${game.rawName}\n${game.system.name}  -  ${size(game.size)}\n$played\n${game.file.parent}", "OK", null) { })
+        shell.showOverlay(QueryDialog("${cur.rawName}\n${game.system.name}  -  ${size(cur.size)}\n$played\n${cur.file.parent}", "OK", null) { })
     }
 
     /** Word-wraps [text] into at most [maxLines] lines that fit [maxW]. */
@@ -580,6 +595,10 @@ class GameScreen(private val act: GamesActivity, private val game: Game) : Scree
         } else "Not played yet"
         y += 24f * sc
         ui.text(c, played, x, y, 15f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        if (versions.size > 1) {
+            y += 24f * sc
+            ui.text(c, "${versions.size} versions - playing: ${cur.label}", x, y, 15f * sc, Belle.BLUE_LIGHT, maxW = maxW, face = ui.light)
+        }
         val how = when (act.emus.emulatorFor(game)) {
             Emu.PPSSPP -> "Opens in PPSSPP"
             Emu.RETROARCH -> if (act.emus.retroArch() != null) "Opens in RetroArch - ${act.prefs.core(game.system)} core" else "RetroArch is not installed"
