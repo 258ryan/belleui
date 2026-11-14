@@ -89,6 +89,8 @@ class Row(
     val drill: Boolean = false,
     val dim: Boolean = false,
     val check: Boolean? = null,
+    /** Space kept free at the right edge, e.g. for a switch drawn over the row. */
+    val rightReserve: Float = 0f,
 )
 
 /** Drawing helpers shared by every Belle app. [sc] scales the 640x480 design grid to the screen. */
@@ -105,6 +107,7 @@ class Ui(val ctx: Context) {
     val light: Typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
     val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     private val path = Path()
+    private val coverSrc = android.graphics.Rect()
 
     fun al(color: Int, a: Int) = (color and 0x00FFFFFF) or (a.coerceIn(0, 255) shl 24)
 
@@ -199,6 +202,46 @@ class Ui(val ctx: Context) {
         c.drawPath(shape, p)
         p.style = Paint.Style.FILL
         if (kind >= 0) glyph(c, kind, r.centerX(), r.centerY(), r.width() * 0.58f, Color.WHITE)
+    }
+
+    /** Draws [bmp] filling [to] (centre-cropped, like a Belle thumbnail). */
+    fun drawBitmapCover(c: Canvas, bmp: Bitmap, to: RectF, alpha: Int = 255) {
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        val scale = max(to.width() / bw, to.height() / bh)
+        val sw = to.width() / scale
+        val sh = to.height() / scale
+        val sx = ((bw - sw) / 2f).toInt()
+        val sy = ((bh - sh) / 2f).toInt()
+        coverSrc.set(sx, sy, (sx + sw).toInt().coerceAtMost(bmp.width), (sy + sh).toInt().coerceAtMost(bmp.height))
+        p.shader = null
+        p.alpha = alpha
+        c.drawBitmap(bmp, coverSrc, to, p)
+        p.alpha = 255
+    }
+
+    /** Draws [bmp] scaled to fit inside [box], times [zoom], shifted by (panX, panY). */
+    fun drawBitmapFit(c: Canvas, bmp: Bitmap, box: RectF, zoom: Float = 1f, panX: Float = 0f, panY: Float = 0f) {
+        val scale = min(box.width() / bmp.width, box.height() / bmp.height) * zoom
+        val w = bmp.width * scale
+        val h = bmp.height * scale
+        tmp.set(box.centerX() - w / 2f + panX, box.centerY() - h / 2f + panY, box.centerX() + w / 2f + panX, box.centerY() + h / 2f + panY)
+        p.shader = null
+        c.save()
+        c.clipRect(box)
+        c.drawBitmap(bmp, null, tmp, p)
+        c.restore()
+    }
+
+    /** Belle TextField: the one pale surface on a Belle screen. */
+    fun textField(c: Canvas, r: RectF, text: String, hint: String, focused: Boolean) {
+        nine(c, if (focused) "qtg_fr_textfield_highlighted" else "qtg_fr_textfield_editable", r, 40, 20f)
+        val pad = 12f * sc
+        if (text.isEmpty()) {
+            this.text(c, hint, r.left + pad, baselineFor(r.centerY(), 20f * sc), 20f * sc, 0xFF8A8A8A.toInt(), maxW = r.width() - 2 * pad)
+        } else {
+            this.text(c, text, r.left + pad, baselineFor(r.centerY(), 20f * sc), 20f * sc, 0xFF1B1B1B.toInt(), maxW = r.width() - 2 * pad)
+        }
     }
 
     fun drawBitmap(c: Canvas, bmp: Bitmap, to: RectF, alpha: Int = 255) {
@@ -517,7 +560,7 @@ class Ui(val ctx: Context) {
             }
             tx += iconSize + pad
         }
-        var rightEdge = r.right - pad
+        var rightEdge = r.right - pad - row.rightReserve * sc
         if (row.drill) {
             val ds = 30f * sc
             gfx.glyph(c, "qtg_graf_drill_down_indicator", r.right - pad - ds / 2f, r.centerY(), ds, 255)
