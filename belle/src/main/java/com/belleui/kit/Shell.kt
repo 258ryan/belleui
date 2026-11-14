@@ -959,8 +959,11 @@ abstract class BelleActivity : Activity() {
         if (hasFocus) hideSystemBars()
     }
 
+    /** Return false while a real text field has focus so keys reach it instead of the gamepad shell. */
+    protected open fun shellHandlesKeys(): Boolean = true
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (shell.handleKey(event)) return true
+        if (shellHandlesKeys() && shell.handleKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
