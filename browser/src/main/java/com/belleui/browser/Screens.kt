@@ -56,6 +56,7 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
 
     /** 0 = jump between links (default), 1 = movable pointer, 2 = keys go straight to the page. */
     private var navMode = 0
+    private var navPending = false
     private var cx = -1f
     private var cy = -1f
     private val arrow = Path()
@@ -75,6 +76,10 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
             shell.toast(if (Bookmarks(act).add(act.pageTitle, act.pageUrl)) "Bookmark added" else "Already bookmarked")
         })
         items.add(MenuItem("D-pad: " + arrayOf("links", "pointer", "page scroll")[navMode]) { navMode = (navMode + 1) % 3 })
+        items.add(MenuItem("Images: " + if (act.imagesOn) "on" else "off (faster)") {
+            act.imagesOn = !act.imagesOn
+            act.web.reload()
+        })
         items.add(MenuItem("Desktop site: " + if (act.desktop) "on" else "off") { act.applyDesktop(!act.desktop) })
         items.add(MenuItem("Share page") {
             val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, act.pageUrl)
@@ -153,9 +158,12 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
             else -> null
         }
         if (dir != null) {
+            if (navPending) return true
+            navPending = true
             val w = act.web
             val step = (min(shell.keyRepeat, 12) * 0.05f + 0.4f)
             act.web.evaluateJavascript("window.__belleNav ? window.__belleNav('$dir') : false") { r ->
+                navPending = false
                 if (r != "true") {
                     when (dir) {
                         "up" -> w.scrollBy(0, -(w.height * step).toInt())

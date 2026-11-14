@@ -47,6 +47,7 @@ class BrowserActivity : BelleActivity() {
     private lateinit var homeUi: BelleShell
 
     var loadProgress = 0
+    private var lastProgressPaint = 0
     var loading = false
     var pageTitle = ""
     var pageUrl = ""
@@ -54,7 +55,7 @@ class BrowserActivity : BelleActivity() {
     val prefs by lazy { getSharedPreferences("browser", Context.MODE_PRIVATE) }
 
     var homePage: String
-        get() = prefs.getString("home", "https://duckduckgo.com/") ?: "https://duckduckgo.com/"
+        get() = prefs.getString("home", "https://lite.duckduckgo.com/lite/") ?: "https://lite.duckduckgo.com/lite/"
         set(v) = prefs.edit().putString("home", v).apply()
 
     val addressOpen: Boolean get() = urlField.visibility == View.VISIBLE
@@ -115,6 +116,10 @@ class BrowserActivity : BelleActivity() {
         s.builtInZoomControls = true
         s.displayZoomControls = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        s.cacheMode = WebSettings.LOAD_DEFAULT
+        s.setSupportMultipleWindows(false)
+        s.setGeolocationEnabled(false)
+        s.mediaPlaybackRequiresUserGesture = true
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         w.setDownloadListener(DownloadListener { url, ua, cd, mime, _ -> download(url, ua, cd, mime) })
         w.webViewClient = object : WebViewClient() {
@@ -155,7 +160,10 @@ class BrowserActivity : BelleActivity() {
         w.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 loadProgress = newProgress
-                homeUi.invalidate()
+                if (newProgress >= 100 || abs(newProgress - lastProgressPaint) >= 8) {
+                    lastProgressPaint = newProgress
+                    homeUi.invalidate()
+                }
             }
 
             override fun onReceivedTitle(view: WebView, title: String?) {
@@ -198,6 +206,13 @@ class BrowserActivity : BelleActivity() {
             homeUi.toast("Can't download this file")
         }
     }
+
+    var imagesOn: Boolean
+        get() = !web.settings.blockNetworkImage
+        set(v) {
+            web.settings.blockNetworkImage = !v
+            web.settings.loadsImagesAutomatically = v
+        }
 
     fun applyDesktop(on: Boolean) {
         desktop = on
@@ -276,7 +291,7 @@ class BrowserActivity : BelleActivity() {
             when {
                 t.contains("://") -> t
                 t.contains('.') && !t.contains(' ') -> "https://$t"
-                else -> "https://duckduckgo.com/?q=" + URLEncoder.encode(t, "UTF-8")
+                else -> "https://lite.duckduckgo.com/lite/?q=" + URLEncoder.encode(t, "UTF-8")
             },
         )
     }
@@ -342,83 +357,92 @@ class BrowserActivity : BelleActivity() {
 private const val NAV_JS = """
 (function () {
   if (window.__belleNav) return;
-  var cur = null, ring = null;
+  var cur = null, curE = null, ring = null, cache = null, dirty = true, built = 0;
   var SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[onclick],[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=option],[tabindex]:not([tabindex="-1"]),label[for]';
+  try {
+    new MutationObserver(function () { dirty = true; }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (x) {}
+  window.addEventListener('resize', function () { dirty = true; });
   function ensureRing() {
     if (!ring) {
       ring = document.createElement('div');
-      ring.style.cssText = 'position:absolute;z-index:2147483647;pointer-events:none;border:3px solid #5CB4F8;border-radius:5px;box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 12px #1080DD;box-sizing:border-box;display:none';
+      ring.style.cssText = 'position:absolute;z-index:2147483647;pointer-events:none;border:3px solid #5CB4F8;border-radius:5px;box-shadow:0 0 0 2px rgba(0,0,0,.6);box-sizing:border-box;display:none';
       (document.documentElement || document.body).appendChild(ring);
     }
     return ring;
   }
-  function usable(e) {
-    var r = e.getBoundingClientRect();
-    if (r.width < 8 || r.height < 8) return null;
-    var s = getComputedStyle(e);
-    if (s.visibility === 'hidden' || s.display === 'none' || s.pointerEvents === 'none' || parseFloat(s.opacity) === 0) return null;
-    return r;
+  // One pass reads every rect (a single layout), stored in page coordinates; key presses then cost nothing.
+  function build() {
+    var sx = window.pageXOffset, sy = window.pageYOffset, out = [], els = document.querySelectorAll(SEL);
+    for (var i = 0; i < els.length && out.length < 700; i++) {
+      var e = els[i];
+      if (e.checkVisibility) { if (!e.checkVisibility()) continue; }
+      else if (e.offsetParent === null) continue;
+      var r = e.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) continue;
+      out.push({ e: e, l: r.left + sx, t: r.top + sy, r: r.right + sx, b: r.bottom + sy });
+    }
+    cache = out; dirty = false; built = Date.now();
   }
-  function list() {
-    var out = [], els = document.querySelectorAll(SEL);
-    for (var i = 0; i < els.length && out.length < 1500; i++) { var r = usable(els[i]); if (r) out.push({ e: els[i], r: r }); }
-    return out;
+  function entries() {
+    if (!cache || dirty || Date.now() - built > 5000) build();
+    return cache;
   }
-  function reveal(r) {
-    var m = 70, dy = 0, dx = 0;
-    if (r.top < m) dy = r.top - m; else if (r.bottom > innerHeight - m) dy = r.bottom - (innerHeight - m);
-    if (r.left < m) dx = r.left - m; else if (r.right > innerWidth - m) dx = r.right - (innerWidth - m);
+  function reveal(c) {
+    var vt = window.pageYOffset, vl = window.pageXOffset, m = 70, dy = 0, dx = 0;
+    if (c.t < vt + m) dy = c.t - vt - m; else if (c.b > vt + innerHeight - m) dy = c.b - (vt + innerHeight - m);
+    if (c.l < vl + m) dx = c.l - vl - m; else if (c.r > vl + innerWidth - m) dx = c.r - (vl + innerWidth - m);
     if (dx || dy) window.scrollBy(dx, dy);
   }
-  function mark(e) {
-    cur = e;
-    var r = e.getBoundingClientRect(), g = ensureRing();
+  function mark(c) {
+    cur = c; curE = c.e;
+    var g = ensureRing();
     g.style.display = 'block';
-    g.style.left = (r.left + window.pageXOffset - 3) + 'px';
-    g.style.top = (r.top + window.pageYOffset - 3) + 'px';
-    g.style.width = (r.width + 6) + 'px';
-    g.style.height = (r.height + 6) + 'px';
-    reveal(r);
-  }
-  function nearestToCenter(cs) {
-    var cx = innerWidth / 2, cy = innerHeight / 2, best = null, bd = 1e18;
-    cs.forEach(function (c) {
-      if (c.r.bottom < 0 || c.r.top > innerHeight || c.r.right < 0 || c.r.left > innerWidth) return;
-      var x = c.r.left + c.r.width / 2, y = c.r.top + c.r.height / 2, d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-      if (d < bd) { bd = d; best = c; }
-    });
-    return best;
+    g.style.left = (c.l - 3) + 'px'; g.style.top = (c.t - 3) + 'px';
+    g.style.width = (c.r - c.l + 6) + 'px'; g.style.height = (c.b - c.t + 6) + 'px';
+    reveal(c);
   }
   function overlap(a0, a1, b0, b1) { return Math.min(a1, b1) - Math.max(a0, b0); }
-  window.__belleNavReset = function () { cur = null; if (ring) ring.style.display = 'none'; };
+  window.__belleNavReset = function () { cur = curE = null; cache = null; dirty = true; if (ring) ring.style.display = 'none'; };
   window.__belleNav = function (dir) {
     if (dir === 'click') {
-      if (!cur || !document.contains(cur)) return false;
-      var tag = cur.tagName, t = (cur.type || '').toLowerCase();
-      if ((tag === 'INPUT' || tag === 'TEXTAREA' || cur.isContentEditable) &&
-          ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'color'].indexOf(t) < 0) { cur.focus(); return 'input'; }
-      try { cur.focus && cur.focus(); } catch (x) {}
-      cur.click();
+      if (!curE || !document.contains(curE)) return false;
+      var tag = curE.tagName, t = (curE.type || '').toLowerCase();
+      if ((tag === 'INPUT' || tag === 'TEXTAREA' || curE.isContentEditable) &&
+          ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'color'].indexOf(t) < 0) { curE.focus(); return 'input'; }
+      try { curE.focus && curE.focus(); } catch (x) {}
+      curE.click();
       return 'clicked';
     }
-    if (cur && !document.contains(cur)) cur = null;
-    var cs = list();
+    var cs = entries();
     if (!cs.length) return false;
-    if (!cur) { var f = nearestToCenter(cs); if (!f) return false; mark(f.e); return true; }
-    var fr = cur.getBoundingClientRect(), fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2, best = null, bs = 1e18;
+    if (cur && !document.contains(curE)) cur = curE = null;
+    if (!cur) {
+      var cx0 = window.pageXOffset + innerWidth / 2, cy0 = window.pageYOffset + innerHeight / 2, bestC = null, bd = 1e18;
+      for (var k = 0; k < cs.length; k++) {
+        var q = cs[k];
+        if (q.b < window.pageYOffset || q.t > window.pageYOffset + innerHeight) continue;
+        var d0 = Math.pow((q.l + q.r) / 2 - cx0, 2) + Math.pow((q.t + q.b) / 2 - cy0, 2);
+        if (d0 < bd) { bd = d0; bestC = q; }
+      }
+      if (!bestC) return false;
+      mark(bestC);
+      return true;
+    }
+    var fx = (cur.l + cur.r) / 2, fy = (cur.t + cur.b) / 2, best = null, bs = 1e18;
     for (var i = 0; i < cs.length; i++) {
       var c = cs[i];
-      if (c.e === cur || cur.contains(c.e) || c.e.contains(cur)) continue;
-      var r = c.r, dx = r.left + r.width / 2 - fx, dy = r.top + r.height / 2 - fy, prim, sec;
-      if (dir === 'down') { if (dy <= 4) continue; prim = dy; sec = Math.abs(dx); if (overlap(r.left, r.right, fr.left, fr.right) > 0) sec *= 0.3; }
-      else if (dir === 'up') { if (dy >= -4) continue; prim = -dy; sec = Math.abs(dx); if (overlap(r.left, r.right, fr.left, fr.right) > 0) sec *= 0.3; }
-      else if (dir === 'right') { if (dx <= 4) continue; prim = dx; sec = Math.abs(dy) * 2; if (overlap(r.top, r.bottom, fr.top, fr.bottom) > 0) sec *= 0.3; }
-      else { if (dx >= -4) continue; prim = -dx; sec = Math.abs(dy) * 2; if (overlap(r.top, r.bottom, fr.top, fr.bottom) > 0) sec *= 0.3; }
+      if (c === cur || c.e === curE || curE.contains(c.e) || c.e.contains(curE)) continue;
+      var dx = (c.l + c.r) / 2 - fx, dy = (c.t + c.b) / 2 - fy, prim, sec;
+      if (dir === 'down') { if (dy <= 4) continue; prim = dy; sec = Math.abs(dx); if (overlap(c.l, c.r, cur.l, cur.r) > 0) sec *= 0.3; }
+      else if (dir === 'up') { if (dy >= -4) continue; prim = -dy; sec = Math.abs(dx); if (overlap(c.l, c.r, cur.l, cur.r) > 0) sec *= 0.3; }
+      else if (dir === 'right') { if (dx <= 4) continue; prim = dx; sec = Math.abs(dy) * 2; if (overlap(c.t, c.b, cur.t, cur.b) > 0) sec *= 0.3; }
+      else { if (dx >= -4) continue; prim = -dx; sec = Math.abs(dy) * 2; if (overlap(c.t, c.b, cur.t, cur.b) > 0) sec *= 0.3; }
       var score = prim + sec * 2;
       if (score < bs) { bs = score; best = c; }
     }
     if (!best) return false;
-    mark(best.e);
+    mark(best);
     return true;
   };
 })();
