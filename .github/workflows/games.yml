@@ -1,11 +1,24 @@
-name: Build Games app
-# This branch has its own workflow: it builds only the Games module and publishes only its own release.
+name: Build Games
+# Runs only when this app (or the shared kit / build files) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'games/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/games.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-games
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete games-latest --yes --cleanup-tag || true
           gh release create games-latest BelleUI-Games.apk \
             --title "BelleUI Games (latest build)" \
-            --notes "Games hub built from branch belle/games at ${GITHUB_SHA::7}." \
+            --notes "Games built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

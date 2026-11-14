@@ -1,11 +1,24 @@
-name: Build Files app
-# This branch has its own workflow: it builds only the Files module and publishes only its own release.
+name: Build Files
+# Runs only when this app (or the shared kit / build files) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'files/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/files.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-files
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete files-latest --yes --cleanup-tag || true
           gh release create files-latest BelleUI-Files.apk \
             --title "BelleUI Files (latest build)" \
-            --notes "File manager built from branch belle/files at ${GITHUB_SHA::7}." \
+            --notes "Files built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

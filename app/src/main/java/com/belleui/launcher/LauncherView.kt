@@ -20,6 +20,8 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.provider.Settings
+import android.media.AudioManager
+import android.net.wifi.WifiManager
 import android.text.TextPaint
 import android.text.TextUtils
 import android.text.format.DateFormat
@@ -34,6 +36,7 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -390,7 +393,7 @@ class LauncherView(private val act: Activity) : View(act) {
             Act.PREV -> setPage(page - 1)
             Act.NEXT -> setPage(page + 1)
             Act.MENU -> setPage(if (page >= 1) 0 else 1)
-            Act.SETTINGS -> openSettings(0)
+            Act.SETTINGS -> openQuick(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
             else -> navigate(a)
@@ -567,7 +570,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun openOptions() {
         val app = selectedApp()
         if (app == null) {
-            openSettings(0)
+            openQuick(0)
             return
         }
         val items = ArrayList<PopupItem>()
@@ -597,6 +600,60 @@ class LauncherView(private val act: Activity) : View(act) {
         popup = Popup(app.label, items, 0, menu = true)
     }
 
+    private fun audio() = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private fun volumePct(): Int {
+        val a = audio()
+        return a.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max(1, a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    private fun brightnessPct(): Int = try {
+        Settings.System.getInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS) * 100 / 255
+    } catch (_: Exception) {
+        -1
+    }
+
+    private fun wifiOn(): Boolean = try {
+        (act.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).isWifiEnabled
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Y: the Quick settings panel. */
+    private fun openQuick(sel: Int) {
+        val items = listOf(
+            PopupItem("Wi-Fi: " + if (wifiOn()) "on" else "off") {
+                tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
+            },
+            PopupItem("Volume: ${volumePct()}%") {
+                val next = if (volumePct() >= 100) 0 else (volumePct() / 20 + 1) * 20
+                val a = audio()
+                try {
+                    a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * next / 100.0).roundToInt(), 0)
+                } catch (_: SecurityException) {
+                }
+                openQuick(1)
+            },
+            PopupItem("Brightness: " + (brightnessPct().takeIf { it >= 0 }?.let { "$it%" } ?: "-")) {
+                if (Settings.System.canWrite(act)) {
+                    val b = brightnessPct()
+                    val next = if (b < 25) 25 else if (b < 50) 50 else if (b < 75) 75 else if (b < 100) 100 else 25
+                    Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                    Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 255 * next / 100)
+                    openQuick(2)
+                } else {
+                    tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
+                }
+            },
+            PopupItem("System settings") {
+                val own = act.packageManager.getLaunchIntentForPackage("com.belleui.settings")
+                tryStart(own ?: Intent(Settings.ACTION_SETTINGS))
+            },
+            PopupItem("Launcher settings") { openSettings(0) },
+        )
+        popup = Popup("Quick settings", items, sel)
+    }
+
     private fun openSettings(sel: Int) {
         val items = listOf(
             PopupItem("Theme: ${theme.name}") {
@@ -616,7 +673,11 @@ class LauncherView(private val act: Activity) : View(act) {
                 openSettings(2)
             },
             PopupItem("Hidden apps (${repo.apps.count { repo.isHidden(it.key) }})") { openHiddenApps() },
-            PopupItem("Android settings") { tryStart(Intent(Settings.ACTION_SETTINGS)) },
+            PopupItem("Apps shown: " + arrayOf("all", "games", "media", "other")[repo.catFilter]) {
+                repo.catFilter = (repo.catFilter + 1) % 4
+                refreshLists()
+                openSettings(4)
+            },
         )
         popup = Popup("Settings", items, sel)
     }

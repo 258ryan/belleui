@@ -1,11 +1,24 @@
-name: Build System settings app
-# This branch has its own workflow: it builds only the Settings module and publishes only its own release.
+name: Build System settings
+# Runs only when this app (or the shared kit / build files) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'settings/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/settings.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-settings
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,18 +31,18 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew --no-daemon :settings:assembleDebug
-      - run: cp settings/build/outputs/apk/debug/settings-debug.apk BelleUI-Settings.apk
+      - run: cp settings/build/outputs/apk/debug/settings-debug.apk BelleUI-Systemsettings.apk
       - uses: actions/upload-artifact@v4
         with:
           name: belleui-settings-${{ github.run_number }}
-          path: BelleUI-Settings.apk
+          path: BelleUI-Systemsettings.apk
           if-no-files-found: error
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete settings-latest --yes --cleanup-tag || true
-          gh release create settings-latest BelleUI-Settings.apk \
+          gh release create settings-latest BelleUI-Systemsettings.apk \
             --title "BelleUI System settings (latest build)" \
-            --notes "System settings built from branch belle/settings at ${GITHUB_SHA::7}." \
+            --notes "System settings built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

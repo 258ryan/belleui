@@ -129,3 +129,7 @@ Own workflow `files.yml` builds only this app and publishes `files-latest`.
 A settings app that covers the everyday things so you rarely need Android's own: **Storage** (drive usage bars, media breakdown), **Apps** (installed / system tabs, detail page with open, app info and uninstall), **Connectivity** (live Wi-Fi, Bluetooth, airplane, mobile, NFC and IP state, opening the system quick panels to toggle), **Battery** (level, status, time to full, current, health, temperature, voltage, battery saver), **Display** (brightness, auto-brightness, screen timeout, auto-rotate, wallpaper) and **Sound** (media, ringtone, alarm and notification volumes, ringer mode), **About** (device, Android, kernel, processor, memory, screen, uptime), plus a link to Android settings for the rest.
 Left / right adjust a bar; A opens. Brightness and timeout need the one-time "modify system settings" permission, which the app asks for.
 Own workflow `settings.yml` builds only this app and publishes `settings-latest`.
+
+## CI
+
+On `belle/all` every app has its own workflow (`launcher.yml`, `music.yml`, `clock.yml`, `gallery.yml`, `browser.yml`, `games.yml`, `files.yml`, `settings.yml`) that runs only when that app's folder, the shared kit (`belle/`) or the build files change, and publishes its own `<app>-latest` release. Changing the launcher rebuilds only the launcher. `all.yml` is manual: run it from the Actions tab to build everything into one zip (`apks-latest`).
