@@ -13,7 +13,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.util.TypedValue
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -33,6 +35,7 @@ import com.belleui.kit.BelleActivity
 import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 import java.net.URLEncoder
+import kotlin.math.abs
 
 /** A Belle-styled browser on top of Android WebView (the Chromium engine). */
 class BrowserActivity : BelleActivity() {
@@ -117,6 +120,7 @@ class BrowserActivity : BelleActivity() {
         w.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 loading = true
+                view.evaluateJavascript("window.__belleNavReset && window.__belleNavReset()", null)
                 pageUrl = url
                 homeUi.invalidate()
             }
@@ -124,6 +128,7 @@ class BrowserActivity : BelleActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 loading = false
                 pageUrl = url
+                view.evaluateJavascript(NAV_JS, null)
                 homeUi.invalidate()
             }
 
@@ -290,6 +295,24 @@ class BrowserActivity : BelleActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /** Right stick scrolls the page; the left stick still becomes D-pad keys through the framework. */
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        if (ev.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && ev.action == MotionEvent.ACTION_MOVE && !addressOpen && !fullscreenVideo) {
+            val rx = ev.getAxisValue(MotionEvent.AXIS_Z)
+            val ry = ev.getAxisValue(MotionEvent.AXIS_RZ)
+            val sc = homeUi.ui.sc
+            val dx = if (abs(rx) > 0.2f) (rx * 22f * sc).toInt() else 0
+            val dy = if (abs(ry) > 0.2f) (ry * 30f * sc).toInt() else 0
+            if (dx != 0 || dy != 0) web.scrollBy(dx, dy)
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
+    fun showWebKeyboard() {
+        web.requestFocus()
+        getSystemService(InputMethodManager::class.java).showSoftInput(web, InputMethodManager.SHOW_IMPLICIT)
+    }
+
     override fun onPause() {
         super.onPause()
         web.onPause()
@@ -309,3 +332,94 @@ class BrowserActivity : BelleActivity() {
         super.onCreate(savedInstanceState)
     }
 }
+
+/**
+ * Spatial D-pad navigation injected into every page: moves a focus ring between links, buttons and
+ * fields in the pressed direction, scrolls them into view, and clicks the focused one.
+ * __belleNav(dir) returns true when focus moved, false when nothing lies that way (the app then
+ * scrolls the page); __belleNav('click') returns 'input' for text fields so the keyboard can open.
+ */
+private const val NAV_JS = """
+(function () {
+  if (window.__belleNav) return;
+  var cur = null, ring = null;
+  var SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[onclick],[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=option],[tabindex]:not([tabindex="-1"]),label[for]';
+  function ensureRing() {
+    if (!ring) {
+      ring = document.createElement('div');
+      ring.style.cssText = 'position:absolute;z-index:2147483647;pointer-events:none;border:3px solid #5CB4F8;border-radius:5px;box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 12px #1080DD;box-sizing:border-box;display:none';
+      (document.documentElement || document.body).appendChild(ring);
+    }
+    return ring;
+  }
+  function usable(e) {
+    var r = e.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return null;
+    var s = getComputedStyle(e);
+    if (s.visibility === 'hidden' || s.display === 'none' || s.pointerEvents === 'none' || parseFloat(s.opacity) === 0) return null;
+    return r;
+  }
+  function list() {
+    var out = [], els = document.querySelectorAll(SEL);
+    for (var i = 0; i < els.length && out.length < 1500; i++) { var r = usable(els[i]); if (r) out.push({ e: els[i], r: r }); }
+    return out;
+  }
+  function reveal(r) {
+    var m = 70, dy = 0, dx = 0;
+    if (r.top < m) dy = r.top - m; else if (r.bottom > innerHeight - m) dy = r.bottom - (innerHeight - m);
+    if (r.left < m) dx = r.left - m; else if (r.right > innerWidth - m) dx = r.right - (innerWidth - m);
+    if (dx || dy) window.scrollBy(dx, dy);
+  }
+  function mark(e) {
+    cur = e;
+    var r = e.getBoundingClientRect(), g = ensureRing();
+    g.style.display = 'block';
+    g.style.left = (r.left + window.pageXOffset - 3) + 'px';
+    g.style.top = (r.top + window.pageYOffset - 3) + 'px';
+    g.style.width = (r.width + 6) + 'px';
+    g.style.height = (r.height + 6) + 'px';
+    reveal(r);
+  }
+  function nearestToCenter(cs) {
+    var cx = innerWidth / 2, cy = innerHeight / 2, best = null, bd = 1e18;
+    cs.forEach(function (c) {
+      if (c.r.bottom < 0 || c.r.top > innerHeight || c.r.right < 0 || c.r.left > innerWidth) return;
+      var x = c.r.left + c.r.width / 2, y = c.r.top + c.r.height / 2, d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+      if (d < bd) { bd = d; best = c; }
+    });
+    return best;
+  }
+  function overlap(a0, a1, b0, b1) { return Math.min(a1, b1) - Math.max(a0, b0); }
+  window.__belleNavReset = function () { cur = null; if (ring) ring.style.display = 'none'; };
+  window.__belleNav = function (dir) {
+    if (dir === 'click') {
+      if (!cur || !document.contains(cur)) return false;
+      var tag = cur.tagName, t = (cur.type || '').toLowerCase();
+      if ((tag === 'INPUT' || tag === 'TEXTAREA' || cur.isContentEditable) &&
+          ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'color'].indexOf(t) < 0) { cur.focus(); return 'input'; }
+      try { cur.focus && cur.focus(); } catch (x) {}
+      cur.click();
+      return 'clicked';
+    }
+    if (cur && !document.contains(cur)) cur = null;
+    var cs = list();
+    if (!cs.length) return false;
+    if (!cur) { var f = nearestToCenter(cs); if (!f) return false; mark(f.e); return true; }
+    var fr = cur.getBoundingClientRect(), fx = fr.left + fr.width / 2, fy = fr.top + fr.height / 2, best = null, bs = 1e18;
+    for (var i = 0; i < cs.length; i++) {
+      var c = cs[i];
+      if (c.e === cur || cur.contains(c.e) || c.e.contains(cur)) continue;
+      var r = c.r, dx = r.left + r.width / 2 - fx, dy = r.top + r.height / 2 - fy, prim, sec;
+      if (dir === 'down') { if (dy <= 4) continue; prim = dy; sec = Math.abs(dx); if (overlap(r.left, r.right, fr.left, fr.right) > 0) sec *= 0.3; }
+      else if (dir === 'up') { if (dy >= -4) continue; prim = -dy; sec = Math.abs(dx); if (overlap(r.left, r.right, fr.left, fr.right) > 0) sec *= 0.3; }
+      else if (dir === 'right') { if (dx <= 4) continue; prim = dx; sec = Math.abs(dy) * 2; if (overlap(r.top, r.bottom, fr.top, fr.bottom) > 0) sec *= 0.3; }
+      else { if (dx >= -4) continue; prim = -dx; sec = Math.abs(dy) * 2; if (overlap(r.top, r.bottom, fr.top, fr.bottom) > 0) sec *= 0.3; }
+      var score = prim + sec * 2;
+      if (score < bs) { bs = score; best = c; }
+    }
+    if (!best) return false;
+    mark(best.e);
+    return true;
+  };
+})();
+"""
