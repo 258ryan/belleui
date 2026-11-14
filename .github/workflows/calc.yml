@@ -1,11 +1,24 @@
-name: Build Calculator app
-# This branch has its own workflow: it builds only the Calculator module and publishes only its own release.
+name: Build Calculator
+# Runs only when this app (or the shared kit / build calc) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'calc/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/calc.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-calc
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete calc-latest --yes --cleanup-tag || true
           gh release create calc-latest BelleUI-Calculator.apk \
             --title "BelleUI Calculator (latest build)" \
-            --notes "Calculator built from branch belle/calc at ${GITHUB_SHA::7}." \
+            --notes "Calculator built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

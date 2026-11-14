@@ -20,7 +20,7 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p dist
-          for pair in app:Launcher music:Music clock:Clock gallery:Gallery browser:Browser games:Games files:Files settings:Settings styles:Styles keyboard:Keyboard; do
+          for pair in app:Launcher music:Music clock:Clock gallery:Gallery browser:Browser games:Games files:Files settings:Settings styles:Styles keyboard:Keyboard video:Video notes:Notes calc:Calculator recorder:Recorder; do
             mod="${pair%%:*}"; name="${pair##*:}"
             f="$mod/build/outputs/apk/debug/$mod-debug.apk"
             if [ -f "$f" ]; then cp "$f" "dist/BelleUI-$name.apk"; fi

@@ -1,11 +1,24 @@
-name: Build Recorder app
-# This branch has its own workflow: it builds only the Recorder module and publishes only its own release.
+name: Build Recorder
+# Runs only when this app (or the shared kit / build recorder) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'recorder/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/recorder.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-recorder
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete recorder-latest --yes --cleanup-tag || true
           gh release create recorder-latest BelleUI-Recorder.apk \
             --title "BelleUI Recorder (latest build)" \
-            --notes "Recorder built from branch belle/recorder at ${GITHUB_SHA::7}." \
+            --notes "Recorder built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

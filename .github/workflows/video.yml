@@ -1,11 +1,24 @@
-name: Build Video app
-# This branch has its own workflow: it builds only the Video module and publishes only its own release.
+name: Build Video
+# Runs only when this app (or the shared kit / build video) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'video/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/video.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-video
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete video-latest --yes --cleanup-tag || true
           gh release create video-latest BelleUI-Video.apk \
             --title "BelleUI Video (latest build)" \
-            --notes "Video player built from branch belle/video at ${GITHUB_SHA::7}." \
+            --notes "Video built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

@@ -151,3 +151,15 @@ List-first like a Belle app: **Home** (a "Continue playing" banner, favourites a
 
 ### Music folders
 Music Settings > Music folders limits the library to the folders you pick (such as the Music folder on an SD card). Choosing a folder also asks Android to index its files.
+
+### Games for big libraries
+With thousands of games across many systems, start from **Library**: All games, Favourites, Played, then one row per system. Inside any list you can **search as you type** (Y, or the search button), show only favourites / played / never played, pick a **genre**, change the **order** (A to Z, recently added, most played, last played) and jump by letter with L1 / R1. The Store tab stays the front page; its search button searches everything.
+
+### Video, Notes, Calculator, Voice recorder
+**Video** lists your videos with thumbnails (All, Folders, Continue) and plays them full screen; it remembers where you stopped (D-pad left/right seek, up/down volume, L1/R1 previous/next, X picture fit, Y speed). **Notes** keeps plain-text notes, one file each. **Calculator** has a gamepad keypad, brackets, percent and history. **Voice recorder** records from a wired, USB or Bluetooth headset (the device has no microphone of its own), with a level meter, and keeps recordings in Recordings.
+
+### Theme colour and sounds
+Styles > Theme colour recolours the launcher and every Belle app (selection, progress bars, buttons, switches). Styles > Navigation sounds turns the soft Symbian-style clicks on or off for all apps. Other apps pick the change up when you open them.
+
+### Home widgets
+Home can show one large Belle widget instead of two small ones: **Flip clock**, **Today** (calendar), **Music player** (controls whichever app is playing; needs notification access), **Notifications** and **Quick switches**. Choose it with X > Edit widgets. Press Up from the shortcut row to focus a widget; left/right pick a button.

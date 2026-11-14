@@ -1,11 +1,24 @@
-name: Build Notes app
-# This branch has its own workflow: it builds only the Notes module and publishes only its own release.
+name: Build Notes
+# Runs only when this app (or the shared kit / build notes) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'notes/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/notes.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-notes
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete notes-latest --yes --cleanup-tag || true
           gh release create notes-latest BelleUI-Notes.apk \
             --title "BelleUI Notes (latest build)" \
-            --notes "Notes built from branch belle/notes at ${GITHUB_SHA::7}." \
+            --notes "Notes built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"
