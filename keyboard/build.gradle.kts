@@ -4,6 +4,15 @@ plugins {
 }
 
 android {
+    // one shared debug key for every Belle app, so a newer build always installs over an older one
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/belleui-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     namespace = "com.belleui.keyboard"
     compileSdk = 34
 
