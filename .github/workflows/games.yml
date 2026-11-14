@@ -1,0 +1,35 @@
+name: Build Games app
+# This branch has its own workflow: it builds only the Games module and publishes only its own release.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :games:assembleDebug
+      - run: cp games/build/outputs/apk/debug/games-debug.apk BelleUI-Games.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-games-${{ github.run_number }}
+          path: BelleUI-Games.apk
+          if-no-files-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete games-latest --yes --cleanup-tag || true
+          gh release create games-latest BelleUI-Games.apk \
+            --title "BelleUI Games (latest build)" \
+            --notes "Games hub built from branch belle/games at ${GITHUB_SHA::7}." \
+            --prerelease --target "$GITHUB_SHA"

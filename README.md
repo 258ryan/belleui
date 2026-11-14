@@ -87,3 +87,11 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### Games (`belle/games`)
+
+An Ovi Store-style games hub: a Featured tab with a hero banner and shelves (recently played, favourites, recently added), a Games grid with box art, Systems, and an Emulators tab.
+- **RetroArch:** games start through RetroArch's documented Android launch intent (ROM, libretro core, config and data folders), with a per-system core choice. While a game runs, the Emulators tab talks to RetroArch over its UDP network-command port: save state, load state, pause, reset, quit and status. Switch on Settings > Network > Network Commands in RetroArch.
+- **PPSSPP:** PSP games open straight in the standalone PPSSPP app (or in RetroArch's ppsspp core, your choice).
+- Games are found in the folders you choose (Settings > ROM folders; Android 11+ needs "All files access"). Box art comes from the libretro thumbnail server and is cached; play counts and play time are tracked.
+- This branch has its own workflow (`games.yml`) that builds only the Games app, and its own release (`games-latest`).
