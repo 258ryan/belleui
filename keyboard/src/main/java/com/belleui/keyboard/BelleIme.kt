@@ -18,16 +18,21 @@ class BelleIme : InputMethodService() {
     private lateinit var kv: KeyboardView
     private val prefs by lazy { getSharedPreferences("keyboard", Context.MODE_PRIVATE) }
     private val handled = HashSet<Int>()
+    private val predictor by lazy { Predictor(this) }
+    private var predicting = false
     private var lastShiftTap = 0L
 
     private val qwerty get() = prefs.getInt("layout", 0) == 1
     private val autoCap get() = prefs.getBoolean("autocap", true)
     private val clicks get() = prefs.getBoolean("click", true)
+    private val predict get() = prefs.getBoolean("predict", true)
     private val buzz get() = prefs.getBoolean("buzz", false)
 
     override fun onCreateInputView(): View {
         kv = KeyboardView(this)
         kv.listener = { press(it) }
+        kv.onSuggestion = { accept(it) }
+        Thread { predictor.load(); kv.post { updateSuggestions() } }.start()
         return kv
     }
 
@@ -44,6 +49,64 @@ class BelleIme : InputMethodService() {
         kv.shift = 0
         kv.setLayout(page, qwerty)
         if (page == 0) autoCapitalise()
+        val v = info.inputType and InputType.TYPE_MASK_VARIATION
+        predicting = predict && cls == InputType.TYPE_CLASS_TEXT && v != InputType.TYPE_TEXT_VARIATION_PASSWORD &&
+            v != InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD && v != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD &&
+            v != InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS && v != InputType.TYPE_TEXT_VARIATION_URI &&
+            info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS == 0
+        if (predictor.ready) predictor.reloadLearned()
+        updateSuggestions()
+    }
+
+    override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (::kv.isInitialized) updateSuggestions()
+    }
+
+    /** The letters just before the cursor that make up the word being typed. */
+    private fun currentWord(): String {
+        val before = currentInputConnection?.getTextBeforeCursor(32, 0)?.toString() ?: return ""
+        return Regex("[A-Za-z']+$").find(before)?.value ?: ""
+    }
+
+    private fun updateSuggestions() {
+        if (!::kv.isInitialized) return
+        if (!predicting || kv.page != 0) {
+            kv.setSuggestions(emptyList())
+            return
+        }
+        val w = currentWord()
+        val list = predictor.suggest(w).map { s ->
+            when {
+                w.length > 1 && w.all { it.isUpperCase() || it == '\'' } -> s.uppercase()
+                w.first().isUpperCase() -> s.replaceFirstChar { it.uppercaseChar() }
+                else -> s
+            }
+        }
+        kv.setSuggestions(list)
+    }
+
+    /** Replaces the word being typed with [word] and adds a space. */
+    private fun accept(word: String) {
+        val ic = currentInputConnection ?: return
+        feedback()
+        val w = currentWord()
+        ic.beginBatchEdit()
+        if (w.isNotEmpty()) ic.deleteSurroundingText(w.length, 0)
+        ic.commitText("$word ", 1)
+        ic.endBatchEdit()
+        predictor.learn(word)
+        kv.selRow = 0
+        kv.selCol = 0
+        autoCapitalise()
+        updateSuggestions()
+    }
+
+    /** What was typed counts as a known word once it is finished with a space or punctuation. */
+    private fun learnCurrent() {
+        if (!predicting) return
+        val w = currentWord()
+        if (w.length >= 2) predictor.learn(w)
     }
 
     /** One-shot shift at the start of a sentence, when the field asks for it. */
@@ -66,12 +129,14 @@ class BelleIme : InputMethodService() {
         feedback()
         when (k.kind) {
             K_CHAR -> {
+                if (!k.text[0].isLetter() && k.text != "'") learnCurrent()
                 val t = if (kv.page == 0 && kv.shift > 0) k.text.uppercase() else k.text
                 ic.commitText(t, 1)
                 if (kv.shift == 1) kv.shift = 0
                 autoCapitalise()
             }
             K_SPACE -> {
+                learnCurrent()
                 ic.commitText(" ", 1)
                 autoCapitalise()
             }
@@ -85,6 +150,7 @@ class BelleIme : InputMethodService() {
             K_PAGE -> kv.setLayout(k.text.toInt(), qwerty)
         }
         kv.invalidate()
+        updateSuggestions()
     }
 
     private fun cycleShift() {
@@ -98,6 +164,7 @@ class BelleIme : InputMethodService() {
     }
 
     private fun enter() {
+        learnCurrent()
         val info = currentInputEditorInfo
         val action = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
         val multiline = (info?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
@@ -115,7 +182,8 @@ class BelleIme : InputMethodService() {
 
     private fun pressSelected() {
         kv.flash()
-        press(kv.selected())
+        val sug = kv.selectedSuggestion()
+        if (sug != null) accept(sug) else press(kv.selected())
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -132,7 +200,7 @@ class BelleIme : InputMethodService() {
             KeyEvent.KEYCODE_BUTTON_Y -> { if (first) press(Key("", K_SHIFT)); true }
             KeyEvent.KEYCODE_BUTTON_L1 -> { cursor(-1); true }
             KeyEvent.KEYCODE_BUTTON_R1 -> { cursor(1); true }
-            KeyEvent.KEYCODE_BUTTON_R2 -> { if (first) enter(); true }
+            KeyEvent.KEYCODE_BUTTON_R2 -> { if (first) { val top = kv.suggestions.firstOrNull(); if (top != null) accept(top) else enter() }; true }
             KeyEvent.KEYCODE_BUTTON_L2 -> { if (first) kv.setLayout(if (kv.page == 0) 1 else 0, qwerty); true }
             KeyEvent.KEYCODE_BUTTON_START -> { if (first) enter(); true }
             KeyEvent.KEYCODE_BUTTON_SELECT -> { if (first) requestHideSelf(0); true }
