@@ -965,12 +965,15 @@ abstract class BelleActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         ThemeStore.load(this)
-        Sounds.init(this)
+        try { Sounds.init(this) } catch (_: Throwable) { }
         shell = BelleShell(this)
         setContentView(buildContent(shell), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         hideSystemBars()
         shell.push(createRoot(shell))
+        // the last time this app crashed, show what happened
+        CrashLog.pending(this)?.let { shell.push(CrashScreen(it)) }
     }
 
     override fun onResume() {
