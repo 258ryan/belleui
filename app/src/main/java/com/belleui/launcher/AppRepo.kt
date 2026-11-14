@@ -99,6 +99,26 @@ class AppRepo(private val ctx: Context) {
         return null
     }
 
+    /** Belle IconFrame shape: superellipse with exponent 2.8. */
+    private fun squircle(r: RectF, n: Double = 2.8): Path {
+        val path = Path()
+        val cx = r.centerX()
+        val cy = r.centerY()
+        val a = r.width() / 2.0
+        val b = r.height() / 2.0
+        val steps = 96
+        for (i in 0..steps) {
+            val t = 2.0 * Math.PI * i / steps
+            val ct = Math.cos(t)
+            val st = Math.sin(t)
+            val x = (cx + a * Math.signum(ct) * Math.pow(Math.abs(ct), 2.0 / n)).toFloat()
+            val y = (cy + b * Math.signum(st) * Math.pow(Math.abs(st), 2.0 / n)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        return path
+    }
+
     /**
      * Soft glossy squircle tile on a 128px canvas (shape 96px): drop shadow, then either the
      * pack art as-is or the app's own icon clipped to the same squircle with gloss and rim light.
@@ -109,12 +129,12 @@ class AppRepo(private val ctx: Context) {
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         val tile = RectF(16f, 10f, 112f, 106f)
-        val r = 26f
+        val shape = squircle(tile)
         p.color = 0xAA000000.toInt()
         p.maskFilter = BlurMaskFilter(4.5f, BlurMaskFilter.Blur.NORMAL)
         c.save()
         c.translate(0f, 5f)
-        c.drawRoundRect(tile, r, r, p)
+        c.drawPath(shape, p)
         c.restore()
         p.maskFilter = null
         if (full) {
@@ -122,7 +142,7 @@ class AppRepo(private val ctx: Context) {
             return out
         }
         c.save()
-        c.clipPath(Path().apply { addRoundRect(tile, r, r, Path.Direction.CW) })
+        c.clipPath(shape)
         p.color = 0xFF222831.toInt()
         c.drawRect(tile, p)
         c.drawBitmap(glyph, null, tile, fp)
@@ -136,7 +156,7 @@ class AppRepo(private val ctx: Context) {
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1.5f
         p.color = 0x66FFFFFF
-        c.drawRoundRect(RectF(tile.left + 0.75f, tile.top + 0.75f, tile.right - 0.75f, tile.bottom - 0.75f), r, r, p)
+        c.drawPath(squircle(RectF(tile.left + 0.75f, tile.top + 0.75f, tile.right - 0.75f, tile.bottom - 0.75f)), p)
         return out
     }
 

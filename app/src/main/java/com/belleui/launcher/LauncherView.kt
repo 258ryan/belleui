@@ -98,6 +98,9 @@ class LauncherView(private val act: Activity) : View(act) {
     private var popup: Popup? = null
     private var toast = ""
     private var toastUntil = 0L
+    private var toastStart = 0L
+    private var popupT = 0f
+    private var popupShown: Popup? = null
     private val homeFocus = AnimRect()
     private val menuFocus = AnimRect()
     private val recentFocus = AnimRect()
@@ -115,8 +118,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 24f
-    private var softH = 46f
+    private var statusH = 26f
+    private var softH = 50f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -333,14 +336,14 @@ class LauncherView(private val act: Activity) : View(act) {
         if (a == Act.OK || a == Act.OPTIONS) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         val pu = popup
         if (pu != null) {
-            val n = pu.items.size
+            val n = pu.items.size + (if (pu.menu) 1 else 0)
             when (a) {
                 Act.UP -> pu.sel = (pu.sel - 1 + n) % n
                 Act.DOWN -> pu.sel = (pu.sel + 1) % n
                 Act.OK -> {
-                    val item = pu.items[pu.sel]
+                    val item = pu.items.getOrNull(pu.sel)
                     popup = null
-                    item.action()
+                    item?.action?.invoke()
                 }
                 Act.BACK, Act.OPTIONS, Act.SETTINGS -> popup = null
                 else -> {}
@@ -448,9 +451,9 @@ class LauncherView(private val act: Activity) : View(act) {
             if (!tmp.contains(x, y)) {
                 popup = null
             } else {
-                val row = ((y - tmp.top - popupTitleH(pu) - (if (pu.menu) 3f * sc else 0f)) / (POPUP_ROW * sc)).toInt()
-                if (row in pu.items.indices) {
-                    pu.sel = row
+                val row = ((y - tmp.top - popupTitleH(pu) - (if (pu.menu) 4f * sc else 0f)) / popupItemH(pu)).toInt()
+                if (row in pu.items.indices || (pu.menu && row >= pu.items.size)) {
+                    pu.sel = min(row, pu.items.size)
                     perform(Act.OK)
                 }
             }
@@ -596,7 +599,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun showToast(s: String) {
         toast = s
-        toastUntil = System.currentTimeMillis() + 2200
+        toastStart = System.currentTimeMillis()
+        toastUntil = toastStart + 2800
     }
 
     // =====================================================================================
@@ -606,8 +610,8 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = 24f * sc
-        softH = 46f * sc
+        statusH = 26f * sc
+        softH = 50f * sc
         cTop = statusH
         cBot = h - softH
         buildBackground()
@@ -631,7 +635,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun menuAreaTop() = cTop + TAB * sc
 
-    private fun menuAreaBottom() = cBot - 4f * sc
+    private fun menuAreaBottom() = cBot
 
     private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
 
@@ -652,15 +656,22 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun recentVisible(): Int = max(1, ((cBot - cTop - HEADER * sc) / (ROW * sc)).toInt())
 
-    private fun popupTitleH(pu: Popup) = if (pu.menu) 0f else POPUP_TITLE * sc
+    private fun popupTitleH(pu: Popup) = if (pu.menu) 0f else 50f * sc
+
+    private fun popupItemH(pu: Popup): Float {
+        val full = POPUP_ROW * sc
+        if (!pu.menu) return full
+        return min(full, (height - statusH - 90f * sc) / pu.items.size)
+    }
 
     private fun popupRect(pu: Popup, out: RectF): RectF {
-        val bh = popupTitleH(pu) + POPUP_ROW * sc * pu.items.size + (if (pu.menu) 6f * sc else 0f)
+        val ih = popupItemH(pu)
         if (pu.menu) {
-            val bw = 270f * sc
-            out.set(width - 8f * sc - bw, cBot - 6f * sc - bh, width - 8f * sc, cBot - 6f * sc)
+            val bh = ih * pu.items.size + 4f * sc + 6f * sc + 50f * sc + 8f * sc
+            out.set(0f, height - bh, width.toFloat(), height.toFloat())
         } else {
-            val bw = 420f * sc
+            val bw = min(504f * sc, width - 16f * sc) // sizeDialogMax
+            val bh = popupTitleH(pu) + ih * pu.items.size + 6f * sc
             val x = (width - bw) / 2f
             val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
             out.set(x, y, x + bw, y + bh)
@@ -724,21 +735,15 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    /** Belle selection: a translucent, softly glowing glass pad. */
+    /** Belle highlight frame (qtg_fr_list_highlighted): blue with a lighter top, no glow. */
     private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
-        softShadow(c, r, radius, theme.accentLight, dy = 0f, alpha = 13, steps = 5)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(r.left, r.top, r.left, r.bottom, al(theme.accentLight, 135), al(theme.accent, 160), Shader.TileMode.CLAMP)
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, al(mix(theme.accentLight, Color.WHITE, 0.2f), 235), al(theme.accent, 235), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, p)
         p.shader = null
-        c.save()
-        c.clipRect(r.left, r.top, r.right, r.top + r.height() * 0.5f)
-        p.color = al(Color.WHITE, 38)
-        c.drawRoundRect(r, radius, radius, p)
-        c.restore()
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = al(Color.WHITE, 140)
+        p.color = al(Color.WHITE, 90)
         c.drawRoundRect(r, radius, radius, p)
         p.style = Paint.Style.FILL
     }
@@ -797,7 +802,12 @@ class LauncherView(private val act: Activity) : View(act) {
 
         drawStatusBar(c, w)
         drawToolbar(c, w, h)
-        popup?.let { drawPopup(c, it, w) }
+        if (popup != null) popupShown = popup
+        val popupTarget = if (popup != null) 1f else 0f
+        popupT += (popupTarget - popupT) * k
+        if (abs(popupTarget - popupT) < 0.01f) popupT = popupTarget else busy = true
+        if (popupT <= 0f && popup == null) popupShown = null
+        popupShown?.let { drawPopup(c, it, w) }
 
         if (System.currentTimeMillis() < toastUntil) {
             drawToast(c, w)
@@ -871,46 +881,47 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    // ---- page 1: applications (parallel view, tab 1) ------------------------------------------
+    // ---- page 1: applications (tab 1) -- black page, 70px icon frames, 18px labels -----------------
 
     private fun drawMenu(c: Canvas) {
         val w = width.toFloat()
         val area = menuAreaTop()
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = Color.BLACK
+        c.drawRect(0f, cTop, w, cBot, p)
         if (menuApps.isEmpty()) {
-            shadowText(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
+            text(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
-            drawFocus(c, menuFocus.cur, 14f * sc)
+            drawFocus(c, menuFocus.cur, 12f * sc)
             val cw = w / 4f
             val ch = menuCellH()
-            val isz = 64f * sc
+            val isz = 70f * sc // graphicSizeLarge
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + (ch - (isz + 24f * sc)) / 2f
+                val iconTop = tmp.top + (ch - (isz + 26f * sc)) / 2f
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                shadowText(c, app.label, tmp.centerX(), iconTop + isz + 19f * sc, 15f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
+                text(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 8f * sc)
             }
             val rows = (menuApps.size + 3) / 4
             if (rows > 3) {
                 val trackT = area + 6f * sc
                 val trackH = menuAreaBottom() - area - 12f * sc
-                rf.set(w - 6f * sc, trackT, w - 3f * sc, trackT + trackH)
-                p.color = al(Color.WHITE, 30)
-                c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
                 val thumbH = trackH * 3f / rows
                 val thumbT = trackT + (trackH - thumbH) * (menuTopAnim / (rows - 3).toFloat()).coerceIn(0f, 1f)
                 rf.set(w - 6f * sc, thumbT, w - 3f * sc, thumbT + thumbH)
-                p.color = al(Color.WHITE, 170)
+                p.color = al(Color.WHITE, 150)
                 c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
         drawTabBar(c, 0)
     }
 
-    /** Belle tab bar: right under the status bar, stretched across the screen, selected tab darker. */
+    /** Belle tab bar: right under the status bar, full width, active tab has the lighter frame. */
     private fun drawTabBar(c: Canvas, selected: Int) {
         val w = width.toFloat()
         val h = TAB * sc
@@ -922,57 +933,62 @@ class LauncherView(private val act: Activity) : View(act) {
             rf.set(i * tw, cTop, (i + 1) * tw, cTop + h)
             p.style = Paint.Style.FILL
             p.shader = if (sel) {
-                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF5E6166.toInt(), 0xFF3A3C40.toInt(), Shader.TileMode.CLAMP)
+                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF4E4E4E.toInt(), 0xFF262626.toInt(), Shader.TileMode.CLAMP)
             } else {
-                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF26272A.toInt(), 0xFF141517.toInt(), Shader.TileMode.CLAMP)
+                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF2A2A2A.toInt(), 0xFF0E0E0E.toInt(), Shader.TileMode.CLAMP)
             }
             c.drawRect(rf, p)
             p.shader = null
-            val col = if (sel) Color.WHITE else 0xFF8D9196.toInt()
-            val label = labels[i]
-            val tsz = 16f * sc
-            val textW = measure(label, tsz, if (sel) medium else sans)
-            val total = 20f * sc + 8f * sc + textW
+            val col = if (sel) Color.WHITE else 0xFF999999.toInt()
+            val tsz = 18f * sc
+            val face = if (sel) sans else light
+            val textW = measure(labels[i], tsz, face)
+            val total = 30f * sc + 8f * sc + textW
             val sx = rf.centerX() - total / 2f
-            glyph(c, kinds[i], sx + 10f * sc, cTop + h / 2f, 17f * sc, col)
-            text(c, label, sx + 28f * sc, cTop + h / 2f + 5.5f * sc, tsz, col, face = if (sel) medium else sans)
+            glyph(c, kinds[i], sx + 15f * sc, cTop + h / 2f, 26f * sc, col)
+            text(c, labels[i], sx + 38f * sc, cTop + h / 2f + 6f * sc, tsz, col, face = face)
         }
-        p.color = al(Color.BLACK, 220)
-        c.drawRect(0f, cTop + h - 1.5f * sc, w, cTop + h, p)
-        p.color = al(Color.WHITE, 40)
+        p.color = al(Color.WHITE, 36)
+        c.drawRect(0f, cTop, w, cTop + 1f, p)
+        p.color = Color.BLACK
+        c.drawRect(0f, cTop + h - 1f, w, cTop + h, p)
+        p.color = al(Color.BLACK, 200)
         c.drawRect(tw - 0.5f, cTop, tw + 0.5f, cTop + h, p)
     }
 
-    // ---- page 2: recent (parallel view, tab 2) -- light list with two-line items ----------------
+    // ---- page 2: recent (tab 2) -- ListItem: 70px, 12px inset, 50px icon, 22px title, 18px subtitle -
 
     private fun drawRecent(c: Canvas) {
         val w = width.toFloat()
-        val bodyTop = cTop + TAB * sc
         val listTop = cTop + HEADER * sc
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, bodyTop, 0f, cBot, 0xFFF5F6F7.toInt(), 0xFFE2E4E6.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, bodyTop, w, cBot, p)
         p.shader = null
+        p.color = Color.BLACK
+        c.drawRect(0f, cTop, w, cBot, p)
         if (recents.isEmpty()) {
-            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 20f * sc, 0xFF6A6E73.toInt(), Paint.Align.CENTER)
+            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 22f * sc, 0xFF999999.toInt(), Paint.Align.CENTER)
         } else {
-            // selected row: dark band with an accent edge
+            for (i in recents.indices) {
+                recentRowRect(i, recentTopAnim, tmp)
+                if (tmp.bottom < listTop || tmp.top > cBot) continue
+                p.color = 0xFF444444.toInt() // colorDisabledMid separator
+                c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
+            }
+            // pressed / highlighted frame (qtg_fr_list_pressed): Belle blue with a white fade from the top
             val f = recentFocus.cur
-            p.shader = LinearGradient(0f, f.top, 0f, f.bottom, 0xFF55585D.toInt(), 0xFF2E3033.toInt(), Shader.TileMode.CLAMP)
-            c.drawRect(f, p)
+            p.shader = LinearGradient(0f, f.top, 0f, f.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
+            c.drawRect(f.left, f.top, f.right, f.bottom - 1f, p)
             p.shader = null
-            p.color = theme.accent
-            c.drawRect(f.left, f.top, f.left + 4f * sc, f.bottom, p)
             for (i in recents.indices) {
                 recentRowRect(i, recentTopAnim, tmp)
                 if (tmp.bottom < listTop || tmp.top > cBot) continue
                 val app = recents[i]
                 val sel = i == recentSel
-                drawIcon(c, app.icon, 38f * sc, tmp.centerY(), 40f * sc)
-                text(c, app.label, 70f * sc, tmp.centerY() - 3f * sc, 18f * sc, if (sel) Color.WHITE else 0xFF1B1C1E.toInt(), maxW = w - 110f * sc, face = medium)
-                text(c, app.component.packageName, 70f * sc, tmp.centerY() + 15f * sc, 13f * sc, if (sel) 0xFFC8CCD0.toInt() else 0xFF74787D.toInt(), maxW = w - 110f * sc)
-                p.color = 0xFFC4C7CA.toInt()
-                c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
+                val pad = 12f * sc // paddingLarge
+                drawIcon(c, app.icon, pad + 25f * sc, tmp.centerY(), 50f * sc)
+                val tx = pad + 50f * sc + pad
+                text(c, app.label, tx, tmp.centerY() - 4f * sc, 22f * sc, Color.WHITE, maxW = w - tx - 24f * sc)
+                text(c, app.component.packageName, tx, tmp.centerY() + 20f * sc, 18f * sc, if (sel) Color.WHITE else 0xFF999999.toInt(), maxW = w - tx - 24f * sc, face = light)
             }
             val vis = recentVisible()
             if (recents.size > vis) {
@@ -980,37 +996,46 @@ class LauncherView(private val act: Activity) : View(act) {
                 val thumbH = max(24f * sc, trackH * vis / recents.size)
                 val prog = (recentTopAnim / (recents.size - vis).toFloat()).coerceIn(0f, 1f)
                 val ty = listTop + 4f * sc + (trackH - thumbH) * prog
-                rf.set(w - 6f * sc, ty, w - 2f * sc, ty + thumbH)
-                p.color = al(0xFF4A4D52.toInt(), 200)
-                c.drawRoundRect(rf, 2f * sc, 2f * sc, p)
+                rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
+                p.color = al(Color.WHITE, 150)
+                c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
-        // list header band, drawn last so rows slide under it
-        p.shader = LinearGradient(0f, bodyTop, 0f, listTop, 0xFF6C6F73.toInt(), 0xFF4E5054.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, bodyTop, w, listTop, p)
-        p.shader = null
-        text(c, "Recently opened", 12f * sc, bodyTop + (listTop - bodyTop) / 2f + 4.5f * sc, 13f * sc, Color.WHITE, face = medium)
         drawTabBar(c, 1)
+    }
+
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        val r = (Color.red(a) * (1 - t) + Color.red(b) * t).toInt()
+        val g = (Color.green(a) * (1 - t) + Color.green(b) * t).toInt()
+        val bl = (Color.blue(a) * (1 - t) + Color.blue(b) * t).toInt()
+        return Color.rgb(r, g, bl)
     }
 
     // ---- chrome -------------------------------------------------------------------------------------
 
-    /** Slim single-line status bar: wifi, battery, time. */
+    private fun pageTitle() = when (page) {
+        0 -> "Home"
+        1 -> "Applications"
+        else -> "Recent"
+    }
+
+    /** 26px status bar: application title on the left, indicators and clock on the right. */
     private fun drawStatusBar(c: Canvas, w: Float) {
         p.style = Paint.Style.FILL
         p.shader = null
         p.color = Color.BLACK
         c.drawRect(0f, 0f, w, statusH, p)
 
-        val base = statusH / 2f + 5f * sc
+        val base = statusH / 2f + 6.5f * sc
+        text(c, pageTitle(), 8f * sc, base, 18f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 15f * sc
-        val tw = measure(time, csz, medium)
-        text(c, time, w - 8f * sc, base, csz, Color.WHITE, Paint.Align.RIGHT, face = medium)
+        val csz = 18f * sc
+        val tw = measure(time, csz)
+        text(c, time, w - 8f * sc, base, csz, Color.WHITE, Paint.Align.RIGHT)
 
         val bRight = w - 8f * sc - tw - 10f * sc
         val bw = 22f * sc
-        val bh = 11f * sc
+        val bh = 12f * sc
         val bTop = statusH / 2f - bh / 2f
         rf.set(bRight - bw, bTop, bRight, bTop + bh)
         p.style = Paint.Style.STROKE
@@ -1018,18 +1043,16 @@ class LauncherView(private val act: Activity) : View(act) {
         p.color = Color.WHITE
         c.drawRect(rf, p)
         p.style = Paint.Style.FILL
-        c.drawRect(bRight, bTop + 3f * sc, bRight + 2f * sc, bTop + bh - 3f * sc, p)
+        c.drawRect(bRight, bTop + 3.5f * sc, bRight + 2f * sc, bTop + bh - 3.5f * sc, p)
         p.color = when {
             charging -> 0xFF63D663.toInt()
             batteryPct <= 15 -> 0xFFE5484D.toInt()
-            else -> Color.WHITE
+            else -> 0xFF63D663.toInt() // Belle's green battery meter
         }
         val fillW = (bw - 4f * sc) * batteryPct / 100f
         c.drawRect(bRight - bw + 2f * sc, bTop + 2f * sc, bRight - bw + 2f * sc + fillW, bTop + bh - 2f * sc, p)
-        var x = bRight - bw - 6f * sc
-        text(c, "$batteryPct%", x, base, 12f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT)
-        x -= measure("$batteryPct%", 12f * sc) + 10f * sc
-        if (wifi) drawWifi(c, x - 8f * sc, statusH * 0.74f, 10f * sc)
+        var x = bRight - bw - 8f * sc
+        if (wifi) drawWifi(c, x - 8f * sc, statusH * 0.76f, 10f * sc)
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float) {
@@ -1046,49 +1069,45 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /**
-     * Belle toolbar: back arrow (mandatory; on Home the apps button instead), two customisable
-     * action buttons (select, settings) and the three-line menu button on the right.
+     * 50px (landscape) toolbar, 30px white glyphs spread evenly: first button at the left edge, last at
+     * the right edge. Back is always first (apps button on Home); the options menu is always last.
      */
     private fun drawToolbar(c: Canvas, w: Float, h: Float) {
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, cBot, 0f, h, 0xFF303236.toInt(), 0xFF050506.toInt(), Shader.TileMode.CLAMP)
+        p.shader = LinearGradient(0f, cBot, 0f, h, 0xFF343434.toInt(), 0xFF040404.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(0f, cBot, w, h, p)
         p.shader = null
-        c.save()
-        c.clipRect(0f, cBot, w, cBot + softH * 0.5f)
-        p.color = al(Color.WHITE, 14)
-        c.drawRect(0f, cBot, w, h, p)
-        c.restore()
-        p.color = al(Color.WHITE, 70)
+        p.color = al(Color.WHITE, 55)
         c.drawRect(0f, cBot, w, cBot + 1f, p)
 
         val cy = cBot + softH / 2f
-        val s = 24f * sc
+        val s = 30f * sc
         val inModal = popup != null || reorder
         val leftKind = if (page == 0 && !inModal) ICON_GRID else ICON_BACK
-        val x1 = w * 0.10f
-        val x2 = w * 0.37f
-        val x3 = w * 0.63f
-        val x4 = w * 0.90f
+        val m = 32f * sc
+        val step = (w - 2 * m) / 3f
+        val x1 = m
+        val x2 = m + step
+        val x3 = m + 2 * step
+        val x4 = m + 3 * step
         toolIcon(c, leftKind, x1, cy, s)
-        hintLetter(c, backLetter(), x1 + 24f * sc, cy)
+        hintLetter(c, backLetter(), x1 + 26f * sc, cy)
         toolIcon(c, ICON_OK, x2, cy, s)
-        hintLetter(c, okLetter(), x2 + 24f * sc, cy)
+        hintLetter(c, okLetter(), x2 + 26f * sc, cy)
         if (!inModal) {
             toolIcon(c, ICON_GEAR, x3, cy, s)
-            hintLetter(c, settingsLetter(), x3 + 24f * sc, cy)
+            hintLetter(c, settingsLetter(), x3 + 26f * sc, cy)
             toolIcon(c, ICON_MENU, x4, cy, s)
-            hintLetter(c, optLetter(), x4 - 24f * sc, cy)
+            hintLetter(c, optLetter(), x4 - 26f * sc, cy)
         }
     }
 
     private fun hintLetter(c: Canvas, letter: String, x: Float, cy: Float) {
-        text(c, letter, x, cy + 5f * sc, 13f * sc, al(Color.WHITE, 120), Paint.Align.CENTER, face = medium)
+        text(c, letter, x, cy + 5f * sc, 13f * sc, al(Color.WHITE, 110), Paint.Align.CENTER, face = medium)
     }
 
     private fun toolIcon(c: Canvas, kind: Int, cx: Float, cy: Float, s: Float) {
-        glyph(c, kind, cx + 0.5f * sc, cy + 1.5f * sc, s, al(Color.BLACK, 190))
-        glyph(c, kind, cx, cy, s, al(Color.WHITE, 235))
+        glyph(c, kind, cx, cy, s, Color.WHITE)
     }
 
     private fun glyph(c: Canvas, kind: Int, cx: Float, cy: Float, s: Float, color: Int) {
@@ -1098,7 +1117,7 @@ class LauncherView(private val act: Activity) : View(act) {
         when (kind) {
             ICON_BACK -> {
                 p.style = Paint.Style.STROKE
-                p.strokeWidth = 3f * sc
+                p.strokeWidth = 3.4f * sc
                 c.drawLine(cx + s * 0.45f, cy, cx - s * 0.45f, cy, p)
                 c.drawLine(cx - s * 0.45f, cy, cx - s * 0.05f, cy - s * 0.4f, p)
                 c.drawLine(cx - s * 0.45f, cy, cx - s * 0.05f, cy + s * 0.4f, p)
@@ -1116,14 +1135,14 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             ICON_MENU -> {
                 p.style = Paint.Style.STROKE
-                p.strokeWidth = 3f * sc
-                for (i in -1..1) c.drawLine(cx - s * 0.45f, cy + i * s * 0.34f, cx + s * 0.45f, cy + i * s * 0.34f, p)
+                p.strokeWidth = 3.6f * sc
+                for (i in -1..1) c.drawLine(cx - s * 0.45f, cy + i * s * 0.32f, cx + s * 0.45f, cy + i * s * 0.32f, p)
             }
             ICON_GEAR -> {
                 p.style = Paint.Style.STROKE
-                p.strokeWidth = 2.5f * sc
+                p.strokeWidth = 2.6f * sc
                 c.drawCircle(cx, cy, s * 0.26f, p)
-                p.strokeWidth = 3.2f * sc
+                p.strokeWidth = 3.4f * sc
                 for (i in 0 until 8) {
                     val a = i * (PI / 4).toFloat()
                     c.drawLine(cx + cos(a) * s * 0.36f, cy + sin(a) * s * 0.36f, cx + cos(a) * s * 0.5f, cy + sin(a) * s * 0.5f, p)
@@ -1131,14 +1150,21 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             ICON_CLOCK -> {
                 p.style = Paint.Style.STROKE
-                p.strokeWidth = 2f * sc
+                p.strokeWidth = 2.2f * sc
                 c.drawCircle(cx, cy, s * 0.46f, p)
                 c.drawLine(cx, cy, cx, cy - s * 0.3f, p)
                 c.drawLine(cx, cy, cx + s * 0.22f, cy + s * 0.08f, p)
             }
+            ICON_CLOSE -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 3f * sc
+                val d = s * 0.32f
+                c.drawLine(cx - d, cy - d, cx + d, cy + d, p)
+                c.drawLine(cx - d, cy + d, cx + d, cy - d, p)
+            }
             else -> { // ICON_OK: ring with a dot
                 p.style = Paint.Style.STROKE
-                p.strokeWidth = 2.5f * sc
+                p.strokeWidth = 2.8f * sc
                 c.drawCircle(cx, cy, s * 0.46f, p)
                 p.style = Paint.Style.FILL
                 c.drawCircle(cx, cy, s * 0.16f, p)
@@ -1149,91 +1175,127 @@ class LauncherView(private val act: Activity) : View(act) {
         p.strokeJoin = Paint.Join.MITER
     }
 
-    /** Belle dialogs and the options menu: centred / corner-anchored, dark title band, light body, dark selection. */
-    private fun drawPopup(c: Canvas, pu: Popup, w: Float) {
+    // ---- overlays: options Menu, SelectionDialog, InfoBanner. Nothing dims the screen behind them. -----
+
+    private fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) {
+        val rad = 6f * sc
         p.style = Paint.Style.FILL
-        p.shader = null
-        p.color = al(Color.BLACK, 150)
-        c.drawRect(0f, cTop, w, cBot, p)
-        val box = popupRect(pu, RectF())
-        val r = 4f * sc
-        val titleH = popupTitleH(pu)
-        softShadow(c, box, r, dy = 4f, alpha = 34, steps = 4)
-        p.shader = LinearGradient(0f, box.top, 0f, box.bottom, 0xFFDDDFE1.toInt(), 0xFFC4C7CA.toInt(), Shader.TileMode.CLAMP)
-        c.drawRoundRect(box, r, r, p)
-        p.shader = null
-        if (titleH > 0f) {
-            c.save()
-            c.clipRect(box.left, box.top, box.right, box.top + titleH)
-            p.shader = LinearGradient(0f, box.top, 0f, box.top + titleH, 0xFF54565A.toInt(), 0xFF2A2B2E.toInt(), Shader.TileMode.CLAMP)
-            c.drawRoundRect(box, r, r, p)
-            p.shader = null
-            c.restore()
-            text(c, pu.title, box.left + 12f * sc, box.top + titleH / 2f + 6f * sc, 17f * sc, Color.WHITE, maxW = box.width() - 60f * sc, face = medium)
-            // close cross, as on Belle selection dialogs
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 2.2f * sc
-            p.strokeCap = Paint.Cap.ROUND
-            p.color = Color.WHITE
-            val xc = box.right - 20f * sc
-            val yc = box.top + titleH / 2f
-            val d = 6f * sc
-            c.drawLine(xc - d, yc - d, xc + d, yc + d, p)
-            c.drawLine(xc - d, yc + d, xc + d, yc - d, p)
-            p.strokeCap = Paint.Cap.BUTT
-            p.style = Paint.Style.FILL
+        p.shader = if (selected) {
+            LinearGradient(0f, r.top, 0f, r.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
+        } else {
+            LinearGradient(0f, r.top, 0f, r.bottom, 0xFF464646.toInt(), 0xFF1C1C1C.toInt(), Shader.TileMode.CLAMP)
         }
-        val pad = if (titleH > 0f) 0f else 3f * sc
-        for (i in pu.items.indices) {
-            val top = box.top + titleH + pad + POPUP_ROW * sc * i
-            val sel = i == pu.sel
-            if (sel) {
-                tmp.set(box.left + 3f * sc, top + 1f * sc, box.right - 3f * sc, top + (POPUP_ROW - 1f) * sc)
-                p.shader = LinearGradient(0f, tmp.top, 0f, tmp.bottom, 0xFF4A4C50.toInt(), 0xFF2A2B2E.toInt(), Shader.TileMode.CLAMP)
-                c.drawRoundRect(tmp, 3f * sc, 3f * sc, p)
-                p.shader = null
-                p.color = theme.accent
-                c.drawRect(tmp.left, tmp.top + 3f * sc, tmp.left + 3f * sc, tmp.bottom - 3f * sc, p)
-            } else if (i > 0) {
-                p.color = 0xFFAEB1B4.toInt()
-                c.drawRect(box.left + 10f * sc, top, box.right - 10f * sc, top + 1f, p)
-            }
-            text(c, pu.items[i].label, box.left + 16f * sc, top + POPUP_ROW * sc / 2f + 6.5f * sc, 18f * sc, if (sel) Color.WHITE else 0xFF1B1C1E.toInt(), maxW = box.width() - 32f * sc)
-        }
+        c.drawRoundRect(r, rad, rad, p)
+        p.shader = null
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = 0xFF7F8387.toInt()
-        c.drawRoundRect(box, r, r, p)
+        p.color = al(Color.BLACK, 200)
+        c.drawRoundRect(r, rad, rad, p)
         p.style = Paint.Style.FILL
+        text(c, label, r.centerX(), r.centerY() + 7.5f * sc, 22f * sc, Color.WHITE, Paint.Align.CENTER)
     }
 
-    /** Belle "info banner": auto-dismissing modeless bar across the top, under the status bar. */
-    private fun drawToast(c: Canvas, w: Float) {
-        val top = statusH
-        val hgt = 34f * sc
+    private fun drawPopup(c: Canvas, pu: Popup, w: Float) {
+        val box = popupRect(pu, RectF())
+        val titleH = popupTitleH(pu)
+        val itemH = popupItemH(pu)
+        val slide = if (pu.menu) (1f - popupT) * box.height() else (1f - popupT) * 28f * sc
+        c.save()
+        c.translate(0f, slide)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, top, 0f, top + hgt, 0xFF2E2F32.toInt(), 0xFF040405.toInt(), Shader.TileMode.CLAMP)
+        p.shader = null
+
+        if (pu.menu) {
+            // options Menu: slides up from the bottom edge over the toolbar
+            p.color = 0xFF1E1E1E.toInt() // qtg_fr_popup_options
+            rf.set(box.left, box.top, box.right, box.bottom + 20f * sc)
+            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
+            p.shader = LinearGradient(0f, box.top, 0f, box.top + 60f * sc, al(Color.WHITE, 40), al(Color.WHITE, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
+            p.shader = null
+            p.color = al(Color.WHITE, 50)
+            c.drawRect(box.left + 12f * sc, box.top + 1f, box.right - 12f * sc, box.top + 2f, p)
+        } else {
+            // SelectionDialog: dark rounded panel with a blue title
+            val r = 10f * sc
+            p.color = 0xFF1E1E1E.toInt() // qtg_fr_popup
+            c.drawRoundRect(box, r, r, p)
+            c.save()
+            c.clipRect(box.left, box.top, box.right, box.top + titleH)
+            p.color = theme.accent // qtg_fr_popup_heading
+            c.drawRoundRect(box, r, r, p)
+            p.shader = LinearGradient(0f, box.top, 0f, box.top + titleH, al(Color.WHITE, 60), al(Color.WHITE, 0), Shader.TileMode.CLAMP)
+            c.drawRect(box.left, box.top, box.right, box.top + titleH, p)
+            p.shader = null
+            c.restore()
+            text(c, pu.title, box.left + 12f * sc, box.top + titleH / 2f + 7.5f * sc, 22f * sc, Color.WHITE, maxW = box.width() - 80f * sc)
+            glyph(c, ICON_CLOSE, box.right - 28f * sc, box.top + titleH / 2f, 30f * sc, Color.WHITE)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = al(Color.WHITE, 40)
+            c.drawRoundRect(box, r, r, p)
+            p.style = Paint.Style.FILL
+        }
+
+        val top0 = box.top + titleH + (if (pu.menu) 4f * sc else 0f)
+        for (i in pu.items.indices) {
+            val top = top0 + itemH * i
+            val sel = i == pu.sel
+            if (sel) {
+                tmp.set(box.left + 4f * sc, top + 1f * sc, box.right - 4f * sc, top + itemH - 1f * sc)
+                p.shader = LinearGradient(0f, tmp.top, 0f, tmp.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
+                c.drawRoundRect(tmp, 6f * sc, 6f * sc, p)
+                p.shader = null
+            } else if (i > 0) {
+                p.color = al(Color.WHITE, 30)
+                c.drawRect(box.left + 12f * sc, top, box.right - 12f * sc, top + 1f, p)
+            }
+            text(c, pu.items[i].label, box.left + 12f * sc + 4f * sc, top + itemH / 2f + 7.5f * sc, 22f * sc, Color.WHITE, maxW = box.width() - 40f * sc)
+        }
+        if (pu.menu) {
+            val cy0 = top0 + itemH * pu.items.size + 6f * sc
+            tmp.set(box.left + 8f * sc, cy0, box.right - 8f * sc, cy0 + 50f * sc)
+            pushButton(c, tmp, "Cancel", pu.sel == pu.items.size)
+        }
+        c.restore()
+    }
+
+    /** InfoBanner: 60px, full width under the status bar, slides in and dismisses itself. */
+    private fun drawToast(c: Canvas, w: Float) {
+        val now = System.currentTimeMillis()
+        val tin = ((now - toastStart) / 220f).coerceIn(0f, 1f)
+        val tout = ((toastUntil - now) / 220f).coerceIn(0f, 1f)
+        val t = min(tin, tout)
+        val hgt = 60f * sc
+        val top = statusH - (1f - t) * hgt
+        c.save()
+        c.clipRect(0f, statusH, w, statusH + hgt)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, top, 0f, top + hgt, 0xFF2A2A2A.toInt(), 0xFF000000.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(0f, top, w, top + hgt, p)
         p.shader = null
         p.color = al(Color.WHITE, 60)
         c.drawRect(0f, top + hgt - 1f, w, top + hgt, p)
-        rf.set(12f * sc, top + hgt / 2f - 7f * sc, 26f * sc, top + hgt / 2f + 7f * sc)
-        p.color = 0xFFB9BEC3.toInt()
-        c.drawRoundRect(rf, 3f * sc, 3f * sc, p)
-        text(c, toast, 38f * sc, top + hgt / 2f + 5.5f * sc, 15f * sc, Color.WHITE, maxW = w - 54f * sc)
+        rf.set(12f * sc, top + hgt / 2f - 15f * sc, 42f * sc, top + hgt / 2f + 15f * sc)
+        p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, mix(theme.accentLight, Color.WHITE, 0.2f), theme.accent, Shader.TileMode.CLAMP)
+        c.drawRoundRect(rf, 9f * sc, 9f * sc, p)
+        p.shader = null
+        text(c, "i", rf.centerX(), rf.centerY() + 7f * sc, 22f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
+        text(c, toast, 54f * sc, top + hgt / 2f + 7f * sc, 20f * sc, Color.WHITE, maxW = w - 70f * sc)
+        c.restore()
     }
 
     private companion object {
-        const val TAB = 34f      // tab bar height
-        const val HEADER = 56f   // tab bar + list header band
-        const val ROW = 56f      // two-line list item
-        const val POPUP_TITLE = 38f
-        const val POPUP_ROW = 38f
+        const val TAB = 50f      // tab bar (landscape; 60 in portrait)
+        const val HEADER = 50f   // list starts under the tab bar
+        const val ROW = 70f      // heightListItem
+        const val POPUP_ROW = 64f // heightMenuItem
         const val ICON_BACK = 0
         const val ICON_GRID = 1
         const val ICON_MENU = 2
         const val ICON_OK = 3
         const val ICON_GEAR = 4
         const val ICON_CLOCK = 5
+        const val ICON_CLOSE = 6
     }
 }

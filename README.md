@@ -47,15 +47,23 @@ Install it, press Home, and choose BelleUI as the default launcher.
 
 ## Look
 
-Follows the Symbian Belle design guidelines (see "Symbian Design Guidelines show Belle UI future", All About Symbian, 2011):
+Follows the real Symbian Belle (Qt Quick Components 1.1, nHD profile) measurements and colours, taken from
+[likidu/symbian-belle-ui](https://github.com/likidu/symbian-belle-ui) (`DESIGN.md`, `belle.tokens.json`, reference screenshots),
+plus the All About Symbian write-up of the Belle design guidelines. One design px = one device px; the 640x480
+screen is ~228 ppi, close to Belle's 210 ppi.
 
-- **Status bar:** slim, one line, solid black: wifi, battery, time
-- **Toolbar:** one bar replacing soft keys. Back arrow (mandatory; the apps button on Home), two action buttons (select, settings), three-line menu button on the right that opens the pop-up options menu. Each shows its gamepad letter.
-- **Tab bar:** Applications / Recent are parallel views under the status bar, stretched full width, selected tab darker. Back leaves both in one step.
-- **Lists:** light list view with a list header band, two-line items, separators, a scrollbar, dark selection band
-- **Dialogs:** centred, dark title band with a close cross, light body. The options menu rises from the menu button.
-- **Info banners:** messages are auto-dismissing banners across the top
-- **Home:** glossy flip-clock tiles and shortcuts straight on a vignetted wallpaper; vivid glossy squircle icons with soft shadows; haptic tick on select
+- **Status bar** 26px, black: page title on the left; wifi, battery and clock on the right
+- **Toolbar** 50px (Belle's landscape height), 30px white glyphs spread evenly edge to edge. First button is Back (the apps button on Home), last is the three-line options menu; select and settings sit between. The gamepad letter is shown beside each.
+- **Tab bar** 50px under the status bar: Applications / Recent, active tab lighter
+- **Applications**: black page, 70px icon frames, 18px labels, blue highlight
+- **Recent**: 70px `ListItem`s, 12px inset, 50px icon, 22px title, 18px light subtitle, `#444` 1px separators, blue pressed frame
+- **Options menu** slides up from the bottom over the toolbar: 64px items, 22px text, full-width Cancel button
+- **Dialogs** (Settings) are `SelectionDialog` style: `#1E1E1E` rounded panel, Belle-blue title with a close icon, 64px items, max 504px wide
+- **Info banner**: 60px, slides in under the status bar and dismisses itself
+- Nothing dims the screen behind an overlay. Belle blue is `#1080DD`; text white / `#999999`.
+- **Home** is the wallpaper page: glossy flip-clock tiles and shortcuts. Icons are glossy superellipse (exponent 2.8) frames with soft shadows.
+
+The Nokia Pure typeface is proprietary and not bundled; text uses the system sans-serif at the same sizes.
 
 ### Icons
 
