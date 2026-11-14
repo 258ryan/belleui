@@ -21,6 +21,11 @@ class MainActivity : Activity() {
         launcher.onResumed()
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        launcher.onResumed()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // HOME pressed (or launcher re-launched): return to the home page.

@@ -3,6 +3,7 @@ package com.belleui.launcher
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.graphics.Path
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
@@ -166,6 +167,12 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- home widgets ----
     private val homeWidgetRects = arrayOf(RectF(), RectF())
+    private var widgetSub = 0 // which button of a large widget, or which small widget, has the focus
+    private val subRects = Array(3) { RectF() }
+    private val media = MediaWidget(act) { postInvalidate() }
+    private val calendar = CalendarWidget(act) { postInvalidate() }
+    private var dateShort = ""
+    private var dateShortFor = ""
     private var storageFree = 0L
     private var storageTotal = 1L
     private val gfx = BelleGfx(act)
@@ -268,6 +275,9 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun onResumed() {
+        media.stop()
+        if (repo.widgetLarge == 2) media.start()
+        if (repo.widgetLarge == 1) calendar.refresh()
         readStorage()
         refreshClock()
         readWifi()
@@ -457,9 +467,14 @@ class LauncherView(private val act: Activity) : View(act) {
                 else -> {}
             }
             0 -> when (a) {
-                Act.LEFT -> if (homeSel > 0) homeSel-- else setPage(-1)
-                Act.RIGHT -> if (homeSel < 3) homeSel++ else setPage(1)
-                Act.OK -> {
+                Act.UP -> if (homeSel >= 0) {
+                    homeSel = -1
+                    widgetSub = if (repo.widgetLarge == 2 || repo.widgetLarge == 4) 1 else 0
+                }
+                Act.DOWN -> if (homeSel < 0) homeSel = 0
+                Act.LEFT -> if (homeSel < 0) widgetStep(-1) else if (homeSel > 0) homeSel-- else setPage(-1)
+                Act.RIGHT -> if (homeSel < 0) widgetStep(1) else if (homeSel < 3) homeSel++ else setPage(1)
+                Act.OK -> if (homeSel < 0) widgetActivate() else {
                     val app = favs.getOrNull(homeSel)
                     if (app != null) {
                         launch(app)
@@ -553,7 +568,14 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             0 -> {
                 var onWidget = false
-                for (k in 0..1) if (!selectOnly && homeWidgetRects[k].contains(x, y)) {
+                if (repo.widgetLarge >= 0) {
+                    if (!selectOnly && homeWidgetRects[0].contains(x, y)) {
+                        widgetSub = -1
+                        for (i in 0..2) if (subRects[i].contains(x, y)) widgetSub = i
+                        widgetActivate()
+                        onWidget = true
+                    }
+                } else for (k in 0..1) if (!selectOnly && homeWidgetRects[k].contains(x, y)) {
                     widgetTap(if (k == 0) repo.widgetLeft else repo.widgetRight)
                     onWidget = true
                 }
@@ -949,7 +971,7 @@ class LauncherView(private val act: Activity) : View(act) {
         recentTopAnim += (recentTop - recentTopAnim) * k
         if (abs(recentTop - recentTopAnim) < 0.004f) recentTopAnim = recentTop.toFloat() else busy = true
 
-        homeTileRect(homeSel, tmp)
+        if (homeSel >= 0) homeTileRect(homeSel, tmp) else widgetFocusRect(tmp)
         homeFocus.target(tmp)
         menuCellRect(menuSel, menuTop.toFloat(), tmp)
         tmp.inset(6f * sc, 3f * sc)
@@ -1034,10 +1056,18 @@ class LauncherView(private val act: Activity) : View(act) {
         val ww = (w - 2 * m - gap) / 2f
         val top = cTop + 14f * sc
         val wh = 92f * sc
-        homeWidgetRects[0].set(m, top, m + ww, top + wh)
-        homeWidgetRects[1].set(m + ww + gap, top, w - m, top + wh)
-        drawWidget(c, repo.widgetLeft, homeWidgetRects[0])
-        drawWidget(c, repo.widgetRight, homeWidgetRects[1])
+        if (repo.widgetLarge >= 0) {
+            val avail = homeTileRect(0, tmp).top - 10f * sc - top
+            val want = when (repo.widgetLarge) { 0 -> 150f; 1 -> 140f; 2 -> 156f; 3 -> 214f; else -> 96f } * sc
+            homeWidgetRects[0].set(m, top, w - m, top + min(avail, want))
+            homeWidgetRects[1].setEmpty()
+            drawLarge(c, repo.widgetLarge, homeWidgetRects[0])
+        } else {
+            homeWidgetRects[0].set(m, top, m + ww, top + wh)
+            homeWidgetRects[1].set(m + ww + gap, top, w - m, top + wh)
+            drawWidget(c, repo.widgetLeft, homeWidgetRects[0])
+            drawWidget(c, repo.widgetRight, homeWidgetRects[1])
+        }
 
         // shortcuts straight on the wallpaper
         drawFocus(c, homeFocus.cur, 12f * sc)
@@ -1165,25 +1195,38 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    /** Home widgets: choose what each of the two slots shows. */
+    private val largeNames = arrayOf("Two small widgets", "Flip clock", "Today", "Music player", "Notifications", "Quick switches")
+
+    /** Home widgets: one large Belle widget, or two small ones whose contents are chosen here. */
     private fun openWidgetEditor(sel: Int) {
         fun next(cur: Int, other: Int): Int {
             var n = (cur + 1) % widgetNames.size
             if (n == other) n = (n + 1) % widgetNames.size
             return n
         }
-        popup = Popup("Home widgets", listOf(
-            PopupItem("Left: ${widgetNames[repo.widgetLeft]}") {
+        val items = ArrayList<PopupItem>()
+        items.add(PopupItem("Widget: ${largeNames[repo.widgetLarge + 1]}") {
+            repo.widgetLarge = (repo.widgetLarge + 2) % largeNames.size - 1
+            media.stop()
+            if (repo.widgetLarge == 2) media.start()
+            if (repo.widgetLarge == 1) {
+                if (calendar.hasPermission()) calendar.refresh(true) else act.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 31)
+            }
+            openWidgetEditor(0)
+        })
+        if (repo.widgetLarge < 0) {
+            items.add(PopupItem("Left: ${widgetNames[repo.widgetLeft]}") {
                 repo.widgetLeft = next(repo.widgetLeft, repo.widgetRight)
-                openWidgetEditor(0)
-            },
-            PopupItem("Right: ${widgetNames[repo.widgetRight]}") {
-                repo.widgetRight = next(repo.widgetRight, repo.widgetLeft)
                 openWidgetEditor(1)
-            },
-            PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
-            PopupItem("Done") { },
-        ), sel)
+            })
+            items.add(PopupItem("Right: ${widgetNames[repo.widgetRight]}") {
+                repo.widgetRight = next(repo.widgetRight, repo.widgetLeft)
+                openWidgetEditor(2)
+            })
+        }
+        items.add(PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) })
+        items.add(PopupItem("Done") { })
+        popup = Popup("Home widgets", items, sel.coerceAtMost(items.size - 1))
     }
 
     /** X on an empty Home slot. */
@@ -1193,6 +1236,322 @@ class LauncherView(private val act: Activity) : View(act) {
             PopupItem("Quick settings") { openQuick(0) },
             PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
         ), 0, menu = true)
+    }
+
+    // ---- large Belle widgets (after the Nokia Belle home screen) ---------------------------------------
+
+    private fun widgetFocusRect(out: RectF): RectF {
+        if (repo.widgetLarge >= 0) {
+            if ((repo.widgetLarge == 2 || repo.widgetLarge == 4) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty) {
+                out.set(subRects[widgetSub])
+                out.inset(-5f * sc, -5f * sc)
+            } else {
+                out.set(homeWidgetRects[0])
+                out.inset(-4f * sc, -4f * sc)
+            }
+        } else {
+            out.set(homeWidgetRects[widgetSub.coerceIn(0, 1)])
+            out.inset(-4f * sc, -4f * sc)
+        }
+        return out
+    }
+
+    private fun widgetStep(d: Int) {
+        val large = repo.widgetLarge
+        if (large == 2 || large == 4) {
+            val n = widgetSub + d
+            if (n < 0) setPage(-1) else if (n > 2) setPage(1) else widgetSub = n
+        } else if (large < 0) {
+            val n = widgetSub + d
+            if (n < 0) setPage(-1) else if (n > 1) setPage(1) else widgetSub = n
+        } else {
+            if (d < 0) setPage(-1) else setPage(1)
+        }
+    }
+
+    private fun widgetActivate() {
+        when (repo.widgetLarge) {
+            -1 -> widgetTap(if (widgetSub == 0) repo.widgetLeft else repo.widgetRight)
+            0 -> openOther("com.belleui.clock")
+            1 -> {
+                if (!calendar.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 31)
+                else tryStart(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://com.android.calendar/time")))
+            }
+            2 -> when {
+                !media.available -> if (!HubStore.hasAccess(act)) tryStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) else openOther("com.belleui.music")
+                widgetSub == 0 -> media.prev()
+                widgetSub == 2 -> media.next()
+                else -> media.toggle()
+            }
+            3 -> setPage(-1)
+            4 -> when (widgetSub) {
+                0 -> tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
+                1 -> try {
+                    val am = act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    am.ringerMode = if (am.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL) android.media.AudioManager.RINGER_MODE_VIBRATE else android.media.AudioManager.RINGER_MODE_NORMAL
+                } catch (_: Exception) {
+                    tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))
+                }
+                else -> openQuick(0)
+            }
+        }
+    }
+
+    private fun drawLarge(c: Canvas, type: Int, r: RectF) {
+        for (k in subRects) k.setEmpty()
+        when (type) {
+            0 -> drawFlip(c, r)
+            1 -> drawToday(c, r)
+            2 -> drawMusic(c, r)
+            3 -> drawInbox(c, r)
+            else -> drawSwitches(c, r)
+        }
+    }
+
+    private fun darkCard(c: Canvas, r: RectF, radius: Float) {
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF3A3D42.toInt(), 0xFF0C0D0F.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, radius, radius, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.2f * sc
+        p.color = al(Color.WHITE, 40)
+        c.drawRoundRect(r, radius, radius, p)
+        p.style = Paint.Style.FILL
+    }
+
+    private fun paperCard(c: Canvas, r: RectF) {
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFFF8F8F6.toInt(), 0xFFDADAD6.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, 12f * sc, 12f * sc, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.2f * sc
+        p.color = al(Color.BLACK, 90)
+        c.drawRoundRect(r, 12f * sc, 12f * sc, p)
+        p.style = Paint.Style.FILL
+    }
+
+    /** Two flip cards: hours and minutes, with the AM/PM mark and the date. */
+    private fun drawFlip(c: Canvas, r: RectF) {
+        val gap = 10f * sc
+        val cw = (r.width() - gap) / 2f
+        val hh = clockStr.substringBefore(':')
+        val mm = clockStr.substringAfter(':', "00")
+        if (dateShortFor != clockStr) {
+            dateShortFor = clockStr
+            dateShort = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+        }
+        for (i in 0..1) {
+            val card = RectF(r.left + i * (cw + gap), r.top, r.left + i * (cw + gap) + cw, r.bottom)
+            darkCard(c, card, 14f * sc)
+            val size = card.height() * 0.80f
+            text(c, if (i == 0) hh else mm, card.centerX(), baselineFor(card.centerY(), size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+            // the seam of a flip card
+            p.color = al(Color.BLACK, 230)
+            c.drawRect(card.left + 2f * sc, card.centerY() - 1.5f * sc, card.right - 2f * sc, card.centerY() + 1.5f * sc, p)
+            p.color = al(Color.WHITE, 50)
+            c.drawRect(card.left + 2f * sc, card.centerY() + 1.5f * sc, card.right - 2f * sc, card.centerY() + 2.5f * sc, p)
+            if (i == 1) {
+                if (ampmStr.isNotEmpty()) text(c, ampmStr, card.right - 14f * sc, card.top + 26f * sc, 17f * sc, al(Color.WHITE, 220), Paint.Align.RIGHT, face = light)
+                text(c, dateShort, card.right - 14f * sc, card.bottom - 12f * sc, 16f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
+            }
+        }
+    }
+
+    /** A paper calendar: "Today" and what is coming in the next week. */
+    private fun drawToday(c: Canvas, r: RectF) {
+        paperCard(c, r)
+        // the binder rings
+        for (fx in floatArrayOf(0.16f, 0.84f)) {
+            val x = r.left + r.width() * fx
+            p.style = Paint.Style.FILL
+            p.color = 0xFF55575C.toInt()
+            rf.set(x - 7f * sc, r.top - 5f * sc, x + 7f * sc, r.top + 17f * sc)
+            c.drawRoundRect(rf, 7f * sc, 7f * sc, p)
+            p.color = 0xFFDEDEDA.toInt()
+            rf.set(x - 3.5f * sc, r.top + 1f * sc, x + 3.5f * sc, r.top + 11f * sc)
+            c.drawRoundRect(rf, 3.5f * sc, 3.5f * sc, p)
+        }
+        val ink = 0xFF2B2B2B.toInt()
+        text(c, "Today", r.centerX(), r.top + 36f * sc, 22f * sc, ink, Paint.Align.CENTER, face = medium)
+        p.color = al(Color.BLACK, 50)
+        c.drawRect(r.left + 14f * sc, r.top + 46f * sc, r.right - 14f * sc, r.top + 47.5f * sc, p)
+        val ev = calendar.events
+        val grey = 0xFF6A6A6A.toInt()
+        when {
+            !calendar.hasPermission() -> text(c, "Press A to show your calendar", r.centerX(), baselineFor(r.top + 92f * sc, 19f * sc), 19f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            ev.isEmpty() -> text(c, "No events for 7 days", r.centerX(), baselineFor(r.top + 92f * sc, 20f * sc), 20f * sc, ink, Paint.Align.CENTER)
+            else -> {
+                var y = r.top + 72f * sc
+                val fmt = DateFormat.getTimeFormat(act)
+                val day = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+                for (e in ev.take(3)) {
+                    if (y + 20f * sc > r.bottom) break
+                    val whenText = (if (isToday(e.begin) && e.begin < System.currentTimeMillis() + 24 * 3600_000L) "" else day.format(java.util.Date(e.begin)) + " ") + if (e.allDay) "all day" else fmt.format(java.util.Date(e.begin))
+                    text(c, whenText, r.left + 18f * sc, y, 16f * sc, theme.accent, face = medium)
+                    text(c, e.title, r.left + 18f * sc + 108f * sc, y, 18f * sc, ink, maxW = r.right - r.left - 144f * sc)
+                    y += 28f * sc
+                }
+            }
+        }
+    }
+
+    /** A round media button. */
+    private fun mediaButton(c: Canvas, kind: Int, cx: Float, cy: Float, size: Float, focus: Boolean) {
+        when (kind) {
+            1 -> {
+                val name = if (media.playing) "qgn_indi_mup2_button_pause" else "qgn_indi_mup2_button_play"
+                val g = gfx.get(name)
+                if (g != null) {
+                    rf.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+                    c.drawBitmap(g, null, rf, iconPaint)
+                }
+            }
+            else -> {
+                // previous / next: two triangles, drawn so they are always crisp
+                val s = size * 0.28f
+                val dir = if (kind == 0) -1f else 1f
+                p.style = Paint.Style.FILL
+                p.color = Color.WHITE
+                for (o in floatArrayOf(-s * 0.55f, s * 0.55f)) {
+                    val path = Path()
+                    path.moveTo(cx + o - dir * s * 0.7f, cy - s)
+                    path.lineTo(cx + o + dir * s * 0.7f, cy)
+                    path.lineTo(cx + o - dir * s * 0.7f, cy + s)
+                    path.close()
+                    c.drawPath(path, p)
+                }
+            }
+        }
+    }
+
+    private fun drawMusic(c: Canvas, r: RectF) {
+        darkCard(c, r, 16f * sc)
+        val art = RectF(r.left + 14f * sc, r.top + 14f * sc, r.left + 14f * sc + 100f * sc, r.top + 14f * sc + 100f * sc)
+        val bmp = media.art
+        c.save()
+        c.clipPath(Path().apply { addRoundRect(art, 14f * sc, 14f * sc, Path.Direction.CW) })
+        if (bmp != null) {
+            val s = max(art.width() / bmp.width, art.height() / bmp.height)
+            val sw = art.width() / s
+            val sh = art.height() / s
+            val src = android.graphics.Rect(((bmp.width - sw) / 2).toInt(), ((bmp.height - sh) / 2).toInt(), ((bmp.width + sw) / 2).toInt(), ((bmp.height + sh) / 2).toInt())
+            c.drawBitmap(bmp, src, art, iconPaint)
+        } else if (!nine(c, "qgn_graf_mup_npv_defalbumart", art, 0, 0f)) {
+            p.color = 0xFF2A2A2A.toInt()
+            c.drawRect(art, p)
+        }
+        c.restore()
+        val x = art.right + 16f * sc
+        val maxW = r.right - x - 14f * sc
+        if (media.available) {
+            text(c, media.title ?: "Playing", x, r.top + 44f * sc, 22f * sc, Color.WHITE, maxW = maxW)
+            text(c, media.artist ?: "", x, r.top + 72f * sc, 17f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
+        } else {
+            text(c, "Music", x, r.top + 44f * sc, 22f * sc, Color.WHITE, maxW = maxW)
+            text(c, if (!HubStore.hasAccess(act)) "Allow notification access to control playback" else "Nothing is playing - press A to open Music", x, r.top + 72f * sc, 16f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
+        }
+        // transport buttons
+        val by = r.bottom - 34f * sc
+        val xs = floatArrayOf(r.left + r.width() * 0.50f, r.left + r.width() * 0.68f, r.left + r.width() * 0.86f)
+        for (i in 0..2) {
+            val sz = if (i == 1) 56f * sc else 44f * sc
+            mediaButton(c, i, xs[i], by, sz, false)
+            subRects[i].set(xs[i] - 30f * sc, by - 30f * sc, xs[i] + 30f * sc, by + 30f * sc)
+        }
+    }
+
+    private fun drawInbox(c: Canvas, r: RectF) {
+        paperCard(c, r)
+        HubStore.load(act)
+        val ink = 0xFF2B2B2B.toInt()
+        val grey = 0xFF6A6A6A.toInt()
+        // header strip
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.top + 38f * sc, al(theme.accentLight, 255), al(theme.accent, 255), Shader.TileMode.CLAMP)
+        rf.set(r.left + 1f, r.top + 1f, r.right - 1f, r.top + 38f * sc)
+        c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
+        p.shader = null
+        text(c, "Notifications", r.left + 16f * sc, baselineFor(r.top + 19f * sc, 19f * sc, medium), 19f * sc, Color.WHITE, face = medium)
+        val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(3)
+        if (!HubStore.hasAccess(act)) {
+            text(c, "Press A and allow notification access", r.centerX(), baselineFor(r.top + 100f * sc, 18f * sc), 18f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            return
+        }
+        if (list.isEmpty()) {
+            text(c, "No notifications yet", r.centerX(), baselineFor(r.top + 100f * sc, 19f * sc), 19f * sc, grey, Paint.Align.CENTER)
+            return
+        }
+        val fmt = DateFormat.getTimeFormat(act)
+        var y = r.top + 40f * sc
+        val rowH = ((r.bottom - y - 6f * sc) / 3f).coerceAtMost(58f * sc)
+        for ((i, n) in list.withIndex()) {
+            if (i > 0) {
+                p.color = al(Color.BLACK, 40)
+                c.drawRect(r.left + 12f * sc, y, r.right - 12f * sc, y + 1f, p)
+            }
+            p.color = theme.accent
+            c.drawCircle(r.left + 20f * sc, y + 19f * sc, 5f * sc, p)
+            val t = fmt.format(java.util.Date(n.time))
+            val tw = measure(t, 15f * sc, light)
+            text(c, t, r.right - 14f * sc, y + 25f * sc, 15f * sc, theme.accent, Paint.Align.RIGHT, face = light)
+            text(c, n.title.ifBlank { n.pkg }, r.left + 34f * sc, y + 25f * sc, 18f * sc, ink, maxW = r.width() - 34f * sc - tw - 30f * sc, face = medium)
+            text(c, n.text, r.left + 34f * sc, y + 47f * sc, 16f * sc, grey, maxW = r.width() - 50f * sc, face = light)
+            y += rowH
+        }
+    }
+
+    private fun drawSwitches(c: Canvas, r: RectF) {
+        darkCard(c, r, r.height() / 2f)
+        val ringer = try { (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode } catch (_: Exception) { 2 }
+        val labels = arrayOf("Wi-Fi", if (ringer == android.media.AudioManager.RINGER_MODE_NORMAL) "Sound on" else "Quiet", "Quick settings")
+        val on = booleanArrayOf(wifi || wifiOn(), ringer == android.media.AudioManager.RINGER_MODE_NORMAL, false)
+        for (i in 0..2) {
+            val cx = r.left + r.width() * (0.2f + 0.3f * i)
+            val d = r.height() * 0.62f
+            rf.set(cx - d / 2f, r.top + 8f * sc, cx + d / 2f, r.top + 8f * sc + d)
+            subRects[i].set(rf)
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, if (on[i]) theme.accentLight else 0xFF6B7078.toInt(), if (on[i]) theme.accent else 0xFF3A3E44.toInt(), Shader.TileMode.CLAMP)
+            c.drawOval(rf, p)
+            p.shader = null
+            p.color = Color.WHITE
+            when (i) {
+                0 -> { // wi-fi arcs
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 2.6f * sc
+                    for (k in 1..3) c.drawArc(RectF(rf.centerX() - k * 6f * sc, rf.centerY() + 6f * sc - k * 6f * sc, rf.centerX() + k * 6f * sc, rf.centerY() + 6f * sc + k * 6f * sc), -135f, 90f, false, p)
+                    p.style = Paint.Style.FILL
+                    c.drawCircle(rf.centerX(), rf.centerY() + 7f * sc, 2.4f * sc, p)
+                }
+                1 -> { // speaker
+                    val cx2 = rf.centerX() - 3f * sc
+                    val path = Path()
+                    path.moveTo(cx2 - 7f * sc, rf.centerY() - 4f * sc)
+                    path.lineTo(cx2 - 2f * sc, rf.centerY() - 4f * sc)
+                    path.lineTo(cx2 + 4f * sc, rf.centerY() - 9f * sc)
+                    path.lineTo(cx2 + 4f * sc, rf.centerY() + 9f * sc)
+                    path.lineTo(cx2 - 2f * sc, rf.centerY() + 4f * sc)
+                    path.lineTo(cx2 - 7f * sc, rf.centerY() + 4f * sc)
+                    path.close()
+                    c.drawPath(path, p)
+                    if (on[i]) {
+                        p.style = Paint.Style.STROKE
+                        p.strokeWidth = 2.2f * sc
+                        c.drawArc(RectF(cx2 + 2f * sc, rf.centerY() - 8f * sc, cx2 + 14f * sc, rf.centerY() + 8f * sc), -50f, 100f, false, p)
+                        p.style = Paint.Style.FILL
+                    }
+                }
+                else -> { // three sliders
+                    for (k in -1..1) c.drawRoundRect(rf.centerX() - 9f * sc, rf.centerY() + k * 7f * sc - 1.5f * sc, rf.centerX() + 9f * sc, rf.centerY() + k * 7f * sc + 1.5f * sc, 1.5f * sc, 1.5f * sc, p)
+                    c.drawCircle(rf.centerX() - 3f * sc, rf.centerY() - 7f * sc, 3.2f * sc, p)
+                    c.drawCircle(rf.centerX() + 4f * sc, rf.centerY(), 3.2f * sc, p)
+                    c.drawCircle(rf.centerX() - 2f * sc, rf.centerY() + 7f * sc, 3.2f * sc, p)
+                }
+            }
+            text(c, labels[i], cx, r.bottom - 8f * sc, 14f * sc, al(Color.WHITE, 210), Paint.Align.CENTER, face = light)
+        }
     }
 
     // ---- Hub: everything that notified you, over the wallpaper ----------------------------------------

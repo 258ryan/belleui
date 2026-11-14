@@ -305,6 +305,11 @@ class AppRepo(private val ctx: Context) {
         get() = prefs.getInt("widgetRight", 2).coerceIn(0, 4)
         set(v) = prefs.edit().putInt("widgetRight", v).apply()
 
+    /** One large Belle widget instead of the two small ones: -1 none, 0 flip clock, 1 Today, 2 music, 3 inbox, 4 toggles. */
+    var widgetLarge: Int
+        get() = prefs.getInt("widgetLarge", -1).coerceIn(-1, 4)
+        set(v) = prefs.edit().putInt("widgetLarge", v).apply()
+
     var showHidden: Boolean
         get() = prefs.getBoolean("showHidden", false)
         set(v) = prefs.edit().putBoolean("showHidden", v).apply()
