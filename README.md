@@ -28,6 +28,8 @@ looks right at other 4:3 sizes. No third-party dependencies.
 | L1 / R1 | Previous / next page |
 | Start | Toggle Home / Menu |
 
+Hiding apps: X on any app > **Hide from launcher** (works on Home, Applications and Recent). Restore from Y > **Hidden apps**, or turn on **Show hidden apps**.
+
 The soft-key bar at the bottom always shows what the three buttons do right now.
 Settings has a **Nintendo layout** switch that swaps A/B and X/Y.
 Touch also works: tap, long-press for options, swipe to change page.

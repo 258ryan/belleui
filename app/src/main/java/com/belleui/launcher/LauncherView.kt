@@ -266,8 +266,9 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun refreshLists() {
         menuApps = repo.menuApps(repo.showHidden)
-        favs = repo.favoriteEntries()
-        recents = repo.recentEntries()
+        // hidden apps disappear everywhere (menu, home shortcuts, recents) unless "show hidden" is on
+        favs = repo.favoriteEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
+        recents = repo.recentEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
         menuSel = menuSel.coerceIn(0, max(0, menuApps.size - 1))
         recentSel = recentSel.coerceIn(0, max(0, recents.size - 1))
         ensureVisible()
@@ -581,12 +582,11 @@ class LauncherView(private val act: Activity) : View(act) {
             else if (!repo.addFavorite(app.key)) showToast("Home is full (${AppRepo.MAX_FAVS} tiles)")
             refreshLists()
         }
-        if (page == 1) {
-            val hidden = repo.isHidden(app.key)
-            items += PopupItem(if (hidden) "Unhide" else "Hide") {
-                repo.setHidden(app.key, !hidden)
-                refreshLists()
-            }
+        val hidden = repo.isHidden(app.key)
+        items += PopupItem(if (hidden) "Unhide" else "Hide from launcher") {
+            repo.setHidden(app.key, !hidden)
+            refreshLists()
+            showToast(if (hidden) "${app.label} is visible again" else "${app.label} hidden - restore it in Settings")
         }
         items += PopupItem("App info") {
             tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.component.packageName}")))
@@ -610,15 +610,36 @@ class LauncherView(private val act: Activity) : View(act) {
                 repo.swapPad = !repo.swapPad
                 openSettings(1)
             },
-            PopupItem("Hidden apps: " + if (repo.showHidden) "shown" else "hidden") {
+            PopupItem("Show hidden apps: " + if (repo.showHidden) "on" else "off") {
                 repo.showHidden = !repo.showHidden
                 refreshLists()
                 openSettings(2)
             },
+            PopupItem("Hidden apps (${repo.apps.count { repo.isHidden(it.key) }})") { openHiddenApps() },
             PopupItem("Android settings") { tryStart(Intent(Settings.ACTION_SETTINGS)) },
-            PopupItem("About BelleUI") { showToast("BelleUI 0.1 - Symbian x Belle x Asha") },
         )
         popup = Popup("Settings", items, sel)
+    }
+
+    /** Lists the hidden apps; choosing one makes it visible again. */
+    private fun openHiddenApps() {
+        val hiddenApps = repo.apps.filter { repo.isHidden(it.key) }.sortedBy { it.label.lowercase() }
+        if (hiddenApps.isEmpty()) {
+            showToast("No hidden apps")
+            return
+        }
+        val shown = hiddenApps.take(4)
+        val items = ArrayList<PopupItem>()
+        for (a in shown) {
+            items += PopupItem("Unhide ${a.label}") {
+                repo.setHidden(a.key, false)
+                refreshLists()
+                showToast("${a.label} is visible again")
+                if (hiddenApps.size > 1) openHiddenApps()
+            }
+        }
+        if (hiddenApps.size > shown.size) items += PopupItem("${hiddenApps.size - shown.size} more - unhide these first") { openHiddenApps() }
+        popup = Popup("Hidden apps", items)
     }
 
     private fun showToast(s: String) {
