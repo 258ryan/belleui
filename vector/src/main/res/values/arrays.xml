@@ -2,5 +2,6 @@
     <!-- where the hook is needed: the system process that shows the "Open with" and Share lists -->
     <string-array name="xposed_scope">
         <item>android</item>
+        <item>com.android.systemui</item>
     </string-array>
 </resources>

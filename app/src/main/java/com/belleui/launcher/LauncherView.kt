@@ -285,6 +285,14 @@ class LauncherView(private val act: Activity) : View(act) {
         invalidate()
     }
 
+    /** The Status menu's Notifications button: the Hub page. */
+    fun openHub() {
+        popup = null
+        reorder = false
+        setPage(-1)
+        invalidate()
+    }
+
     /** The recent-apps key (through the Belle Chooser module): the Recent tab, ready to pick from. */
     fun openRecents() {
         popup = null
@@ -817,6 +825,16 @@ class LauncherView(private val act: Activity) : View(act) {
             PopupItem("Airplane mode: " + if (airplaneOn()) "on" else "off") {
                 radio("airplane", airplaneOn(), 2) { tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)) }
             },
+            PopupItem("Profile: " + com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)]) {
+                val next = (com.belleui.kit.Profiles.current(act) + 1) % com.belleui.kit.Profiles.names.size
+                if (!Settings.System.canWrite(act)) {
+                    tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
+                } else {
+                    val ok = com.belleui.kit.Profiles.apply(act, next)
+                    showToast(com.belleui.kit.Profiles.names[next] + if (ok) "" else " (partly - allow do-not-disturb access for Silent)")
+                    openQuick(3)
+                }
+            },
             PopupItem("Volume: ${volumePct()}%") {
                 val next = if (volumePct() >= 100) 0 else (volumePct() / 20 + 1) * 20
                 val a = audio()
@@ -824,7 +842,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * next / 100.0).roundToInt(), 0)
                 } catch (_: SecurityException) {
                 }
-                openQuick(3)
+                openQuick(4)
             },
             PopupItem("Brightness: " + (brightnessPct().takeIf { it >= 0 }?.let { "$it%" } ?: "-")) {
                 if (Settings.System.canWrite(act)) {
@@ -832,7 +850,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     val next = if (b < 25) 25 else if (b < 50) 50 else if (b < 75) 75 else if (b < 100) 100 else 25
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 255 * next / 100)
-                    openQuick(4)
+                    openQuick(5)
                 } else {
                     tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
                 }

@@ -15,6 +15,10 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
  */
 class ChooserHook : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        if (lpparam.packageName == "com.android.systemui") {
+            SystemUiHook.install(lpparam)
+            return
+        }
         if (lpparam.packageName != "android") return
         hookRecents(lpparam)
         val names = arrayOf("onResume", "onStart")

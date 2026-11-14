@@ -34,4 +34,6 @@ android {
 
 dependencies {
     compileOnly(project(":xposed-stub"))
+    // the Belle drawing kit and its graphics, used for the pieces shown inside the system UI process
+    implementation(project(":belle"))
 }
