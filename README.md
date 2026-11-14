@@ -87,3 +87,8 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### Browser (`belle/browser`)
+
+A Belle-styled web browser on Android **WebView**, which is the Chromium engine. It is not a Chromium fork: building Chromium needs a 100 GB+ checkout and hours of compile time, far beyond this repo's CI.
+The Belle chrome (status bar, toolbar, options menu, dialogs, info banners) is drawn over the WebView and passes touches and keys through. Gamepad: D-pad / left stick moves an on-screen **pointer**, A clicks, pushing against the top or bottom edge scrolls the page, hold a direction to speed up; L1/R1 are back / forward; Y opens the address field (system keyboard), Start reloads or stops; X opens the menu (bookmarks, desktop site, pointer on/off, share, clear data). It also registers for http/https links so it can be chosen as the default browser.
