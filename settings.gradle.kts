@@ -16,3 +16,4 @@ rootProject.name = "belleui"
 include(":belle")
 include(":app")
 include(":music")
+include(":clock")
