@@ -1,10 +1,11 @@
 name: Build Chooser
-# Runs only when this app (or the shared kit / build vector) changes, so one app never rebuilds the others.
+# Runs only when this app (or the build files) changes, so one app never rebuilds the others.
 on:
   push:
     branches: [belle/all]
     paths:
       - 'vector/**'
+      - 'xposed-stub/**'
       - 'belle/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
