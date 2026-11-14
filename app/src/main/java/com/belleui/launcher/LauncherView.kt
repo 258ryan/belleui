@@ -668,24 +668,45 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun drawIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, alpha: Int = 255) {
-        rf.set(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+        val full = size * 128f / 96f // bitmap includes shadow margin around the plate
+        rf.set(cx - full / 2, cy - full / 2, cx + full / 2, cy + full / 2)
         iconPaint.alpha = alpha
         c.drawBitmap(bmp, null, rf, iconPaint)
     }
 
+    /** Cheap soft shadow (works on every API level): stacked, growing, faint rounded rects. */
+    private fun softShadow(c: Canvas, r: RectF, radius: Float, color: Int = Color.BLACK, dy: Float = 5f, alpha: Int = 22) {
+        p.style = Paint.Style.FILL
+        p.shader = null
+        for (i in 6 downTo 1) {
+            val g = i * 1.8f * sc
+            rf.set(r.left - g, r.top - g + dy * sc, r.right + g, r.bottom + g + dy * sc)
+            p.color = al(color, alpha)
+            c.drawRoundRect(rf, radius + g, radius + g, p)
+        }
+    }
+
     private fun glass(c: Canvas, r: RectF, radius: Float) {
+        softShadow(c, r, radius)
         p.style = Paint.Style.FILL
         p.shader = LinearGradient(r.left, r.top, r.left, r.bottom, al(Color.WHITE, 46), al(Color.WHITE, 12), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, p)
         p.shader = null
+        c.save()
+        c.clipRect(r.left, r.top, r.right, r.top + r.height() * 0.45f)
+        p.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.45f, al(Color.WHITE, 40), al(Color.WHITE, 4), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, radius, radius, p)
+        p.shader = null
+        c.restore()
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = al(Color.WHITE, 55)
+        p.color = al(Color.WHITE, 65)
         c.drawRoundRect(r, radius, radius, p)
         p.style = Paint.Style.FILL
     }
 
     private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
+        softShadow(c, r, radius, theme.accent, dy = 0f, alpha = 26)
         p.style = Paint.Style.FILL
         p.shader = LinearGradient(r.left, r.top, r.left, r.bottom, al(theme.accentLight, 235), al(theme.accent, 215), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, p)
@@ -891,6 +912,9 @@ class LauncherView(private val act: Activity) : View(act) {
         p.shader = null
         p.color = al(theme.accent, 150)
         c.drawRect(0f, statusH - 1f, w, statusH, p)
+        p.shader = LinearGradient(0f, statusH, 0f, statusH + 10f * sc, al(Color.BLACK, 120), al(Color.BLACK, 0), Shader.TileMode.CLAMP)
+        c.drawRect(0f, statusH, w, statusH + 10f * sc, p)
+        p.shader = null
 
         val base = statusH / 2f + 6f * sc
         var x = 10f * sc
@@ -957,6 +981,9 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun drawSoftKeys(c: Canvas, w: Float, h: Float) {
         p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, cBot - 10f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 130), Shader.TileMode.CLAMP)
+        c.drawRect(0f, cBot - 10f * sc, w, cBot, p)
+        p.shader = null
         p.shader = LinearGradient(0f, cBot, 0f, h, 0xFF1D232C.toInt(), 0xFF000000.toInt(), Shader.TileMode.CLAMP)
         c.drawRect(0f, cBot, w, h, p)
         p.shader = null
@@ -1004,6 +1031,7 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawRect(0f, cTop, w, cBot, p)
         val box = popupRect(pu, RectF())
         val r = 12f * sc
+        softShadow(c, box, r, dy = 8f, alpha = 30)
         p.shader = LinearGradient(box.left, box.top, box.left, box.bottom, 0xFF1B2330.toInt(), 0xFF0A0E14.toInt(), Shader.TileMode.CLAMP)
         c.drawRoundRect(box, r, r, p)
         p.shader = null
@@ -1035,7 +1063,9 @@ class LauncherView(private val act: Activity) : View(act) {
         val tsz = 18f * sc
         val tw = measure(toast, tsz, Typeface.DEFAULT)
         val bw = min(tw + 40f * sc, w - 20f * sc)
-        rf.set((w - bw) / 2f, cBot - 52f * sc, (w + bw) / 2f, cBot - 14f * sc)
+        tmp.set((w - bw) / 2f, cBot - 52f * sc, (w + bw) / 2f, cBot - 14f * sc)
+        softShadow(c, tmp, 19f * sc, dy = 4f, alpha = 30)
+        rf.set(tmp)
         p.style = Paint.Style.FILL
         p.color = al(0xFF0A0E14.toInt(), 235)
         c.drawRoundRect(rf, 19f * sc, 19f * sc, p)

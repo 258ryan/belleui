@@ -4,7 +4,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.MediaStore
@@ -32,8 +39,61 @@ class AppRepo(private val ctx: Context) {
             .filter { it.activityInfo.packageName != ctx.packageName }
             .map { ri ->
                 val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
-                AppEntry(cn.flattenToString(), ri.loadLabel(pm).toString(), cn, toBitmap(ri.loadIcon(pm)))
+                val custom = loadCustomIcon(cn.packageName)
+                val icon = if (custom != null) bake(custom, full = true) else bake(toBitmap(ri.loadIcon(pm)), full = false)
+                AppEntry(cn.flattenToString(), ri.loadLabel(pm).toString(), cn, icon)
             }
+    }
+
+    /**
+     * Optional icon pack: drop `<package.name>.png` into
+     * Android/data/com.belleui.launcher/files/icons/ and it replaces that app's icon
+     * (used as a full tile, so supply glossy rounded-square artwork).
+     */
+    private fun loadCustomIcon(pkg: String): Bitmap? {
+        val f = java.io.File(ctx.getExternalFilesDir("icons") ?: return null, "$pkg.png")
+        return if (f.exists()) BitmapFactory.decodeFile(f.path) else null
+    }
+
+    /** Skeuomorphic tile: soft drop shadow, glass plate, gloss, rim light. 128px canvas, plate 96px. */
+    private fun bake(glyph: Bitmap, full: Boolean): Bitmap {
+        val out = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val plate = RectF(16f, 10f, 112f, 106f)
+        val r = 22f
+        p.color = 0x99000000.toInt()
+        p.maskFilter = BlurMaskFilter(7f, BlurMaskFilter.Blur.NORMAL)
+        c.save()
+        c.translate(0f, 6f)
+        c.drawRoundRect(plate, r, r, p)
+        c.restore()
+        p.maskFilter = null
+        if (full) {
+            c.save()
+            c.clipPath(Path().apply { addRoundRect(plate, r, r, Path.Direction.CW) })
+            c.drawBitmap(glyph, null, plate, fp)
+            c.restore()
+        } else {
+            p.shader = LinearGradient(0f, plate.top, 0f, plate.bottom, 0xFF4A5461.toInt(), 0xFF141A22.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(plate, r, r, p)
+            p.shader = null
+            c.drawBitmap(glyph, null, RectF(30f, 24f, 98f, 92f), fp)
+        }
+        // gloss on the top half
+        c.save()
+        c.clipRect(plate.left, plate.top, plate.right, plate.centerY())
+        p.shader = LinearGradient(0f, plate.top, 0f, plate.centerY(), 0x70FFFFFF, 0x06FFFFFF, Shader.TileMode.CLAMP)
+        c.drawRoundRect(plate, r, r, p)
+        p.shader = null
+        c.restore()
+        // rim light
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f
+        p.color = 0x66FFFFFF
+        c.drawRoundRect(RectF(plate.left + 0.75f, plate.top + 0.75f, plate.right - 0.75f, plate.bottom - 0.75f), r, r, p)
+        return out
     }
 
     private fun toBitmap(d: Drawable): Bitmap {

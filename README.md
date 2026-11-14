@@ -44,3 +44,16 @@ The APK lands in `app/build/outputs/apk/debug/`. The GitHub Actions workflow
 (`.github/workflows/build.yml`) builds it on every push and uploads it as an artifact.
 
 Install it, press Home, and choose BelleUI as the default launcher.
+
+## Look
+
+Skeuomorphic, Belle-style: every app icon is baked onto a glossy glass plate with a soft
+drop shadow and rim light; tiles, widgets, popups and the focus highlight cast soft layered
+shadows.
+
+### Custom icon packs
+
+Drop `<package.name>.png` files (e.g. `com.android.chrome.png`) into
+`Android/data/com.belleui.launcher/files/icons/` on the device. They replace that app's
+icon and are used as a full tile, so supply glossy rounded-square artwork (N9-style packs
+work well). Check an icon pack's licence before redistributing it; none is bundled here.
