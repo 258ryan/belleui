@@ -22,9 +22,9 @@ looks right at other 4:3 sizes. No third-party dependencies.
 |--------|--------|
 | D-pad / left stick | Move focus (past the grid edge switches page) |
 | A | Open / select |
-| B | Back (Home -> Menu, elsewhere -> Home; closes popups); left toolbar icon |
+| B | Back, one step up to Home (on Home it opens Applications); closes popups; left toolbar icon |
 | X | Options for the focused app (open, move, add/remove from home, hide, app info, uninstall) |
-| Y / Select | Launcher settings (theme, button layout, show hidden apps, Android settings) |
+| Y / Select | Launcher settings (gear in the toolbar) (theme, button layout, show hidden apps, Android settings) |
 | L1 / R1 | Previous / next page |
 | Start | Toggle Home / Menu |
 
@@ -47,13 +47,15 @@ Install it, press Home, and choose BelleUI as the default launcher.
 
 ## Look
 
-Modelled on Symbian Belle / Anna: soft, dark and glossy.
+Follows the Symbian Belle design guidelines (see "Symbian Design Guidelines show Belle UI future", All About Symbian, 2011):
 
-- vignetted dark wallpaper with a soft coloured light; four colour themes (Settings)
-- vivid glossy squircle icons with soft drop shadows; selection is a translucent glowing glass pad
-- home: black glossy flip-clock tiles (hours, minutes, calendar day) and shortcuts straight on the wallpaper
-- translucent top status bar; bottom toolbar of icons (back / menu, select, options) with the gamepad button letter beside each
-- Options appear as a rounded context menu rising from the bottom-right, like Belle's hamburger menu
+- **Status bar:** slim, one line, solid black: wifi, battery, time
+- **Toolbar:** one bar replacing soft keys. Back arrow (mandatory; the apps button on Home), two action buttons (select, settings), three-line menu button on the right that opens the pop-up options menu. Each shows its gamepad letter.
+- **Tab bar:** Applications / Recent are parallel views under the status bar, stretched full width, selected tab darker. Back leaves both in one step.
+- **Lists:** light list view with a list header band, two-line items, separators, a scrollbar, dark selection band
+- **Dialogs:** centred, dark title band with a close cross, light body. The options menu rises from the menu button.
+- **Info banners:** messages are auto-dismissing banners across the top
+- **Home:** glossy flip-clock tiles and shortcuts straight on a vignetted wallpaper; vivid glossy squircle icons with soft shadows; haptic tick on select
 
 ### Icons
 
