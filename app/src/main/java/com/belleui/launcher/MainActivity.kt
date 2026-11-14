@@ -14,6 +14,7 @@ class MainActivity : Activity() {
         launcher = LauncherView(this)
         setContentView(launcher)
         hideSystemBars()
+        if (intent?.getBooleanExtra("belle_recents", false) == true) launcher.post { launcher.openRecents() }
     }
 
     override fun onResume() {
@@ -29,7 +30,8 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // HOME pressed (or launcher re-launched): return to the home page.
-        if (intent.action == Intent.ACTION_MAIN) launcher.goHome()
+        if (intent.getBooleanExtra("belle_recents", false)) launcher.openRecents()
+        else if (intent.action == Intent.ACTION_MAIN) launcher.goHome()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

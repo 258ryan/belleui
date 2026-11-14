@@ -285,6 +285,17 @@ class LauncherView(private val act: Activity) : View(act) {
         invalidate()
     }
 
+    /** The recent-apps key (through the Belle Chooser module): the Recent tab, ready to pick from. */
+    fun openRecents() {
+        popup = null
+        reorder = false
+        setPage(2)
+        tabFocus = false
+        recentSel = 0
+        if (loaded) refreshLists()
+        invalidate()
+    }
+
     fun goHome() {
         popup = null
         reorder = false
