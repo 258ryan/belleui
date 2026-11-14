@@ -1,0 +1,35 @@
+name: Build Chooser app
+# This branch has its own workflow: it builds only the Chooser module and publishes only its own release.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :vector:assembleDebug
+      - run: cp vector/build/outputs/apk/debug/vector-debug.apk BelleUI-Chooser-Vector.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-vector-${{ github.run_number }}
+          path: BelleUI-Chooser-Vector.apk
+          if-no-vector-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete vector-latest --yes --cleanup-tag || true
+          gh release create vector-latest BelleUI-Chooser-Vector.apk \
+            --title "BelleUI Chooser (Vector module) (latest build)" \
+            --notes "Vector module built from branch belle/vector at ${GITHUB_SHA::7}." \
+            --prerelease --target "$GITHUB_SHA"

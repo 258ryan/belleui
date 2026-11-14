@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 rootProject.name = "belleui"
 include(":belle")
 include(":app")
+include(":xposed-stub")
+include(":vector")
