@@ -8,7 +8,7 @@ import com.belleui.kit.BelleActivity
 import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
-class StylesActivity : BelleActivity() {
+open class StylesActivity : BelleActivity() {
     override fun createRoot(shell: BelleShell): Screen = RootScreen(this)
 
     val wallpapers: WallpaperManager get() = WallpaperManager.getInstance(this)
@@ -22,6 +22,9 @@ class StylesActivity : BelleActivity() {
         } catch (_: Exception) {
         }
     }
+
+    /** Called after a wallpaper was set; when another app asked for it, the caller is answered and this closes. */
+    open fun onWallpaperSet() {}
 
     var onResumeHook: (() -> Unit)? = null
 

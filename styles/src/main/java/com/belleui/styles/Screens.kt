@@ -141,15 +141,21 @@ fun toneTitle(ctx: android.content.Context, type: Int): String = try {
 // tones
 // ================================================================================================
 
-class Tone(val title: String, val uri: Uri)
+class Tone(val title: String, val uri: Uri) {
+    val silent: Boolean get() = uri == Uri.EMPTY
+}
 
-class TonesScreen(private val act: StylesActivity, private val type: Int, private val what: String) : Screen() {
+/** The ringtone picker other apps ask for: what to offer and what is selected now. */
+class Pick(val existing: Uri?, val showDefault: Boolean, val showSilent: Boolean)
+
+class TonesScreen(private val act: StylesActivity, private val type: Int, private val what: String, private val pick: Pick? = null) : Screen() {
     override val title get() = what
     override val tabs = listOf(TabDef("Tones", Ic.BELL), TabDef("Music", Ic.NOTE))
     private val lists = arrayOf(ListState(), ListState())
     private var tones: List<Tone>? = null
     private var music: List<Tone>? = null
-    private var current: Uri? = try { RingtoneManager.getActualDefaultRingtoneUri(act, type) } catch (_: Exception) { null }
+    private var current: Uri? = if (pick != null) pick.existing else try { RingtoneManager.getActualDefaultRingtoneUri(act, type) } catch (_: Exception) { null }
+    private var chosen: Tone? = null
     private var playing: Ringtone? = null
     private var note: String? = null
 
@@ -157,6 +163,8 @@ class TonesScreen(private val act: StylesActivity, private val type: Int, privat
         if (tones == null) {
             Thread {
                 val out = ArrayList<Tone>()
+                if (pick != null && pick.showSilent) out.add(Tone("Silent", Uri.EMPTY))
+                if (pick != null && pick.showDefault && type != RingtoneManager.TYPE_ALL) out.add(Tone("Default", RingtoneManager.getDefaultUri(type)))
                 try {
                     val rm = RingtoneManager(act)
                     rm.setType(type)
@@ -218,12 +226,36 @@ class TonesScreen(private val act: StylesActivity, private val type: Int, privat
         val cur = current
         lists[tab].draw(c, ui, r, items!!.size) { i ->
             val t = items[i]
-            val isCur = cur != null && cur == t.uri
-            Row(t.title, iconKind = Ic.NOTE, right = if (isCur) "Current" else null)
+            val isCur = (cur != null && cur == t.uri) || (pick != null && cur == null && t.silent)
+            Row(t.title, iconKind = Ic.NOTE, right = if (chosen === t) "Selected" else if (isCur) "Current" else null)
         }
     }
 
+    /** Picker mode: A previews, A again hands the tone back to the app that asked. */
+    private fun choose(t: Tone) {
+        stop()
+        if (chosen === t) {
+            act.setResult(android.app.Activity.RESULT_OK, android.content.Intent().putExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, if (t.silent) null else t.uri))
+            act.finish()
+            return
+        }
+        chosen = t
+        if (!t.silent) {
+            try {
+                playing = RingtoneManager.getRingtone(act, t.uri)
+                playing?.play()
+            } catch (_: Exception) {
+            }
+        }
+        shell.toast("Press A again to use it")
+        shell.invalidate()
+    }
+
     private fun apply(t: Tone) {
+        if (pick != null) {
+            choose(t)
+            return
+        }
         stop()
         if (!act.canWriteSettings()) {
             act.askWriteSettings()
@@ -575,7 +607,10 @@ class PreviewScreen(private val act: StylesActivity, private val name: String, p
             } catch (_: Throwable) {
                 ok = false
             }
-            shell.post { shell.toast(if (ok) "Wallpaper set" else "Couldn't set the wallpaper") }
+            shell.post {
+                shell.toast(if (ok) "Wallpaper set" else "Couldn't set the wallpaper")
+                if (ok) act.onWallpaperSet()
+            }
         }.start()
     }
 }
