@@ -1,0 +1,35 @@
+name: Build Recorder app
+# This branch has its own workflow: it builds only the Recorder module and publishes only its own release.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :recorder:assembleDebug
+      - run: cp recorder/build/outputs/apk/debug/recorder-debug.apk BelleUI-Recorder.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-recorder-${{ github.run_number }}
+          path: BelleUI-Recorder.apk
+          if-no-recorder-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete recorder-latest --yes --cleanup-tag || true
+          gh release create recorder-latest BelleUI-Recorder.apk \
+            --title "BelleUI Recorder (latest build)" \
+            --notes "Recorder built from branch belle/recorder at ${GITHUB_SHA::7}." \
+            --prerelease --target "$GITHUB_SHA"
