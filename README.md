@@ -51,9 +51,19 @@ Skeuomorphic, Belle-style: every app icon is baked onto a glossy glass plate wit
 drop shadow and rim light; tiles, widgets, popups and the focus highlight cast soft layered
 shadows.
 
-### Custom icon packs
+### Icons
 
-Drop `<package.name>.png` files (e.g. `com.android.chrome.png`) into
-`Android/data/com.belleui.launcher/files/icons/` on the device. They replace that app's
-icon and are used as a full tile, so supply glossy rounded-square artwork (N9-style packs
-work well). Check an icon pack's licence before redistributing it; none is bundled here.
+Icon lookup order for each app:
+
+1. `Android/data/com.belleui.launcher/files/icons/<package.name>.png` on the device (your own overrides)
+2. Bundled N9ish pack, per package: `app/src/main/assets/icons/apk/` (48 apps, e.g. Firefox, WhatsApp, Maps, Play Store)
+3. Bundled N9ish pack, per app type: `assets/icons/generic/` (phone, messages, browser, camera, settings, clock, gallery, ...), picked by keywords in the package name and label
+4. Fallback: the app's own icon on a baked glass plate
+
+Pack art is drawn as-is with a soft shadow. To add more icons, drop a PNG into `assets/icons/apk/`
+named after the package with `_` written as `__` and `.` written as `_`
+(`org.mozilla.firefox` -> `org_mozilla_firefox.png`).
+
+The artwork comes from the "N9ish" theme pack by speactra (openrepos.net). Check its licence
+before making this repository public or redistributing the APK. `share.zip` in the repo root
+is the original download and can be deleted.

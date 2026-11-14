@@ -9,7 +9,6 @@ import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
@@ -40,6 +39,7 @@ class AppRepo(private val ctx: Context) {
             .map { ri ->
                 val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                 val custom = loadCustomIcon(cn.packageName)
+                    ?: loadPackIcon(cn.packageName, ri.loadLabel(pm).toString())
                 val icon = if (custom != null) bake(custom, full = true) else bake(toBitmap(ri.loadIcon(pm)), full = false)
                 AppEntry(cn.flattenToString(), ri.loadLabel(pm).toString(), cn, icon)
             }
@@ -53,6 +53,49 @@ class AppRepo(private val ctx: Context) {
     private fun loadCustomIcon(pkg: String): Bitmap? {
         val f = java.io.File(ctx.getExternalFilesDir("icons") ?: return null, "$pkg.png")
         return if (f.exists()) BitmapFactory.decodeFile(f.path) else null
+    }
+
+    // ---- bundled N9ish icon pack (assets/icons) -------------------------------------
+
+    private val packApk: Set<String> by lazy { ctx.assets.list("icons/apk")?.toSet() ?: emptySet() }
+    private val packGeneric: Set<String> by lazy { ctx.assets.list("icons/generic")?.toSet() ?: emptySet() }
+
+    /** First match wins. Matched against "<package> <label>", lower-case. */
+    private val genericRules = listOf(
+        "settings" to Regex("settings|setting"),
+        "people" to Regex("contacts|people"),
+        "phone" to Regex("dialer|phone|telecom"),
+        "messaging" to Regex("messag|mms|sms|telegram|chat"),
+        "camera" to Regex("camera"),
+        "gallery" to Regex("gallery|photos|album"),
+        "calendar" to Regex("calendar"),
+        "clock" to Regex("clock|alarm"),
+        "calculator" to Regex("calculator|calc"),
+        "email" to Regex("mail"),
+        "notes" to Regex("notes|keep|memo"),
+        "map" to Regex("maps|navigation|navi"),
+        "weather" to Regex("weather"),
+        "store" to Regex("vending|store|market|fdroid"),
+        "office" to Regex("office|docs|sheets|slides|word|excel|wps"),
+        "mediaplayer" to Regex("music|player|video|vlc|podcast|radio"),
+        "browser" to Regex("browser|chrome|firefox|brave|opera|duckduckgo|vivaldi"),
+    )
+
+    private fun loadAsset(path: String): Bitmap? = try {
+        ctx.assets.open(path).use { BitmapFactory.decodeStream(it) }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun loadPackIcon(pkg: String, label: String): Bitmap? {
+        // Package-specific art; the pack names files with '_' escaped as "__" and '.' as '_'.
+        val key = pkg.replace("_", "__").replace(".", "_") + ".png"
+        if (key in packApk) loadAsset("icons/apk/$key")?.let { return it }
+        val hay = "$pkg $label".lowercase()
+        for ((name, rx) in genericRules) {
+            if (rx.containsMatchIn(hay) && "$name.png" in packGeneric) return loadAsset("icons/generic/$name.png")
+        }
+        return null
     }
 
     /** Skeuomorphic tile: soft drop shadow, glass plate, gloss, rim light. 128px canvas, plate 96px. */
@@ -71,10 +114,9 @@ class AppRepo(private val ctx: Context) {
         c.restore()
         p.maskFilter = null
         if (full) {
-            c.save()
-            c.clipPath(Path().apply { addRoundRect(plate, r, r, Path.Direction.CW) })
+            // icon-pack art already has its own gloss and shape: just shadow + draw
             c.drawBitmap(glyph, null, plate, fp)
-            c.restore()
+            return out
         } else {
             p.shader = LinearGradient(0f, plate.top, 0f, plate.bottom, 0xFF4A5461.toInt(), 0xFF141A22.toInt(), Shader.TileMode.CLAMP)
             c.drawRoundRect(plate, r, r, p)
