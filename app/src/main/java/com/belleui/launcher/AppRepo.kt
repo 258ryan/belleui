@@ -296,6 +296,15 @@ class AppRepo(private val ctx: Context) {
         }
     }
 
+    /** Home widget slots: 0 clock, 1 date, 2 battery, 3 storage, 4 notifications. */
+    var widgetLeft: Int
+        get() = prefs.getInt("widgetLeft", 0).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt("widgetLeft", v).apply()
+
+    var widgetRight: Int
+        get() = prefs.getInt("widgetRight", 2).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt("widgetRight", v).apply()
+
     var showHidden: Boolean
         get() = prefs.getBoolean("showHidden", false)
         set(v) = prefs.edit().putBoolean("showHidden", v).apply()
