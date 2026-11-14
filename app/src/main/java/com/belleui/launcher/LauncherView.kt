@@ -87,6 +87,8 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- ui state ----------------------------------------------------------------
     private var page = 0
     private var pageAnim = 0f
+    private var tab = 1
+    private var tabFocus = false
     private var homeSel = 0
     private var menuSel = 0
     private var menuTop = 0
@@ -369,10 +371,20 @@ class LauncherView(private val act: Activity) : View(act) {
             invalidate()
             return
         }
+        if (tabFocus && page >= 1 && (a == Act.LEFT || a == Act.RIGHT || a == Act.UP || a == Act.DOWN || a == Act.OK || a == Act.BACK)) {
+            when (a) {
+                Act.LEFT -> setPage(1)
+                Act.RIGHT -> setPage(2)
+                Act.DOWN, Act.OK, Act.BACK -> tabFocus = false
+                else -> {}
+            }
+            invalidate()
+            return
+        }
         when (a) {
             Act.PREV -> setPage(page - 1)
             Act.NEXT -> setPage(page + 1)
-            Act.MENU -> setPage(if (page == 1) 0 else 1)
+            Act.MENU -> setPage(if (page >= 1) 0 else 1)
             Act.SETTINGS -> openSettings(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
@@ -381,9 +393,14 @@ class LauncherView(private val act: Activity) : View(act) {
         invalidate()
     }
 
+    /** 0 = Home; 1 / 2 = the Applications / Recent tabs of the apps view (switched in place, no slide). */
     private fun setPage(p: Int) {
         page = p.coerceIn(0, 2)
+        if (page >= 1) tab = page else tabFocus = false
     }
+
+    /** Horizontal slot the page occupies: both tabs share the apps slot. */
+    private fun pagePos() = min(page, 1)
 
     private fun navigate(a: Act) {
         when (page) {
@@ -404,20 +421,20 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> {
                 val n = menuApps.size
                 if (n == 0) {
-                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2)
+                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP) tabFocus = true
                     return
                 }
                 when (a) {
                     Act.LEFT -> if (menuSel % 4 == 0) setPage(0) else menuSel--
                     Act.RIGHT -> if (menuSel % 4 == 3 || menuSel == n - 1) setPage(2) else menuSel++
-                    Act.UP -> if (menuSel >= 4) menuSel -= 4
+                    Act.UP -> if (menuSel >= 4) menuSel -= 4 else tabFocus = true
                     Act.DOWN -> if (menuSel + 4 < n) menuSel += 4 else if (menuSel / 4 < (n - 1) / 4) menuSel = n - 1
                     Act.OK -> launch(menuApps[menuSel])
                     else -> {}
                 }
             }
             2 -> when (a) {
-                Act.UP -> if (recentSel > 0) recentSel--
+                Act.UP -> if (recentSel > 0) recentSel-- else tabFocus = true
                 Act.DOWN -> if (recentSel < recents.size - 1) recentSel++
                 Act.LEFT -> setPage(1)
                 Act.OK -> recents.getOrNull(recentSel)?.let { launch(it) }
@@ -463,7 +480,7 @@ class LauncherView(private val act: Activity) : View(act) {
             invalidate()
             return true
         }
-        if (abs(pageAnim - page) > 0.05f) return false
+        if (abs(pageAnim - pagePos()) > 0.05f) return false
         if (y > cBot) { // soft-key bar
             if (!selectOnly) perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
             return true
@@ -767,8 +784,8 @@ class LauncherView(private val act: Activity) : View(act) {
         val k = 1f - exp(-dt * 18f)
         var busy = false
 
-        pageAnim += (page - pageAnim) * k
-        if (abs(page - pageAnim) < 0.004f) pageAnim = page.toFloat() else busy = true
+        pageAnim += (pagePos() - pageAnim) * k
+        if (abs(pagePos() - pageAnim) < 0.004f) pageAnim = pagePos().toFloat() else busy = true
         menuTopAnim += (menuTop - menuTopAnim) * k
         if (abs(menuTop - menuTopAnim) < 0.004f) menuTopAnim = menuTop.toFloat() else busy = true
         recentTopAnim += (recentTop - recentTopAnim) * k
@@ -785,17 +802,11 @@ class LauncherView(private val act: Activity) : View(act) {
         if (menuFocus.step(k)) busy = true
         if (recentFocus.step(k)) busy = true
 
-        // wallpaper: dark base, soft coloured light from above, heavy vignette
+        // no background is painted: the window shows the system wallpaper
         p.style = Paint.Style.FILL
-        p.shader = bgShader
-        c.drawRect(0f, 0f, w, h, p)
-        p.shader = spotShader
-        c.drawRect(0f, 0f, w, h, p)
-        p.shader = vigShader
-        c.drawRect(0f, 0f, w, h, p)
         p.shader = null
 
-        for (i in 0..2) {
+        for (i in 0..1) {
             val d = i - pageAnim
             if (abs(d) >= 1f) continue
             c.save()
@@ -803,8 +814,7 @@ class LauncherView(private val act: Activity) : View(act) {
             c.translate(d * w, 0f)
             when (i) {
                 0 -> drawHome(c)
-                1 -> drawMenu(c)
-                else -> drawRecent(c)
+                else -> if (tab == 2) drawRecent(c) else drawMenu(c)
             }
             c.restore()
         }
@@ -852,6 +862,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun drawHome(c: Canvas) {
         val w = width.toFloat()
+        // light scrims behind text only, so any wallpaper stays readable
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, cTop + 150f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 150), Shader.TileMode.CLAMP)
+        c.drawRect(0f, cTop + 150f * sc, w, cBot, p)
+        p.shader = null
         val m = 14f * sc
         val gap = 12f * sc
         val ww = (w - 2 * m - gap) / 2f
@@ -960,7 +975,21 @@ class LauncherView(private val act: Activity) : View(act) {
         for (i in labels.indices) {
             val sel = i == selected
             rf.set(i * tw, cTop, (i + 1) * tw, cTop + h)
-            nine(c, if (sel) "qtg_fr_tab_active" else "qtg_fr_tab_passive_normal", rf, 40, 20f)
+            if (sel) {
+                p.style = Paint.Style.FILL
+                p.color = Color.BLACK
+                c.drawRect(rf, p)
+                nine(c, "qtg_fr_tab_active", rf, 40, 20f, 190)
+            } else {
+                nine(c, "qtg_fr_tab_passive_normal", rf, 40, 20f)
+            }
+            if (sel && tabFocus) {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 3f * sc
+                p.color = theme.accentLight
+                c.drawRect(rf.left + 2f * sc, rf.top + 2f * sc, rf.right - 2f * sc, rf.bottom - 2f * sc, p)
+                p.style = Paint.Style.FILL
+            }
             val col = if (sel) Color.WHITE else 0xFF999999.toInt()
             val tsz = 18f * sc
             val face = if (sel) sans else light
@@ -1186,7 +1215,21 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- overlays: options Menu, SelectionDialog, InfoBanner. Nothing dims the screen behind them. -----
 
     private fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) {
-        nine(c, if (selected) "qtg_fr_pushbutton_pressed" else "qtg_fr_pushbutton_normal", r, 40, 20f)
+        if (selected) {
+            nine(c, "qtg_fr_pushbutton_pressed", r, 40, 20f)
+        } else {
+            // colours sampled from the real Belle Cancel / Yes / No buttons
+            val rad = 6f * sc
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF585953.toInt(), 0xFF393A34.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, rad, rad, p)
+            p.shader = null
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = al(Color.BLACK, 170)
+            c.drawRoundRect(r, rad, rad, p)
+            p.style = Paint.Style.FILL
+        }
         text(c, label, r.centerX(), baselineFor(r.centerY(), 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER)
     }
 
@@ -1201,7 +1244,13 @@ class LauncherView(private val act: Activity) : View(act) {
         if (pu.menu) {
             // options Menu: slides up from the bottom edge over the toolbar
             rf.set(box.left, box.top, box.right, box.bottom + 20f * sc)
-            nine(c, "qtg_fr_popup_options", rf, 40, 20f)
+            p.style = Paint.Style.FILL
+            p.shader = null
+            p.color = 0xFF1B1B1B.toInt() // measured: the real panel is #1B1B1B with a faint top sheen
+            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
+            p.shader = LinearGradient(0f, rf.top, 0f, rf.top + 46f * sc, al(Color.WHITE, 26), al(Color.WHITE, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
+            p.shader = null
         } else {
             // SelectionDialog: dark panel with the theme's heading frame
             nine(c, "qtg_fr_popup", box, 40, 20f)

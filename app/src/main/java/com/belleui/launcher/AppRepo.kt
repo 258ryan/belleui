@@ -45,12 +45,16 @@ class AppRepo(private val ctx: Context) {
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         apps = pm.queryIntentActivities(query, 0)
             .filter { it.activityInfo.packageName != ctx.packageName }
-            .map { ri ->
-                val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
-                val custom = loadCustomIcon(cn.packageName)
-                    ?: loadPackIcon(cn.packageName, ri.loadLabel(pm).toString())
-                val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm)))
-                AppEntry(cn.flattenToString(), ri.loadLabel(pm).toString(), cn, icon)
+            .mapNotNull { ri ->
+                try {
+                    val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
+                    val label = ri.loadLabel(pm).toString()
+                    val custom = loadCustomIcon(cn.packageName) ?: loadPackIcon(cn.packageName, label)
+                    val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm), label))
+                    AppEntry(cn.flattenToString(), label, cn, icon)
+                } catch (_: Throwable) {
+                    null // one bad app must never take the whole list down
+                }
             }
     }
 
@@ -167,45 +171,63 @@ class AppRepo(private val ctx: Context) {
         return Color.HSVToColor(h)
     }
 
-    /**
-     * Belle IconFrame for apps that have no pack art: superellipse, vertical gradient (lighter and
-     * more saturated at the top), soft glow at the top centre, thin dark rim, flat white glyph.
-     * Legacy (non-adaptive) icons are left exactly as they are: their own shape, no overlay.
-     */
-    private fun frameTile(d: Drawable): Bitmap {
-        if (Build.VERSION.SDK_INT >= 26 && d is AdaptiveIconDrawable) {
-            val fg = render(d.foreground, 108, 108)
-            val bg = render(d.background, 108, 108)
-            var base = dominant(bg) ?: dominant(fg) ?: 0xFF4B6178.toInt()
-            val hv = FloatArray(3)
-            Color.colorToHSV(base, hv)
-            hv[1] = max(hv[1], 0.55f)
-            hv[2] = hv[2].coerceIn(0.6f, 0.9f)
-            base = Color.HSVToColor(hv)
-            val tile = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
-            val c = Canvas(tile)
-            val shape = squircle(RectF(0f, 0f, 96f, 96f))
-            val p = Paint(Paint.ANTI_ALIAS_FLAG)
-            p.shader = LinearGradient(0f, 0f, 0f, 96f, hsv(base, 0.85f, 1.2f), hsv(base, 1.05f, 0.62f), Shader.TileMode.CLAMP)
-            c.drawPath(shape, p)
-            p.shader = RadialGradient(48f, 4f, 62f, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
-            c.drawPath(shape, p)
-            p.shader = null
-            val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-            fp.colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 0f, 255f,
-                0f, 0f, 0f, 0f, 255f,
-                0f, 0f, 0f, 0f, 255f,
-                0f, 0f, 0f, 1f, 0f,
-            )))
-            c.drawBitmap(fg, null, RectF(-4f, -4f, 100f, 100f), fp)
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 1.5f
-            p.color = 0x88000000.toInt()
-            c.drawPath(squircle(RectF(0.75f, 0.75f, 95.25f, 95.25f)), p)
-            return tile
+    private fun isBlank(b: Bitmap): Boolean {
+        val step = max(1, b.width / 10)
+        var y = 0
+        while (y < b.height) {
+            var x = 0
+            while (x < b.width) {
+                if (Color.alpha(b.getPixel(x, y)) > 16) return false
+                x += step
+            }
+            y += step
         }
-        return render(d, 96, 96)
+        return true
+    }
+
+    /**
+     * Tile for apps with no pack art. Adaptive icons are drawn the way every launcher does it:
+     * background and foreground layers scaled so the 72/108 safe zone fills the tile, clipped to
+     * the Belle superellipse. Colours are untouched. Legacy icons keep their own shape.
+     */
+    private fun frameTile(d: Drawable, label: String): Bitmap {
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && d is AdaptiveIconDrawable) {
+                val tile = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+                val c = Canvas(tile)
+                c.clipPath(squircle(RectF(0f, 0f, 96f, 96f)))
+                d.background?.let {
+                    it.setBounds(-16, -16, 112, 112)
+                    it.draw(c)
+                }
+                d.foreground?.let {
+                    it.setBounds(-16, -16, 112, 112)
+                    it.draw(c)
+                }
+                if (!isBlank(tile)) return tile
+            }
+            val whole = render(d, 96, 96)
+            if (!isBlank(whole)) return whole
+        } catch (_: Throwable) {
+        }
+        return letterTile(label)
+    }
+
+    /** Last resort so an icon can never come out empty: Belle-blue frame with the app's initial. */
+    private fun letterTile(label: String): Bitmap {
+        val tile = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        val c = Canvas(tile)
+        val shape = squircle(RectF(0f, 0f, 96f, 96f))
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.shader = LinearGradient(0f, 0f, 0f, 96f, 0xFF4AA3EE.toInt(), 0xFF1080DD.toInt(), Shader.TileMode.CLAMP)
+        c.drawPath(shape, p)
+        p.shader = null
+        p.color = Color.WHITE
+        p.textAlign = Paint.Align.CENTER
+        p.textSize = 52f
+        val fm = p.fontMetrics
+        c.drawText(label.trim().take(1).uppercase().ifEmpty { "?" }, 48f, 48f - (fm.ascent + fm.descent) / 2f, p)
+        return tile
     }
 
     /**

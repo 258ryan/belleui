@@ -54,15 +54,16 @@ screen is ~228 ppi, close to Belle's 210 ppi.
 
 - **Status bar** 26px, black: page title on the left; wifi, battery and clock on the right
 - **Toolbar** 50px (Belle's landscape height), 30px white glyphs spread evenly edge to edge. First button is Back (the apps button on Home), last is the three-line options menu; select and settings sit between. The gamepad letter is shown beside each.
-- **Tab bar** 50px under the status bar: Applications / Recent, active tab lighter
+- **Tab bar** 50px under the status bar: Applications / Recent are real tabs that switch in place (no sliding). Press Up from the top row to focus the tab bar, then Left/Right to switch; L1/R1 also switch tabs.
 - **Applications**: black page, 70px icon frames, 18px labels, blue highlight
 - **Recent**: 70px `ListItem`s, 12px inset, 50px icon, 22px title, 18px light subtitle, `#444` 1px separators, blue pressed frame
 - **Options menu** slides up from the bottom over the toolbar: 64px items, 22px text, full-width Cancel button
 - **Dialogs** (Settings) are `SelectionDialog` style: `#1E1E1E` rounded panel, Belle-blue title with a close icon, 64px items, max 504px wide
 - **Info banner**: 60px, slides in under the status bar and dismisses itself
 - Nothing dims the screen behind an overlay. Belle blue is `#1080DD`; text white / `#999999`.
+- **Wallpaper:** the launcher window is transparent, so your actual system wallpaper shows on Home (set it from the system wallpaper picker); Applications and Recent are black like real Belle apps.
 - **Home** is the wallpaper page: a clock widget and a battery widget on the Belle widget plate, then shortcuts.
-- **Icons:** pack art is drawn exactly as supplied, with a drop shadow traced from the icon's own outline (no overlay). Apps without pack art get a Belle IconFrame (superellipse, exponent 2.8, gradient, top glow, rim, flat white glyph); legacy non-adaptive icons are left untouched.
+- **Icons:** pack art is drawn exactly as supplied, with a drop shadow traced from the icon's own outline (no overlay). Apps without pack art keep their own colours: adaptive icons are clipped to the Belle superellipse (exponent 2.8), legacy icons are left untouched, and an app whose icon cannot be rendered gets a blue tile with its initial.
 
 Frames and stock glyphs (status bar, toolbar, tab bar, list pressed, popups, buttons, info banner, back/menu/settings/close, battery) are the real Belle theme graphics rendered to PNG in `assets/belle/` and drawn as 9-slice images. Home widgets use the Belle widget plate from the Symbian HomeScreen widget template. The Nokia Pure typeface is proprietary and not bundled; text uses the system sans-serif at the same sizes. See `docs/THIRD-PARTY.md` for licences.
 
