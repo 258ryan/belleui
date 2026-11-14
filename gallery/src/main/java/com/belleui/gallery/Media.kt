@@ -38,9 +38,41 @@ class MediaLibrary(private val ctx: Context) {
     var items: List<Media> = emptyList()
         private set
 
+    private val prefs = ctx.getSharedPreferences("gallery", Context.MODE_PRIVATE)
+
+    /** Only pictures and videos inside these folders are listed; empty = everything on the device. */
+    var folders: List<String>
+        get() = (prefs.getString("folders", "") ?: "").split("\n").filter { it.isNotBlank() }
+        set(v) = prefs.edit().putString("folders", v.joinToString("\n")).apply()
+
+    private fun where(dataColumn: String): Pair<String?, Array<String>?> {
+        val dirs = folders
+        if (dirs.isEmpty()) return null to null
+        val sel = "(" + dirs.joinToString(" OR ") { "$dataColumn LIKE ? ESCAPE '\\'" } + ")"
+        val args = dirs.map { it.trimEnd('/').replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%" }
+        return sel to args.toTypedArray()
+    }
+
+    /** Asks Android to index the pictures and videos in the chosen folders, so new or card files show up. */
+    fun indexFolders() {
+        val exts = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "mp4", "mkv", "avi", "mov", "3gp", "webm", "m4v")
+        val paths = ArrayList<String>()
+        fun walk(d: java.io.File, depth: Int) {
+            if (depth > 8 || paths.size > 20000) return
+            for (f in d.listFiles() ?: return) {
+                if (f.name.startsWith(".")) continue
+                if (f.isDirectory) walk(f, depth + 1) else if (f.extension.lowercase() in exts) paths.add(f.path)
+            }
+        }
+        for (d in folders) walk(java.io.File(d), 0)
+        if (paths.isNotEmpty()) android.media.MediaScannerConnection.scanFile(ctx, paths.toTypedArray(), null, null)
+    }
+
     /** Blocking; call off the main thread. */
     fun load() {
         val out = ArrayList<Media>()
+        val (imgSel, imgArgs) = where(MediaStore.Images.Media.DATA)
+        val (vidSel, vidArgs) = where(MediaStore.Video.Media.DATA)
         try {
             ctx.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -49,7 +81,7 @@ class MediaLibrary(private val ctx: Context) {
                     MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
                     MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.SIZE,
                 ),
-                null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC",
+                imgSel, imgArgs, "${MediaStore.Images.Media.DATE_ADDED} DESC",
             )?.use { c ->
                 while (c.moveToNext()) {
                     out.add(
@@ -71,7 +103,7 @@ class MediaLibrary(private val ctx: Context) {
                     MediaStore.Video.Media.DATE_ADDED, MediaStore.Video.Media.BUCKET_ID, MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
                     MediaStore.Video.Media.WIDTH, MediaStore.Video.Media.HEIGHT, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DURATION,
                 ),
-                null, null, "${MediaStore.Video.Media.DATE_ADDED} DESC",
+                vidSel, vidArgs, "${MediaStore.Video.Media.DATE_ADDED} DESC",
             )?.use { c ->
                 while (c.moveToNext()) {
                     out.add(
