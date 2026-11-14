@@ -76,6 +76,7 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Battery", "${b.pct}% - ${b.status}", icon = g.get("qgn_indi_battery_strength"), drill = true),
             Row("Display", "Brightness, screen timeout", icon = g.get("qgn_prop_set_gene_phone"), drill = true),
             Row("Sound", "Media volume $media%", icon = g.get("qgn_prop_set_tones_sub"), drill = true),
+            Row("Styles", "Wallpaper, tones and sounds", icon = g.get("qgn_menu_theme"), drill = true),
             Row("About", "${Build.MODEL} - Android ${Build.VERSION.RELEASE} - ${Sys.fmtSize(ram)} RAM", icon = g.get("qgn_prop_cp_dev_about"), drill = true),
             Row("Android settings", "Everything else", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
         )
@@ -89,7 +90,11 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             3 -> shell.push(BatteryScreen(act))
             4 -> shell.push(DisplayScreen(act))
             5 -> shell.push(SoundScreen(act))
-            6 -> shell.push(AboutScreen(act))
+            6 -> {
+                val i = act.packageManager.getLaunchIntentForPackage("com.belleui.styles")
+                if (i == null || !act.tryStart(i)) shell.toast("Styles isn't installed")
+            }
+            7 -> shell.push(AboutScreen(act))
             else -> if (!act.tryStart(Intent(Settings.ACTION_SETTINGS))) shell.toast("Not available")
         }
     }
