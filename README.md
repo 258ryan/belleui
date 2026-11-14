@@ -87,3 +87,9 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### System settings (`belle/settings`)
+
+A settings app that covers the everyday things so you rarely need Android's own: **Storage** (drive usage bars, media breakdown), **Apps** (installed / system tabs, detail page with open, app info and uninstall), **Connectivity** (live Wi-Fi, Bluetooth, airplane, mobile, NFC and IP state, opening the system quick panels to toggle), **Battery** (level, status, time to full, current, health, temperature, voltage, battery saver), **Display** (brightness, auto-brightness, screen timeout, auto-rotate, wallpaper) and **Sound** (media, ringtone, alarm and notification volumes, ringer mode), **About** (device, Android, kernel, processor, memory, screen, uptime), plus a link to Android settings for the rest.
+Left / right adjust a bar; A opens. Brightness and timeout need the one-time "modify system settings" permission, which the app asks for.
+Own workflow `settings.yml` builds only this app and publishes `settings-latest`.
