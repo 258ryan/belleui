@@ -54,14 +54,15 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
         get() = act.pageTitle.ifEmpty { Uri.parse(act.pageUrl).host ?: "Web" }
     override val tickMs get() = if (act.loading) 200L else 0L
 
-    private var cursorOn = true
+    /** 0 = jump between links (default), 1 = movable pointer, 2 = keys go straight to the page. */
+    private var navMode = 0
     private var cx = -1f
     private var cy = -1f
     private val arrow = Path()
     private val handler = Handler(Looper.getMainLooper())
 
     override fun tools() = listOf(
-        Tool(Ic.SEARCH, { act.showAddress() }),
+        Tool(Ic.GOTO, { act.showAddress() }),
         Tool(if (act.loading) Ic.CLOSE else Ic.REFRESH, { if (act.loading) act.web.stopLoading() else act.web.reload() }),
     )
 
@@ -73,7 +74,7 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
         items.add(MenuItem("Add bookmark") {
             shell.toast(if (Bookmarks(act).add(act.pageTitle, act.pageUrl)) "Bookmark added" else "Already bookmarked")
         })
-        items.add(MenuItem("Pointer: " + if (cursorOn) "on" else "off") { cursorOn = !cursorOn })
+        items.add(MenuItem("D-pad: " + arrayOf("links", "pointer", "page scroll")[navMode]) { navMode = (navMode + 1) % 3 })
         items.add(MenuItem("Desktop site: " + if (act.desktop) "on" else "off") { act.applyDesktop(!act.desktop) })
         items.add(MenuItem("Share page") {
             val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, act.pageUrl)
@@ -100,7 +101,7 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
             ui.p.color = Belle.BLUE_LIGHT
             c.drawRect(r.left, r.top, r.left + r.width() * act.loadProgress / 100f, r.top + 4f * ui.sc, ui.p)
         }
-        if (!cursorOn || act.addressOpen || act.fullscreenVideo) return
+        if (navMode != 1 || act.addressOpen || act.fullscreenVideo) return
         if (cx < 0) {
             cx = r.centerX()
             cy = r.centerY()
@@ -142,6 +143,39 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
         }, 40)
     }
 
+    /** D-pad moves the focus ring between links, buttons and fields; A clicks; nothing that way = scroll. */
+    private fun linkNav(a: Act): Boolean {
+        val dir = when (a) {
+            Act.UP -> "up"
+            Act.DOWN -> "down"
+            Act.LEFT -> "left"
+            Act.RIGHT -> "right"
+            else -> null
+        }
+        if (dir != null) {
+            val w = act.web
+            val step = (min(shell.keyRepeat, 12) * 0.05f + 0.4f)
+            act.web.evaluateJavascript("window.__belleNav ? window.__belleNav('$dir') : false") { r ->
+                if (r != "true") {
+                    when (dir) {
+                        "up" -> w.scrollBy(0, -(w.height * step).toInt())
+                        "down" -> w.scrollBy(0, (w.height * step).toInt())
+                        "left" -> w.scrollBy(-(w.width * step * 0.6f).toInt(), 0)
+                        else -> w.scrollBy((w.width * step * 0.6f).toInt(), 0)
+                    }
+                }
+            }
+            return true
+        }
+        if (a == Act.OK) {
+            act.web.evaluateJavascript("window.__belleNav ? window.__belleNav('click') : false") { r ->
+                if (r != null && r.contains("input")) act.showWebKeyboard()
+            }
+            return true
+        }
+        return false
+    }
+
     override fun onAct(a: Act): Boolean {
         if (act.fullscreenVideo) {
             if (a == Act.BACK) act.hideCustomView()
@@ -165,7 +199,8 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
             }
             else -> {}
         }
-        if (!cursorOn) return false // D-pad and A go straight to the page
+        if (navMode == 2) return false // D-pad and A go straight to the page
+        if (navMode == 0) return linkNav(a)
         val sc = shell.ui.sc
         val step = (7f + min(shell.keyRepeat, 20) * 2f) * sc
         val top = shell.contentTop
@@ -210,7 +245,7 @@ class BookmarksScreen(private val act: BrowserActivity) : Screen() {
             ui.text(c, "No bookmarks", r.centerX(), ui.baselineFor(r.centerY(), 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
             return
         }
-        list.draw(c, ui, r, items.size) { i -> Row(items[i].first, items[i].second, iconKind = Ic.GLOBE, iconColor = 0xFF32B6C8.toInt()) }
+        list.draw(c, ui, r, items.size) { i -> Row(items[i].first, items[i].second, icon = ui.gfx.get("qgn_menu_browser"), iconKind = Ic.GLOBE, iconColor = 0xFF32B6C8.toInt()) }
     }
 
     private fun open(i: Int) {
