@@ -17,6 +17,8 @@ import com.belleui.kit.Ui
 /** Turns an Android document-tree URI (from the folder picker) into a real path. */
 fun treeToPath(uri: Uri): String? {
     val id = try { android.provider.DocumentsContract.getTreeDocumentId(uri) } catch (_: Exception) { return null }
+    // the Belle picker hands out plain paths as document ids
+    if (uri.authority == "com.belleui.picker.documents") return id
     val parts = id.split(":", limit = 2)
     val vol = parts[0]
     val rel = parts.getOrElse(1) { "" }
