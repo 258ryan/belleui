@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 rootProject.name = "belleui"
 include(":belle")
 include(":app")
+include(":video")
