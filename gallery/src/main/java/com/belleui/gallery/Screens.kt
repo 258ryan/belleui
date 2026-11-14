@@ -33,7 +33,8 @@ class MediaGrid(private val act: GalleryActivity) {
     fun draw(c: Canvas, ui: Ui, r: RectF, items: List<Media>, shell: com.belleui.kit.BelleShell) {
         grid.draw(c, ui, r, items.size) { cv, cell, i, selected ->
             val m = items[i]
-            val g = 2f * ui.sc
+            // the selected thumbnail is drawn smaller so the blue highlight frame shows around it
+            val g = (if (selected) 8f else 2f) * ui.sc
             val box = RectF(cell.left + g, cell.top + g, cell.right - g, cell.bottom - g)
             val bmp = Thumbs.get(act, m) { shell.invalidate() }
             if (bmp != null) {
@@ -110,7 +111,7 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
             else -> albumList.draw(c, ui, r, albums.size) { i ->
                 val (name, list) = albums[i]
                 val thumb = Thumbs.get(act, list.first()) { shell.invalidate() }
-                Row(name, "${list.size} items", icon = thumb, iconKind = if (thumb == null) Ic.PHOTO else -1, drill = true)
+                Row(name, "${list.size} items", icon = thumb ?: ui.gfx.get("qgn_prop_album_photo_video"), iconKind = Ic.PHOTO, drill = true)
             }
         }
     }
@@ -208,7 +209,11 @@ class ViewerScreen(private val act: GalleryActivity, private val items: List<Med
 
     override fun tools() = listOf(
         Tool(Ic.SHARE, { share() }),
-        Tool(Ic.SEARCH, { cycleZoom() }, !current.isVideo),
+        Tool(Ic.SLIDESHOW, {
+            slideshow = !slideshow
+            lastAdvance = System.currentTimeMillis()
+            shell.toast(if (slideshow) "Slideshow started" else "Slideshow stopped")
+        }),
     )
 
     override fun menu() = listOf(
