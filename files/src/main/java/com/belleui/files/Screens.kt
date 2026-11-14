@@ -40,6 +40,8 @@ class RootScreen(private val act: FilesActivity) : Screen() {
     private val list = ListState()
     private var volumes: List<Volume> = emptyList()
     private var places: List<Pair<String, File>> = emptyList()
+    private class VolInfo(val label: String, val text: String, val frac: Float)
+    private var volInfo: List<VolInfo> = emptyList()
 
     override fun onShow() {
         act.onResumeHook = { reload(); shell.postInvalidate() }
@@ -49,6 +51,12 @@ class RootScreen(private val act: FilesActivity) : Screen() {
     private fun reload() {
         volumes = if (act.hasAccess()) Fs.volumes(act) else emptyList()
         places = if (act.hasAccess()) Fs.places() else emptyList()
+        // drive sizes are read once here, not on every frame
+        volInfo = volumes.map { v ->
+            val total = v.total
+            val free = v.free
+            VolInfo(v.label, "${Fs.fmtSize(free)} free of ${Fs.fmtSize(total)}", if (total > 0) (total - free).toFloat() / total else 0f)
+        }
     }
 
     override fun menu() = listOf(
@@ -77,13 +85,19 @@ class RootScreen(private val act: FilesActivity) : Screen() {
             return
         }
         val rows = rows()
-        list.draw(c, ui, r, rows.size) { rows[it] }
-        // usage bars under the drive names
-        for ((i, v) in volumes.withIndex()) {
+        // drive rows are drawn blank, then title, free space and a full-size Belle bar are laid over them
+        val shown = rows.mapIndexed { i, row -> if (i < volInfo.size) Row("", icon = row.icon) else row }
+        list.draw(c, ui, r, shown.size) { shown[it] }
+        for ((i, v) in volInfo.withIndex()) {
             val rr = list.rowRect(ui, r, i, ui.tmp)
-            if (rr.bottom < r.top || rr.top > r.bottom || v.total <= 0) continue
-            val bar = RectF(rr.left + 74f * ui.sc, rr.bottom - 12f * ui.sc, rr.right - 52f * ui.sc, rr.bottom - 5f * ui.sc)
-            ui.progressBar(c, bar, (v.total - v.free).toFloat() / v.total)
+            if (rr.bottom < r.top || rr.top > r.bottom) continue
+            val sc = ui.sc
+            val pad = Belle.PADDING * sc
+            val tx = rr.left + pad + 62f * sc
+            ui.text(c, v.label, tx, rr.top + 28f * sc, 22f * sc, maxW = rr.right - tx - pad - 200f * sc)
+            ui.text(c, v.text, rr.right - pad - 8f * sc, rr.top + 27f * sc, 18f * sc, if (i == list.sel) android.graphics.Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = ui.light)
+            val bar = RectF(tx, rr.top + 38f * sc, rr.right - pad - 8f * sc, rr.top + 58f * sc)
+            ui.progressBar(c, bar, v.frac)
         }
     }
 
