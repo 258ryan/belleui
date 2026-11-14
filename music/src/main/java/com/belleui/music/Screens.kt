@@ -48,7 +48,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             act.libraryDirty = false
             request()
         }
-        Player.listeners.add { shell.postInvalidate() }
+        Player.listen(this) { shell.postInvalidate() }
     }
 
     private fun request() {
@@ -59,6 +59,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 shell.invalidate()
             } else {
                 Thread {
+                    if (act.library.folders.isNotEmpty()) act.library.indexFolders()
                     act.library.load()
                     albums = act.library.albums()
                     artists = act.library.artists()
@@ -122,7 +123,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     private fun rowAt(i: Int): Row {
         val gfx = shell.ui.gfx
         return when (tab) {
-            0 -> act.library.tracks[i].let { Row(it.title, "${it.artist} - ${it.album}", icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(it.durationMs)) }
+            0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
             1 -> albums[i].let { (name, ts) -> Row(name, "${ts.first().artist} - ${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.DISC, iconColor = ORANGE, drill = true) }
             else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_artist"), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
         }
@@ -200,7 +201,7 @@ class TrackListScreen(private val act: MusicActivity, private val name: String, 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         list.draw(c, ui, r, tracks.size) { i ->
             val t = tracks[i]
-            Row(t.title, t.artist, icon = ui.gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(t.durationMs))
+            Row(t.title, t.artist, icon = ui.gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = t.durText)
         }
     }
 
@@ -242,7 +243,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
     private var volumeUntil = 0L
 
     override fun onShow() {
-        Player.listeners.add { if (shell.screen === this) shell.postInvalidate() }
+        Player.listen(this) { if (shell.screen === this) shell.postInvalidate() }
     }
 
     override fun tools(): List<Tool> = listOf(
@@ -260,6 +261,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         val t = Player.current
+        val pos = Player.position // one query per frame, not four
         if (t == null) {
             ui.text(c, "Nothing is playing", r.centerX(), ui.baselineFor(r.centerY(), 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
             return
@@ -295,8 +297,8 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
 
         val barY = art.bottom - 134f * ui.sc
         progress.set(x, barY, x + maxW, barY + 20f * ui.sc)
-        ui.progressBar(c, progress, if (Player.duration > 0) Player.position.toFloat() / Player.duration else 0f)
-        ui.text(c, fmtTime(Player.position), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
+        ui.progressBar(c, progress, if (Player.duration > 0) pos.toFloat() / Player.duration else 0f)
+        ui.text(c, fmtTime(pos), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
         ui.text(c, fmtTime(Player.duration), x + maxW, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
 
         // transport: shuffle, previous, play / pause, next, repeat
@@ -364,11 +366,22 @@ class SettingsScreen(private val act: MusicActivity) : Screen() {
     override val title get() = "Settings"
     private val list = ListState()
 
+    private fun folderText(): String {
+        val f = act.library.folders
+        return if (f.isEmpty()) "Whole device" else if (f.size == 1) f[0].substringAfterLast('/') else "${f.size} folders"
+    }
+
+    private fun rows() = listOf(
+        Row("Hide short songs", limitText(act.library.minSeconds), iconKind = Ic.NOTE, iconColor = MAGENTA, drill = true),
+        Row("Music folders", folderText(), iconKind = Ic.LIST, iconColor = ORANGE, drill = true),
+    )
+
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        list.draw(c, ui, r, 1) { Row("Hide short songs", limitText(act.library.minSeconds), iconKind = Ic.NOTE, iconColor = MAGENTA, drill = true) }
+        val rows = rows()
+        list.draw(c, ui, r, rows.size) { rows[it] }
         ui.text(
-            c, "Songs shorter than the length you choose (from 0:01 to 2:00) are left out of Songs, Albums and Artists.",
-            r.left + 16f * ui.sc, r.top + 1.5f * Belle.ROW_H * ui.sc, 16f * ui.sc, Belle.TEXT_MID, maxW = r.width() - 32f * ui.sc, face = ui.light,
+            c, "Short songs are left out of Songs, Albums and Artists. With music folders chosen, only music inside them is listed.",
+            r.left + 16f * ui.sc, r.top + (rows.size + 0.5f) * Belle.ROW_H * ui.sc, 16f * ui.sc, Belle.TEXT_MID, maxW = r.width() - 32f * ui.sc, face = ui.light,
         )
     }
 
@@ -386,16 +399,74 @@ class SettingsScreen(private val act: MusicActivity) : Screen() {
         })
     }
 
+    private fun open(i: Int) {
+        if (i == 0) edit() else shell.push(FoldersScreen(act))
+    }
+
     override fun onAct(a: Act): Boolean {
         if (a == Act.OK) {
-            edit()
+            open(list.sel)
             return true
         }
-        return false
+        return list.act(a, 2, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
     }
 
     override fun onTap(x: Float, y: Float): Boolean {
-        edit()
+        val i = list.hit(shell.ui, RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom), y, 2)
+        if (i < 0) return false
+        list.sel = i
+        open(i)
         return true
     }
+}
+
+/** The folders music is taken from; none chosen means everything on the device. */
+class FoldersScreen(private val act: MusicActivity) : Screen() {
+    override val title get() = "Music folders"
+    private val list = ListState()
+    private var folders = act.library.folders
+
+    private fun save(v: List<String>) {
+        folders = v
+        act.library.folders = v
+        act.libraryDirty = true
+        shell.invalidate()
+    }
+
+    private fun add() {
+        act.pickFolder { path ->
+            if (path != null && path !in folders) {
+                save(folders + path)
+                shell.toast("Looking for music in ${path.substringAfterLast('/')}...")
+                Thread {
+                    act.library.indexFolders()
+                    shell.post { act.libraryDirty = true }
+                }.start()
+            }
+        }
+    }
+
+    override fun tools() = listOf(Tool(Ic.ADD, { add() }))
+
+    override fun menu() = listOf(
+        MenuItem("Add folder") { add() },
+        MenuItem("Remove selected") { folders.getOrNull(list.sel)?.let { save(folders - it) } },
+        MenuItem("Use the whole device") { save(emptyList()) },
+    )
+
+    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        if (folders.isEmpty()) {
+            ui.text(c, "Music from the whole device", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
+            ui.text(c, "Press Y to pick the folder your music is in", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            return
+        }
+        list.draw(c, ui, r, folders.size) { i -> Row(folders[i].substringAfterLast('/'), folders[i], iconKind = Ic.LIST, iconColor = ORANGE) }
+    }
+
+    override fun onAct(a: Act): Boolean {
+        if (folders.isEmpty()) return false
+        return list.act(a, folders.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+    }
+
+    override fun onScroll(dy: Float) = list.scrollBy(if (dy > 0) 1 else -1, folders.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
 }

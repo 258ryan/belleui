@@ -12,7 +12,19 @@ import android.os.IBinder
 
 /** Keeps playback alive in the background with a media notification. */
 class PlaybackService : Service() {
-    private val listener: () -> Unit = { update() }
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pending = false
+
+    // seeking or skipping fires many changes; the notification is refreshed at most every 400 ms
+    private val listener: () -> Unit = {
+        if (!pending) {
+            pending = true
+            handler.postDelayed({
+                pending = false
+                update()
+            }, 400)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -28,7 +40,7 @@ class PlaybackService : Service() {
         } else {
             startForeground(ID, n)
         }
-        Player.listeners.add(listener)
+        Player.listen(this, listener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,7 +49,7 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
-        Player.listeners.remove(listener)
+        Player.unlisten(this)
         super.onDestroy()
     }
 
