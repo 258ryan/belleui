@@ -1,0 +1,59 @@
+name: Build Picker and Magisk module
+# Builds the Belle picker app and packs it as a Magisk module.
+on:
+  push:
+    branches: [belle/picker, belle/all]
+    paths:
+      - 'picker/**'
+      - 'magisk/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/picker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-picker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :picker:assembleDebug
+      - name: Pack the Magisk module
+        run: |
+          cp picker/build/outputs/apk/debug/picker-debug.apk BelleUI-Picker.apk
+          rm -rf module && cp -r magisk/picker module
+          mkdir -p module/system/priv-app/BelleUIPicker
+          cp BelleUI-Picker.apk module/system/priv-app/BelleUIPicker/BelleUIPicker.apk
+          rm -f module/README.md
+          (cd module && zip -qr ../BelleUI-Picker-Magisk.zip .)
+          unzip -l BelleUI-Picker-Magisk.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-picker-${{ github.run_number }}
+          path: |
+            BelleUI-Picker.apk
+            BelleUI-Picker-Magisk.zip
+          if-no-files-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete picker-latest --yes --cleanup-tag || true
+          gh release create picker-latest BelleUI-Picker-Magisk.zip BelleUI-Picker.apk \
+            --title "BelleUI Picker (Magisk module)" \
+            --notes "Belle folder and file picker built from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}. Flash BelleUI-Picker-Magisk.zip in Magisk (Modules > Install from storage) and reboot." \
+            --prerelease --target "$GITHUB_SHA"
