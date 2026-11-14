@@ -670,6 +670,21 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         val items = ArrayList<PopupItem>()
         items += PopupItem("Open") { launch(app) }
+        if (page == 2) {
+            items += PopupItem("Close app") { closeApp(listOf(app)) }
+            items += PopupItem("Force stop") { forceStop(app) }
+            items += PopupItem("Remove from list") {
+                repo.removeRecent(app.key)
+                refreshLists()
+                showToast("${app.label} removed from Recent")
+            }
+            items += PopupItem("Close all and clear") { closeApp(recents.toList(), clear = true) }
+            items += PopupItem("Clear list") {
+                repo.clearRecents()
+                refreshLists()
+                showToast("Recent list cleared")
+            }
+        }
         if (page == 0) items += PopupItem("Edit widgets") { openWidgetEditor(0) }
         if (page == 1) items += PopupItem("Move") {
             reorder = true
@@ -694,6 +709,50 @@ class LauncherView(private val act: Activity) : View(act) {
             tryStart(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.component.packageName}")))
         }
         popup = Popup(app.label, items, 0, menu = true)
+    }
+
+    /** Ends the background processes of these apps (a normal permission, so no root needed); the launcher itself is never touched. */
+    private fun closeApp(apps: List<AppEntry>, clear: Boolean = false) {
+        val am = act.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        var n = 0
+        for (a in apps) {
+            val pkg = a.component.packageName
+            if (pkg == act.packageName) continue
+            try {
+                am.killBackgroundProcesses(pkg)
+                n++
+            } catch (_: Exception) {
+            }
+        }
+        if (clear) repo.clearRecents()
+        refreshLists()
+        showToast(if (clear) "Closed $n app${if (n == 1) "" else "s"} and cleared the list" else if (n == 1) "${apps[0].label} closed" else "Closed $n apps")
+    }
+
+    /**
+     * Stops the app completely. Android only lets the system or root do that, so this asks root (Magisk shows
+     * its question the first time) and falls back to the app's info page, where the Force stop button is.
+     */
+    private fun forceStop(app: AppEntry) {
+        val pkg = app.component.packageName
+        if (pkg == act.packageName) return
+        showToast("Stopping ${app.label}...")
+        Thread {
+            var ok = false
+            try {
+                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $pkg"))
+                ok = p.waitFor() == 0
+            } catch (_: Exception) {
+            }
+            post {
+                if (ok) {
+                    showToast("${app.label} stopped")
+                } else {
+                    showToast("No root - tap Force stop on the next page")
+                    tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+                }
+            }
+        }.start()
     }
 
     private fun audio() = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager

@@ -169,3 +169,6 @@ Home can show one large Belle widget instead of two small ones: **Flip clock**, 
 
 ### Belle Chooser (Vector module)
 `vector/`: a Vector (Xposed) module that restyles Android's "Open with" and Share lists in the Belle look (dark panel, blue highlight, gamepad focus). It only changes how the list looks; which apps appear and what happens when one is chosen stay Android's own. Install the APK, turn it on in Vector (Modules), tick "System Framework" (and "Android System" if listed) as scope, reboot. Check the Vector log for "BelleChooser" to see if the hook ran. It also catches the recent-apps key in the system process and opens the Belle launcher's Recent tab instead of the stock screen (the stock screen still opens if the launcher isn't installed). Built against the classic Xposed API, which Vector still runs.
+
+### Recent tab actions
+On the launcher's Recent tab, X on an app offers **Close app** (ends its background processes), **Force stop** (asks root, Magisk shows its question the first time; without root it opens the app's info page where Force stop is), **Remove from list**, **Close all and clear** and **Clear list**.

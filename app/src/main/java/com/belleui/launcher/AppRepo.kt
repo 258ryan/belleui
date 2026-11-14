@@ -401,6 +401,14 @@ class AppRepo(private val ctx: Context) {
         putList("recents", l.take(MAX_RECENTS))
     }
 
+    fun removeRecent(key: String) {
+        val l = getList("recents")
+        l.remove(key)
+        putList("recents", l)
+    }
+
+    fun clearRecents() = putList("recents", emptyList())
+
     companion object {
         const val MAX_FAVS = 4
         const val MAX_RECENTS = 12
