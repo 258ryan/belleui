@@ -100,3 +100,7 @@ Gamepad: A toggles an alarm / starts-stops, Y adds an alarm (Alarms) or starts /
 
 Tabs Photos / Albums over MediaStore images and videos. 5-column square thumbnail grid (loaded in the background), album list, and a full-screen viewer with zoom + pan (EXIF-aware), slideshow, share and details.
 Gamepad: D-pad moves, A opens / zooms / plays a video, L1/R1 previous / next photo, Y share, Start zoom, X options menu (details, share, slideshow).
+### Browser (`belle/browser`)
+
+A Belle-styled web browser on Android **WebView**, which is the Chromium engine. It is not a Chromium fork: building Chromium needs a 100 GB+ checkout and hours of compile time, far beyond this repo's CI.
+The Belle chrome (status bar, toolbar, options menu, dialogs, info banners) is drawn over the WebView and passes touches and keys through. Gamepad: D-pad / left stick moves an on-screen **pointer**, A clicks, pushing against the top or bottom edge scrolls the page, hold a direction to speed up; L1/R1 are back / forward; Y opens the address field (system keyboard), Start reloads or stops; X opens the menu (bookmarks, desktop site, pointer on/off, share, clear data). It also registers for http/https links so it can be chosen as the default browser.
