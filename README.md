@@ -87,3 +87,8 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### Music (`belle/music`)
+
+Belle-style music player on the shared kit. Tabs Songs / Albums / Artists over MediaStore audio, Now playing with album art, progress bar, shuffle/repeat, and background playback with a media notification and MediaSession (headset / Bluetooth buttons).
+Gamepad: D-pad up/down browse, A play, L1/R1 switch tabs (previous/next song on Now playing), left/right seek 10 s, up/down volume, Y play/pause, X options menu.
