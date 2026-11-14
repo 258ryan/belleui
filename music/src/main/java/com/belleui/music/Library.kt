@@ -23,7 +23,11 @@ class Track(
 
 fun fmtTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(s / 60, s % 60)
+    return if (s >= 3600) {
+        String.format(java.util.Locale.ROOT, "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+    } else {
+        String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)
+    }
 }
 
 /** Music on the device via MediaStore. */
