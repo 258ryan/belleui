@@ -16,6 +16,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 class ChooserHook : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != "android") return
+        hookRecents(lpparam)
         val names = arrayOf("onResume", "onStart")
         for (n in names) {
             try {
@@ -32,6 +33,50 @@ class ChooserHook : IXposedHookLoadPackage {
             } catch (t: Throwable) {
                 XposedBridge.log("BelleChooser: could not hook ResolverActivity.$n: $t")
             }
+        }
+    }
+
+    /**
+     * The recent-apps key. In the system process, where key presses are handled, the call that opens the stock
+     * recent-apps screen is turned into "open the Belle launcher on its Recent tab". If the launcher isn't
+     * installed, or anything is unexpected, the stock screen opens as usual.
+     */
+    private fun hookRecents(lpparam: XC_LoadPackage.LoadPackageParam) {
+        val cls = try {
+            XposedHelpers.findClass("com.android.server.policy.PhoneWindowManager", lpparam.classLoader)
+        } catch (_: Throwable) {
+            return // not the system process
+        }
+        val hook = object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                try {
+                    val ctx = XposedHelpers.getObjectField(param.thisObject, "mContext") as android.content.Context
+                    val i = android.content.Intent("com.belleui.launcher.RECENTS")
+                        .setClassName("com.belleui.launcher", "com.belleui.launcher.MainActivity")
+                        .putExtra("belle_recents", true)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    if (ctx.packageManager.resolveActivity(i, 0) == null) return
+                    ctx.startActivity(i)
+                    param.setResult(null) // the stock screen stays closed
+                } catch (t: Throwable) {
+                    XposedBridge.log("BelleChooser: recents hook failed, using the stock screen: $t")
+                }
+            }
+        }
+        // the plain press, and the Alt+Tab form some devices send
+        for (name in arrayOf("toggleRecentApps")) {
+            try {
+                XposedHelpers.findAndHookMethod(cls, name, hook)
+                XposedBridge.log("BelleChooser: hooked PhoneWindowManager.$name")
+            } catch (t: Throwable) {
+                XposedBridge.log("BelleChooser: could not hook PhoneWindowManager.$name: $t")
+            }
+        }
+        try {
+            XposedHelpers.findAndHookMethod(cls, "showRecentApps", java.lang.Boolean.TYPE, hook)
+            XposedBridge.log("BelleChooser: hooked PhoneWindowManager.showRecentApps")
+        } catch (t: Throwable) {
+            XposedBridge.log("BelleChooser: could not hook PhoneWindowManager.showRecentApps: $t")
         }
     }
 }
