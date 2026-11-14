@@ -22,7 +22,7 @@ looks right at other 4:3 sizes. No third-party dependencies.
 |--------|--------|
 | D-pad / left stick | Move focus (past the grid edge switches page) |
 | A | Open / select |
-| B | Back (Home -> Menu, elsewhere -> Home; closes popups) |
+| B | Back (Home -> Menu, elsewhere -> Home; closes popups); left toolbar icon |
 | X | Options for the focused app (open, move, add/remove from home, hide, app info, uninstall) |
 | Y / Select | Launcher settings (theme, button layout, show hidden apps, Android settings) |
 | L1 / R1 | Previous / next page |
@@ -47,13 +47,13 @@ Install it, press Home, and choose BelleUI as the default launcher.
 
 ## Look
 
-Modelled on S60 / Symbian^3 / Belle rather than a modern "retro" skin:
+Modelled on Symbian Belle / Anna: soft, dark and glossy.
 
-- glossy black status pane (profile name, wifi, segmented battery, clock) and soft-key bar with hardware-style keycaps
-- blue title pane ("Menu", "Recent") over a dark list/grid backdrop, condensed type with 1px label shadows
-- flat glossy blue highlight bar, no glows or large soft shadows
-- Options menu pops up from the bottom-left corner; dialogs have a title pane; messages show as a centred information note
-- home: clock and calendar widgets, wallpaper with the Symbian^3-style light swirl, shortcut bar along the bottom
+- vignetted dark wallpaper with a soft coloured light; four colour themes (Settings)
+- vivid glossy squircle icons with soft drop shadows; selection is a translucent glowing glass pad
+- home: black glossy flip-clock tiles (hours, minutes, calendar day) and shortcuts straight on the wallpaper
+- translucent top status bar; bottom toolbar of icons (back / menu, select, options) with the gamepad button letter beside each
+- Options appear as a rounded context menu rising from the bottom-right, like Belle's hamburger menu
 
 ### Icons
 

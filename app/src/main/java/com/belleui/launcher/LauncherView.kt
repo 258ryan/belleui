@@ -10,7 +10,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -111,8 +111,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 26f
-    private var softH = 36f
+    private var statusH = 24f
+    private var softH = 46f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -454,7 +454,7 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         if (abs(pageAnim - page) > 0.05f) return false
         if (y > cBot) { // soft-key bar
-            if (!selectOnly) perform(if (x < width / 3f) Act.OPTIONS else if (x < width * 2f / 3f) Act.OK else Act.BACK)
+            if (!selectOnly) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) Act.OK else Act.OPTIONS)
             return true
         }
         if (y < cTop) return false
@@ -468,7 +468,7 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             1 -> {
                 val cw = width / 4f
-                val ch = (cBot - menuAreaTop()) / 3f
+                val ch = menuCellH()
                 val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * 4 + (x / cw).toInt()
                 if (y > menuAreaTop() && idx in menuApps.indices) {
                     menuSel = idx
@@ -595,8 +595,8 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = 26f * sc
-        softH = 36f * sc
+        statusH = 24f * sc
+        softH = 46f * sc
         cTop = statusH
         cBot = h - softH
         buildBackground()
@@ -608,26 +608,25 @@ class LauncherView(private val act: Activity) : View(act) {
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
         bgShader = LinearGradient(0f, 0f, 0f, h, theme.bgTop, theme.bgBottom, Shader.TileMode.CLAMP)
-        swoosh.reset()
-        swoosh.moveTo(0f, h * 0.80f)
-        swoosh.cubicTo(w * 0.30f, h * 0.55f, w * 0.65f, h * 0.95f, w, h * 0.42f)
-        swoosh.lineTo(w, h * 0.58f)
-        swoosh.cubicTo(w * 0.65f, h * 1.10f, w * 0.30f, h * 0.78f, 0f, h * 0.96f)
-        swoosh.close()
+        spotShader = RadialGradient(w * 0.5f, h * 0.36f, w * 0.75f, al(theme.accent, 95), al(theme.accent, 0), Shader.TileMode.CLAMP)
+        vigShader = RadialGradient(w * 0.5f, h * 0.5f, w * 0.78f, intArrayOf(al(Color.BLACK, 0), al(Color.BLACK, 0), al(Color.BLACK, 185)), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
     }
 
     private fun homeTileRect(i: Int, out: RectF): RectF {
         val cw = width / 4f
-        val top = cBot - DOCK * sc
-        out.set(i * cw + 5f * sc, top + 5f * sc, (i + 1) * cw - 5f * sc, cBot - 5f * sc)
+        out.set(i * cw + 6f * sc, cBot - 116f * sc, (i + 1) * cw - 6f * sc, cBot - 20f * sc)
         return out
     }
 
-    private fun menuAreaTop() = cTop + HEADER * sc
+    private fun menuAreaTop() = cTop
+
+    private fun menuAreaBottom() = cBot - 14f * sc
+
+    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
         val cw = width / 4f
-        val ch = (cBot - menuAreaTop()) / 3f
+        val ch = menuCellH()
         val x = (idx % 4) * cw
         val y = menuAreaTop() + ((idx / 4) - top) * ch
         out.set(x, y, x + cw, y + ch)
@@ -647,10 +646,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun popupRect(pu: Popup, out: RectF): RectF {
         val bh = popupTitleH(pu) + POPUP_ROW * sc * pu.items.size + (if (pu.menu) 6f * sc else 0f)
         if (pu.menu) {
-            val bw = 250f * sc
-            out.set(4f * sc, cBot - 4f * sc - bh, 4f * sc + bw, cBot - 4f * sc)
+            val bw = 270f * sc
+            out.set(width - 8f * sc - bw, cBot - 6f * sc - bh, width - 8f * sc, cBot - 6f * sc)
         } else {
-            val bw = 400f * sc
+            val bw = 420f * sc
             val x = (width - bw) / 2f
             val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
             out.set(x, y, x + bw, y + bh)
@@ -659,25 +658,18 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     // =====================================================================================
-    // drawing  (S60 / Symbian^3 / Belle look: glossy bars, dense condensed type, flat blue highlight)
+    // drawing  (Symbian Belle / Anna: soft, glossy, dark, vivid squircle icons, icon toolbar)
     // =====================================================================================
 
-    private val cond = Typeface.create("sans-serif-condensed", Typeface.NORMAL)
-    private val condBold = Typeface.create("sans-serif-condensed", Typeface.BOLD)
-    private val swoosh = Path()
+    private val sans = Typeface.create("sans-serif", Typeface.NORMAL)
+    private var spotShader: Shader? = null
+    private var vigShader: Shader? = null
 
     private fun al(color: Int, a: Int) = (color and 0x00FFFFFF) or (a.coerceIn(0, 255) shl 24)
 
-    private fun shade(color: Int, f: Float): Int {
-        val r = (Color.red(color) * f).toInt().coerceIn(0, 255)
-        val g = (Color.green(color) * f).toInt().coerceIn(0, 255)
-        val b = (Color.blue(color) * f).toInt().coerceIn(0, 255)
-        return Color.rgb(r, g, b)
-    }
-
     private fun text(
         c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int,
-        align: Paint.Align = Paint.Align.LEFT, maxW: Float = 0f, face: Typeface = cond,
+        align: Paint.Align = Paint.Align.LEFT, maxW: Float = 0f, face: Typeface = sans,
     ) {
         tp.textSize = size
         tp.color = color
@@ -687,65 +679,57 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawText(t, x, y, tp)
     }
 
-    /** Text with the 1px dark drop shadow S60 put under labels on wallpaper. */
+    /** Text with a soft dark drop shadow, as Belle drew labels over wallpaper. */
     private fun shadowText(
         c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int,
-        align: Paint.Align = Paint.Align.LEFT, maxW: Float = 0f, face: Typeface = cond,
+        align: Paint.Align = Paint.Align.LEFT, maxW: Float = 0f, face: Typeface = sans,
     ) {
-        text(c, s, x + 1f, y + 1f, size, al(Color.BLACK, 190), align, maxW, face)
+        text(c, s, x + 1f * sc, y + 1.5f * sc, size, al(Color.BLACK, 170), align, maxW, face)
         text(c, s, x, y, size, color, align, maxW, face)
     }
 
-    private fun measure(s: String, size: Float, face: Typeface = cond): Float {
+    private fun measure(s: String, size: Float, face: Typeface = sans): Float {
         tp.textSize = size
         tp.typeface = face
         return tp.measureText(s)
     }
 
     private fun drawIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, alpha: Int = 255) {
-        val full = size * 128f / 96f // bitmap includes shadow margin around the plate
+        val full = size * 128f / 96f // bitmap includes shadow margin around the squircle
         rf.set(cx - full / 2, cy - full / 2, cx + full / 2, cy + full / 2)
         iconPaint.alpha = alpha
         c.drawBitmap(bmp, null, rf, iconPaint)
     }
 
-    /** Glossy highlight bar: flat-ish blue, bright top half, light rim. No glow. */
-    private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
+    /** Soft shadow/glow from stacked, growing, faint rounded rects (no blur needed, works on every API). */
+    private fun softShadow(c: Canvas, r: RectF, radius: Float, color: Int = Color.BLACK, dy: Float = 4f, alpha: Int = 20, steps: Int = 6) {
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(r.left, r.top, r.left, r.bottom, theme.accentLight, theme.accent, Shader.TileMode.CLAMP)
+        p.shader = null
+        for (i in steps downTo 1) {
+            val g = i * 1.6f * sc
+            rf.set(r.left - g, r.top - g + dy * sc, r.right + g, r.bottom + g + dy * sc)
+            p.color = al(color, alpha)
+            c.drawRoundRect(rf, radius + g, radius + g, p)
+        }
+    }
+
+    /** Belle selection: a translucent, softly glowing glass pad. */
+    private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
+        softShadow(c, r, radius, theme.accentLight, dy = 0f, alpha = 13, steps = 5)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(r.left, r.top, r.left, r.bottom, al(theme.accentLight, 135), al(theme.accent, 160), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, p)
         p.shader = null
         c.save()
         c.clipRect(r.left, r.top, r.right, r.top + r.height() * 0.5f)
-        p.color = al(Color.WHITE, 55)
+        p.color = al(Color.WHITE, 38)
         c.drawRoundRect(r, radius, radius, p)
         c.restore()
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = al(Color.WHITE, 200)
+        p.color = al(Color.WHITE, 140)
         c.drawRoundRect(r, radius, radius, p)
         p.style = Paint.Style.FILL
-    }
-
-    private fun backdrop(c: Canvas, top: Float, bottom: Float) {
-        p.style = Paint.Style.FILL
-        p.shader = null
-        p.color = al(Color.BLACK, 125)
-        c.drawRect(0f, top, width.toFloat(), bottom, p)
-    }
-
-    private fun drawTitlePane(c: Canvas, title: String) {
-        val w = width.toFloat()
-        val b = cTop + HEADER * sc
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, cTop, 0f, b, shade(theme.accent, 0.95f), shade(theme.accent, 0.55f), Shader.TileMode.CLAMP)
-        c.drawRect(0f, cTop, w, b, p)
-        p.shader = null
-        p.color = al(Color.WHITE, 40)
-        c.drawRect(0f, cTop, w, cTop + HEADER * sc * 0.5f, p)
-        p.color = al(Color.BLACK, 150)
-        c.drawRect(0f, b - 1f, w, b, p)
-        shadowText(c, title, 10f * sc, cTop + HEADER * sc * 0.5f + 6.5f * sc, 18f * sc, Color.WHITE, face = condBold)
     }
 
     override fun onDraw(c: Canvas) {
@@ -755,7 +739,7 @@ class LauncherView(private val act: Activity) : View(act) {
         var dt = (now - lastNs) / 1e9f
         lastNs = now
         if (dt > 0.05f || dt <= 0f) dt = 0.016f
-        val k = 1f - exp(-dt * 22f) // snappy, S60-style
+        val k = 1f - exp(-dt * 18f)
         var busy = false
 
         pageAnim += (page - pageAnim) * k
@@ -768,20 +752,23 @@ class LauncherView(private val act: Activity) : View(act) {
         homeTileRect(homeSel, tmp)
         homeFocus.target(tmp)
         menuCellRect(menuSel, menuTop.toFloat(), tmp)
-        tmp.inset(4f * sc, 3f * sc)
+        tmp.inset(6f * sc, 3f * sc)
         menuFocus.target(tmp)
         recentRowRect(recentSel, recentTop.toFloat(), tmp)
+        tmp.inset(6f * sc, 1f * sc)
         recentFocus.target(tmp)
         if (homeFocus.step(k)) busy = true
         if (menuFocus.step(k)) busy = true
         if (recentFocus.step(k)) busy = true
 
-        // wallpaper: deep gradient + the soft light swirl Symbian^3 shipped with
+        // wallpaper: dark base, soft coloured light from above, heavy vignette
         p.style = Paint.Style.FILL
         p.shader = bgShader
         c.drawRect(0f, 0f, w, h, p)
-        p.shader = LinearGradient(0f, 0f, w, 0f, intArrayOf(al(theme.accentLight, 0), al(theme.accentLight, 60), al(theme.accentLight, 0)), null, Shader.TileMode.CLAMP)
-        c.drawPath(swoosh, p)
+        p.shader = spotShader
+        c.drawRect(0f, 0f, w, h, p)
+        p.shader = vigShader
+        c.drawRect(0f, 0f, w, h, p)
         p.shader = null
 
         for (i in 0..2) {
@@ -798,8 +785,19 @@ class LauncherView(private val act: Activity) : View(act) {
             c.restore()
         }
 
+        // page dots, bottom centre above the toolbar
+        val gap = 8f * sc
+        var dx = (w - (2 * gap + 3 * 6f * sc)) / 2f
+        for (i in 0..2) {
+            p.color = al(Color.BLACK, 120)
+            c.drawCircle(dx + 3f * sc, cBot - 8f * sc + 1f * sc, 3.2f * sc, p)
+            p.color = if (i == page) Color.WHITE else al(Color.WHITE, 95)
+            c.drawCircle(dx + 3f * sc, cBot - 8f * sc, 3f * sc, p)
+            dx += 6f * sc + gap
+        }
+
         drawStatusBar(c, w)
-        drawSoftKeys(c, w, h)
+        drawToolbar(c, w, h)
         popup?.let { drawPopup(c, it, w) }
 
         if (System.currentTimeMillis() < toastUntil) {
@@ -809,195 +807,167 @@ class LauncherView(private val act: Activity) : View(act) {
         if (busy) postInvalidateOnAnimation()
     }
 
-    // ---- page 0: home --------------------------------------------------------------------
+    // ---- page 0: home ----------------------------------------------------------------------
 
-    private fun panel(c: Canvas, r: RectF) {
+    /** Glossy black flip-clock style tile with split line. */
+    private fun flipTile(c: Canvas, r: RectF, big: String, corner: String) {
+        val rad = 10f * sc
+        softShadow(c, r, rad, dy = 5f, alpha = 28)
         p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF45474C.toInt(), 0xFF0A0A0C.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, rad, rad, p)
         p.shader = null
-        p.color = al(Color.BLACK, 150)
-        c.drawRoundRect(r, 5f * sc, 5f * sc, p)
         c.save()
-        c.clipRect(r.left, r.top, r.right, r.top + r.height() * 0.5f)
-        p.color = al(Color.WHITE, 22)
-        c.drawRoundRect(r, 5f * sc, 5f * sc, p)
+        c.clipRect(r.left, r.top, r.right, r.centerY())
+        p.color = al(Color.WHITE, 24)
+        c.drawRoundRect(r, rad, rad, p)
         c.restore()
+        val size = r.height() * 0.62f
+        shadowText(c, big, r.centerX(), r.centerY() + size * 0.36f, size, Color.WHITE, Paint.Align.CENTER, face = medium)
+        p.color = al(Color.BLACK, 215)
+        c.drawRect(r.left, r.centerY() - 1.2f * sc, r.right, r.centerY() + 1.2f * sc, p)
+        p.color = al(Color.WHITE, 45)
+        c.drawRect(r.left, r.centerY() + 1.2f * sc, r.right, r.centerY() + 2.2f * sc, p)
+        if (corner.isNotEmpty()) text(c, corner, r.right - 8f * sc, r.top + 17f * sc, 12f * sc, al(Color.WHITE, 210), Paint.Align.RIGHT, face = medium)
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
         p.color = al(Color.WHITE, 60)
-        c.drawRoundRect(r, 5f * sc, 5f * sc, p)
+        c.drawRoundRect(r, rad, rad, p)
         p.style = Paint.Style.FILL
     }
 
     private fun drawHome(c: Canvas) {
         val w = width.toFloat()
-        val m = 12f * sc
-        val top = cTop + 12f * sc
-        val split = w * 0.60f
+        val tw = 112f * sc
+        val th = 98f * sc
+        val top = cTop + 14f * sc
+        val x0 = 18f * sc
+        val parts = clockStr.split(":")
+        rf.set(x0, top, x0 + tw, top + th)
+        flipTile(c, rf, parts.getOrElse(0) { "" }, ampmStr)
+        rf.set(x0 + tw + 8f * sc, top, x0 + 2 * tw + 8f * sc, top + th)
+        flipTile(c, rf, parts.getOrElse(1) { "" }, "")
+        rf.set(w - 18f * sc - tw, top, w - 18f * sc, top + th)
+        flipTile(c, rf, dayStr, monthStr)
+        shadowText(c, dateStr, x0 + 2f * sc, top + th + 26f * sc, 17f * sc, al(Color.WHITE, 225), maxW = 2 * tw)
+        shadowText(c, weekdayStr, w - 18f * sc - tw / 2f, top + th + 26f * sc, 15f * sc, al(Color.WHITE, 200), Paint.Align.CENTER, maxW = tw)
 
-        // clock widget
-        rf.set(m, top, split, top + 104f * sc)
-        panel(c, rf)
-        val tsz = 58f * sc
-        shadowText(c, clockStr, rf.left + 14f * sc, rf.top + 62f * sc, tsz, Color.WHITE, face = cond)
-        if (ampmStr.isNotEmpty()) {
-            val tw = measure(clockStr, tsz)
-            shadowText(c, ampmStr, rf.left + 20f * sc + tw, rf.top + 62f * sc, 20f * sc, theme.accentLight)
-        }
-        shadowText(c, dateStr, rf.left + 16f * sc, rf.top + 90f * sc, 17f * sc, 0xFFD0D8E0.toInt(), maxW = rf.width() - 28f * sc)
-
-        // calendar widget
-        rf.set(split + m, top, w - m, top + 104f * sc)
-        panel(c, rf)
-        val bandB = rf.top + 28f * sc
-        c.save()
-        c.clipRect(rf.left, rf.top, rf.right, bandB)
-        p.shader = LinearGradient(0f, rf.top, 0f, bandB, theme.accentLight, shade(theme.accent, 0.7f), Shader.TileMode.CLAMP)
-        c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
-        p.shader = null
-        c.restore()
-        shadowText(c, monthStr, rf.centerX(), rf.top + 20f * sc, 17f * sc, Color.WHITE, Paint.Align.CENTER, face = condBold)
-        shadowText(c, dayStr, rf.centerX(), rf.top + 74f * sc, 40f * sc, Color.WHITE, Paint.Align.CENTER, face = condBold)
-        shadowText(c, weekdayStr, rf.centerX(), rf.top + 96f * sc, 15f * sc, 0xFFD0D8E0.toInt(), Paint.Align.CENTER)
-
-        // shortcut bar
-        val dockTop = cBot - DOCK * sc
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, dockTop, 0f, cBot, al(Color.BLACK, 150), al(Color.BLACK, 215), Shader.TileMode.CLAMP)
-        c.drawRect(0f, dockTop, w, cBot, p)
-        p.shader = null
-        p.color = al(Color.WHITE, 60)
-        c.drawRect(0f, dockTop, w, dockTop + 1f, p)
-        drawFocus(c, homeFocus.cur, 6f * sc)
+        // shortcuts straight on the wallpaper
+        drawFocus(c, homeFocus.cur, 12f * sc)
         for (i in 0..3) {
             homeTileRect(i, tmp)
             val app = favs.getOrNull(i)
             if (app != null) {
-                drawIcon(c, app.icon, tmp.centerX(), tmp.top + 34f * sc, 52f * sc)
-                shadowText(c, app.label, tmp.centerX(), tmp.bottom - 8f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tmp.width() - 8f * sc)
+                drawIcon(c, app.icon, tmp.centerX(), tmp.top + 38f * sc, 62f * sc)
+                shadowText(c, app.label, tmp.centerX(), tmp.bottom - 9f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tmp.width() - 8f * sc)
             } else {
                 p.style = Paint.Style.STROKE
                 p.strokeWidth = 1.5f * sc
-                p.color = al(Color.WHITE, 90)
-                rf.set(tmp.centerX() - 24f * sc, tmp.top + 10f * sc, tmp.centerX() + 24f * sc, tmp.top + 58f * sc)
-                c.drawRoundRect(rf, 8f * sc, 8f * sc, p)
+                p.color = al(Color.WHITE, 80)
+                rf.set(tmp.centerX() - 26f * sc, tmp.top + 12f * sc, tmp.centerX() + 26f * sc, tmp.top + 64f * sc)
+                c.drawRoundRect(rf, 15f * sc, 15f * sc, p)
                 p.style = Paint.Style.FILL
-                shadowText(c, "Empty", tmp.centerX(), tmp.bottom - 8f * sc, 15f * sc, al(Color.WHITE, 120), Paint.Align.CENTER)
+                text(c, "+", tmp.centerX(), tmp.top + 50f * sc, 36f * sc, al(Color.WHITE, 90), Paint.Align.CENTER, face = light)
             }
         }
     }
 
-    // ---- page 1: main menu --------------------------------------------------------------
+    // ---- page 1: main menu ---------------------------------------------------------------------
 
     private fun drawMenu(c: Canvas) {
         val w = width.toFloat()
         val area = menuAreaTop()
-        backdrop(c, area, cBot)
         if (menuApps.isEmpty()) {
-            shadowText(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 20f * sc, Color.WHITE, Paint.Align.CENTER)
-        } else {
-            drawFocus(c, menuFocus.cur, 6f * sc)
-            val cw = w / 4f
-            val ch = (cBot - area) / 3f
-            val isz = 56f * sc
-            for (idx in menuApps.indices) {
-                menuCellRect(idx, menuTopAnim, tmp)
-                if (tmp.bottom < area || tmp.top > cBot) continue
-                val app = menuApps[idx]
-                val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + (ch - (isz + 24f * sc)) / 2f
-                val lift = if (reorder && idx == menuSel) 6f * sc else 0f
-                drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                shadowText(c, app.label, tmp.centerX(), iconTop + isz + 18f * sc, 15f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
-            }
-            val rows = (menuApps.size + 3) / 4
-            if (rows > 3) {
-                val trackT = area + 4f * sc
-                val trackH = cBot - area - 8f * sc
-                rf.set(w - 6f * sc, trackT, w - 2f * sc, trackT + trackH)
-                p.color = al(Color.WHITE, 35)
-                c.drawRect(rf, p)
-                val thumbH = trackH * 3f / rows
-                val thumbT = trackT + (trackH - thumbH) * (menuTopAnim / (rows - 3).toFloat()).coerceIn(0f, 1f)
-                rf.set(w - 6f * sc, thumbT, w - 2f * sc, thumbT + thumbH)
-                p.color = theme.accentLight
-                c.drawRect(rf, p)
-            }
+            shadowText(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
+            return
         }
-        drawTitlePane(c, "Menu")
+        drawFocus(c, menuFocus.cur, 14f * sc)
+        val cw = w / 4f
+        val ch = menuCellH()
+        val isz = 66f * sc
+        for (idx in menuApps.indices) {
+            menuCellRect(idx, menuTopAnim, tmp)
+            if (tmp.bottom < area || tmp.top > cBot) continue
+            val app = menuApps[idx]
+            val dim = if (repo.isHidden(app.key)) 110 else 255
+            val iconTop = tmp.top + (ch - (isz + 24f * sc)) / 2f
+            val lift = if (reorder && idx == menuSel) 7f * sc else 0f
+            drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
+            shadowText(c, app.label, tmp.centerX(), iconTop + isz + 19f * sc, 15f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
+        }
+        val rows = (menuApps.size + 3) / 4
+        if (rows > 3) {
+            val trackT = area + 6f * sc
+            val trackH = menuAreaBottom() - area - 12f * sc
+            rf.set(w - 6f * sc, trackT, w - 3f * sc, trackT + trackH)
+            p.color = al(Color.WHITE, 30)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+            val thumbH = trackH * 3f / rows
+            val thumbT = trackT + (trackH - thumbH) * (menuTopAnim / (rows - 3).toFloat()).coerceIn(0f, 1f)
+            rf.set(w - 6f * sc, thumbT, w - 3f * sc, thumbT + thumbH)
+            p.color = al(Color.WHITE, 170)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+        }
     }
 
-    // ---- page 2: recent (list view) ---------------------------------------------------------
+    // ---- page 2: recent -----------------------------------------------------------------------------
 
     private fun drawRecent(c: Canvas) {
         val w = width.toFloat()
         val y0 = cTop + HEADER * sc
-        backdrop(c, y0, cBot)
         if (recents.isEmpty()) {
-            shadowText(c, "No recent apps", w / 2, (y0 + cBot) / 2, 20f * sc, Color.WHITE, Paint.Align.CENTER)
+            shadowText(c, "No recent apps", w / 2, (y0 + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
-            drawFocus(c, recentFocus.cur, 2f * sc)
+            drawFocus(c, recentFocus.cur, 10f * sc)
             for (i in recents.indices) {
                 recentRowRect(i, recentTopAnim, tmp)
                 if (tmp.bottom < y0 || tmp.top > cBot) continue
                 val app = recents[i]
-                drawIcon(c, app.icon, 30f * sc, tmp.centerY(), 30f * sc)
-                shadowText(c, app.label, 58f * sc, tmp.centerY() + 6f * sc, 18f * sc, Color.WHITE, maxW = w - 80f * sc)
-                p.color = al(Color.WHITE, 28)
-                c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
+                drawIcon(c, app.icon, 36f * sc, tmp.centerY(), 36f * sc)
+                shadowText(c, app.label, 70f * sc, tmp.centerY() + 6.5f * sc, 19f * sc, Color.WHITE, maxW = w - 100f * sc)
+                p.color = al(Color.WHITE, 26)
+                c.drawRect(16f * sc, tmp.bottom - 1f, w - 16f * sc, tmp.bottom, p)
             }
         }
-        drawTitlePane(c, "Recent")
-    }
-
-    // ---- chrome ---------------------------------------------------------------------------------
-
-    private fun glossBar(c: Canvas, top: Float, bottom: Float, w: Float) {
-        val mid = (top + bottom) / 2f
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, top, 0f, mid, 0xFF3A4046.toInt(), 0xFF0E1012.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, top, w, mid, p)
-        p.shader = LinearGradient(0f, mid, 0f, bottom, 0xFF000000.toInt(), 0xFF1A1D20.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, mid, w, bottom, p)
+        // heading drawn last so rows scroll underneath it
+        p.shader = LinearGradient(0f, cTop, 0f, y0, al(Color.BLACK, 190), al(Color.BLACK, 0), Shader.TileMode.CLAMP)
+        c.drawRect(0f, cTop, w, y0, p)
         p.shader = null
+        shadowText(c, "Recent", 18f * sc, cTop + 24f * sc, 21f * sc, Color.WHITE, face = medium)
+        p.color = al(theme.accentLight, 120)
+        c.drawRect(16f * sc, y0 - 2f, w - 16f * sc, y0 - 1f, p)
     }
+
+    // ---- chrome ----------------------------------------------------------------------------------------
 
     private fun drawStatusBar(c: Canvas, w: Float) {
-        glossBar(c, 0f, statusH, w)
-        p.color = 0xFF5A6068.toInt()
-        c.drawRect(0f, statusH - 1f, w, statusH, p)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, 0f, 0f, statusH, al(Color.BLACK, 225), al(Color.BLACK, 70), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w, statusH, p)
+        p.shader = null
 
         val base = statusH / 2f + 5f * sc
-        var x = 8f * sc
+        var x = 10f * sc
         if (wifi) {
             drawWifi(c, x + 8f * sc, statusH * 0.74f, 10f * sc)
             x += 24f * sc
         }
-        text(c, "General", x, base, 15f * sc, 0xFFC4CCD4.toInt())
-
-        // page indicator: plain dots
-        val gap = 7f * sc
-        var dx = (w - (2 * gap + 3 * 5f * sc)) / 2f
-        for (i in 0..2) {
-            p.color = if (i == page) Color.WHITE else al(Color.WHITE, 90)
-            c.drawCircle(dx + 2.5f * sc, statusH / 2f, 2.5f * sc, p)
-            dx += 5f * sc + gap
-        }
+        text(c, "General", x, base, 14f * sc, al(Color.WHITE, 200))
 
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 16f * sc
-        val tw = measure(time, csz, condBold)
-        text(c, time, w - 8f * sc, base, csz, Color.WHITE, Paint.Align.RIGHT, face = condBold)
+        val csz = 15f * sc
+        val tw = measure(time, csz, medium)
+        text(c, time, w - 10f * sc, base, csz, Color.WHITE, Paint.Align.RIGHT, face = medium)
 
-        // S60-style segmented battery indicator
-        val bRight = w - 8f * sc - tw - 12f * sc
-        val bw = 26f * sc
-        val bh = 12f * sc
+        val bRight = w - 10f * sc - tw - 12f * sc
+        val bw = 24f * sc
+        val bh = 11f * sc
         val bTop = statusH / 2f - bh / 2f
         rf.set(bRight - bw, bTop, bRight, bTop + bh)
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
         p.color = al(Color.WHITE, 210)
-        c.drawRect(rf, p)
+        c.drawRoundRect(rf, 2f * sc, 2f * sc, p)
         p.style = Paint.Style.FILL
         c.drawRect(bRight, bTop + 3f * sc, bRight + 2f * sc, bTop + bh - 3f * sc, p)
         val segs = ((batteryPct + 12) / 25).coerceIn(0, 4)
@@ -1005,19 +975,19 @@ class LauncherView(private val act: Activity) : View(act) {
         p.color = when {
             charging -> 0xFF63D663.toInt()
             batteryPct <= 15 -> 0xFFE5484D.toInt()
-            else -> 0xFF8ED8FF.toInt()
+            else -> Color.WHITE
         }
         for (i in 0 until segs) {
             val sx = bRight - bw + 2f * sc + i * (segW + 0.5f * sc)
             c.drawRect(sx, bTop + 2f * sc, sx + segW - 0.5f * sc, bTop + bh - 2f * sc, p)
         }
-        text(c, "$batteryPct%", bRight - bw - 5f * sc, base, 14f * sc, 0xFFC4CCD4.toInt(), Paint.Align.RIGHT)
+        text(c, "$batteryPct%", bRight - bw - 6f * sc, base, 13f * sc, al(Color.WHITE, 200), Paint.Align.RIGHT)
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float) {
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1.6f * sc
-        p.color = 0xFFC4CCD4.toInt()
+        p.color = al(Color.WHITE, 210)
         for (i in 1..3) {
             val rr = r * i / 3f
             rf.set(cx - rr, cy - rr, cx + rr, cy + rr)
@@ -1027,119 +997,158 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawCircle(cx, cy, 1.5f * sc, p)
     }
 
-    private fun drawSoftKeys(c: Canvas, w: Float, h: Float) {
-        glossBar(c, cBot, h, w)
-        p.color = 0xFF5A6068.toInt()
+    /** Belle's bottom toolbar: glossy black, three icon buttons (back/menu, select, options). */
+    private fun drawToolbar(c: Canvas, w: Float, h: Float) {
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, cBot - 8f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 120), Shader.TileMode.CLAMP)
+        c.drawRect(0f, cBot - 8f * sc, w, cBot, p)
+        p.shader = LinearGradient(0f, cBot, 0f, h, 0xFF2E3034.toInt(), 0xFF040405.toInt(), Shader.TileMode.CLAMP)
+        c.drawRect(0f, cBot, w, h, p)
+        p.shader = null
+        c.save()
+        c.clipRect(0f, cBot, w, cBot + softH * 0.5f)
+        p.color = al(Color.WHITE, 14)
+        c.drawRect(0f, cBot, w, h, p)
+        c.restore()
+        p.color = al(Color.WHITE, 70)
         c.drawRect(0f, cBot, w, cBot + 1f, p)
 
-        val left: String
-        val center: String
-        val right: String
-        val leftKey = optLetter()
-        val rightKey = backLetter()
-        when {
-            popup != null -> { left = ""; center = "Select"; right = "Cancel" }
-            reorder -> { left = ""; center = "Drop"; right = "Done" }
-            page == 0 -> { left = "Options"; center = "Open"; right = "Menu" }
-            else -> { left = "Options"; center = "Open"; right = "Home" }
+        val cy = cBot + softH / 2f
+        val s = 24f * sc
+        val inMenu = popup != null || reorder
+        val leftKind = if (page == 0 && !inMenu) ICON_GRID else ICON_BACK
+        val showRight = !inMenu
+        val lx = 58f * sc
+        val rx = w - 58f * sc
+        toolIcon(c, leftKind, lx, cy, s)
+        hintLetter(c, backLetter(), lx + 22f * sc, cy)
+        toolIcon(c, ICON_OK, w / 2f, cy, s)
+        hintLetter(c, okLetter(), w / 2f + 22f * sc, cy)
+        if (showRight) {
+            toolIcon(c, ICON_MENU, rx, cy, s)
+            hintLetter(c, optLetter(), rx - 22f * sc - 8f * sc, cy)
         }
-        val y = cBot + softH / 2f
-        if (left.isNotEmpty()) drawHint(c, leftKey, left, 8f * sc, y, 0)
-        drawHint(c, okLetter(), center, w / 2f, y, 1)
-        drawHint(c, rightKey, right, w - 8f * sc, y, 2)
     }
 
-    /** Hardware-style keycap + label. mode 0 = left anchored, 1 = centered, 2 = right anchored. */
-    private fun drawHint(c: Canvas, letter: String, label: String, ax: Float, cy: Float, mode: Int) {
-        val cap = 18f * sc
-        val tsz = 17f * sc
-        val tw = measure(label, tsz)
-        val total = cap + 6f * sc + tw
-        val start = when (mode) {
-            0 -> ax
-            1 -> ax - total / 2f
-            else -> ax - total
+    private fun hintLetter(c: Canvas, letter: String, x: Float, cy: Float) {
+        text(c, letter, x, cy + 5f * sc, 13f * sc, al(Color.WHITE, 120), Paint.Align.CENTER, face = medium)
+    }
+
+    private fun toolIcon(c: Canvas, kind: Int, cx: Float, cy: Float, s: Float) {
+        glyph(c, kind, cx + 0.5f * sc, cy + 1.5f * sc, s, al(Color.BLACK, 190))
+        glyph(c, kind, cx, cy, s, al(Color.WHITE, 235))
+    }
+
+    private fun glyph(c: Canvas, kind: Int, cx: Float, cy: Float, s: Float, color: Int) {
+        p.color = color
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeJoin = Paint.Join.ROUND
+        when (kind) {
+            ICON_BACK -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 3f * sc
+                c.drawLine(cx + s * 0.45f, cy, cx - s * 0.45f, cy, p)
+                c.drawLine(cx - s * 0.45f, cy, cx - s * 0.05f, cy - s * 0.4f, p)
+                c.drawLine(cx - s * 0.45f, cy, cx - s * 0.05f, cy + s * 0.4f, p)
+            }
+            ICON_GRID -> {
+                p.style = Paint.Style.FILL
+                val q = s * 0.4f
+                val g = s * 0.1f
+                for (ix in 0..1) for (iy in 0..1) {
+                    val x = cx - q - g / 2 + ix * (q + g)
+                    val y = cy - q - g / 2 + iy * (q + g)
+                    rf.set(x, y, x + q, y + q)
+                    c.drawRoundRect(rf, 3f * sc, 3f * sc, p)
+                }
+            }
+            ICON_MENU -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 3f * sc
+                for (i in -1..1) c.drawLine(cx - s * 0.45f, cy + i * s * 0.34f, cx + s * 0.45f, cy + i * s * 0.34f, p)
+            }
+            else -> { // ICON_OK: ring with a dot
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 2.5f * sc
+                c.drawCircle(cx, cy, s * 0.46f, p)
+                p.style = Paint.Style.FILL
+                c.drawCircle(cx, cy, s * 0.16f, p)
+            }
         }
-        rf.set(start, cy - cap / 2f, start + cap, cy + cap / 2f)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, 0xFF7A838C.toInt(), 0xFF2B3036.toInt(), Shader.TileMode.CLAMP)
-        c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
-        p.shader = null
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1f * sc
-        p.color = 0xFFA9B2BB.toInt()
-        c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
-        p.style = Paint.Style.FILL
-        text(c, letter, rf.centerX(), cy + 5f * sc, 13f * sc, Color.WHITE, Paint.Align.CENTER, face = condBold)
-        text(c, label, start + cap + 6f * sc, cy + 6f * sc, tsz, Color.WHITE)
+        p.strokeCap = Paint.Cap.BUTT
+        p.strokeJoin = Paint.Join.MITER
     }
 
     private fun drawPopup(c: Canvas, pu: Popup, w: Float) {
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = al(Color.BLACK, 90)
+        p.color = al(Color.BLACK, 120)
         c.drawRect(0f, cTop, w, cBot, p)
         val box = popupRect(pu, RectF())
-        val r = 4f * sc
+        val r = 12f * sc
         val titleH = popupTitleH(pu)
-        p.shader = LinearGradient(0f, box.top, 0f, box.bottom, 0xFF2C343C.toInt(), 0xFF0A0D10.toInt(), Shader.TileMode.CLAMP)
+        softShadow(c, box, r, dy = 6f, alpha = 34)
+        p.shader = LinearGradient(0f, box.top, 0f, box.bottom, 0xFF3C3F44.toInt(), 0xFF111214.toInt(), Shader.TileMode.CLAMP)
         c.drawRoundRect(box, r, r, p)
         p.shader = null
+        c.save()
+        c.clipRect(box.left, box.top, box.right, box.top + box.height() * 0.35f)
+        p.color = al(Color.WHITE, 20)
+        c.drawRoundRect(box, r, r, p)
+        c.restore()
         if (titleH > 0f) {
-            c.save()
-            c.clipRect(box.left, box.top, box.right, box.top + titleH)
-            p.shader = LinearGradient(0f, box.top, 0f, box.top + titleH, shade(theme.accent, 0.95f), shade(theme.accent, 0.55f), Shader.TileMode.CLAMP)
-            c.drawRoundRect(box, r, r, p)
-            p.shader = null
-            p.color = al(Color.WHITE, 40)
-            c.drawRect(box.left, box.top, box.right, box.top + titleH / 2f, p)
-            c.restore()
-            shadowText(c, pu.title, box.left + 10f * sc, box.top + titleH / 2f + 6.5f * sc, 18f * sc, Color.WHITE, maxW = box.width() - 20f * sc, face = condBold)
+            shadowText(c, pu.title, box.left + 16f * sc, box.top + titleH / 2f + 7f * sc, 19f * sc, Color.WHITE, maxW = box.width() - 32f * sc, face = medium)
+            p.color = al(theme.accentLight, 130)
+            c.drawRect(box.left + 12f * sc, box.top + titleH - 1f, box.right - 12f * sc, box.top + titleH, p)
         }
-        val pad = if (titleH > 0f) 0f else 3f * sc
+        val pad = if (titleH > 0f) 2f * sc else 5f * sc
         for (i in pu.items.indices) {
             val top = box.top + titleH + pad + POPUP_ROW * sc * i
             val sel = i == pu.sel
             if (sel) {
-                tmp.set(box.left + 3f * sc, top + 1f * sc, box.right - 3f * sc, top + (POPUP_ROW - 1f) * sc)
-                drawFocus(c, tmp, 3f * sc)
+                tmp.set(box.left + 5f * sc, top + 1f * sc, box.right - 5f * sc, top + (POPUP_ROW - 1f) * sc)
+                drawFocus(c, tmp, 8f * sc)
             } else if (i > 0) {
-                p.color = al(Color.WHITE, 24)
-                c.drawRect(box.left + 8f * sc, top, box.right - 8f * sc, top + 1f, p)
+                p.color = al(Color.WHITE, 22)
+                c.drawRect(box.left + 14f * sc, top, box.right - 14f * sc, top + 1f, p)
             }
-            text(c, pu.items[i].label, box.left + 12f * sc, top + POPUP_ROW * sc / 2f + 6.5f * sc, 18f * sc, Color.WHITE, maxW = box.width() - 24f * sc)
+            text(c, pu.items[i].label, box.left + 18f * sc, top + POPUP_ROW * sc / 2f + 6.5f * sc, 18f * sc, Color.WHITE, maxW = box.width() - 36f * sc)
         }
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = 0xFF8794A0.toInt()
+        p.color = al(Color.WHITE, 75)
         c.drawRoundRect(box, r, r, p)
         p.style = Paint.Style.FILL
     }
 
-    /** S60 "information note": small dark box in the middle of the screen. */
     private fun drawToast(c: Canvas, w: Float) {
         val tsz = 17f * sc
         val tw = measure(toast, tsz)
-        val bw = min(tw + 36f * sc, w - 24f * sc)
-        val cy = (cTop + cBot) / 2f
-        rf.set((w - bw) / 2f, cy - 22f * sc, (w + bw) / 2f, cy + 22f * sc)
+        val bw = min(tw + 40f * sc, w - 24f * sc)
+        val bot = cBot - 22f * sc
+        tmp.set((w - bw) / 2f, bot - 36f * sc, (w + bw) / 2f, bot)
+        softShadow(c, tmp, 14f * sc, dy = 4f, alpha = 30)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, 0xFF2C343C.toInt(), 0xFF0A0D10.toInt(), Shader.TileMode.CLAMP)
-        c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
+        p.shader = LinearGradient(0f, tmp.top, 0f, tmp.bottom, 0xFF3C3F44.toInt(), 0xFF111214.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(tmp, 14f * sc, 14f * sc, p)
         p.shader = null
         p.style = Paint.Style.STROKE
-        p.strokeWidth = 1.5f * sc
-        p.color = theme.accentLight
-        c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
+        p.strokeWidth = 1f * sc
+        p.color = al(Color.WHITE, 90)
+        c.drawRoundRect(tmp, 14f * sc, 14f * sc, p)
         p.style = Paint.Style.FILL
-        text(c, toast, w / 2f, cy + 6f * sc, tsz, Color.WHITE, Paint.Align.CENTER, bw - 24f * sc)
+        text(c, toast, w / 2f, tmp.centerY() + 6f * sc, tsz, Color.WHITE, Paint.Align.CENTER, bw - 28f * sc)
     }
 
     private companion object {
-        const val HEADER = 28f   // title pane
-        const val ROW = 42f      // list row
-        const val DOCK = 100f    // home shortcut bar
-        const val POPUP_TITLE = 30f
-        const val POPUP_ROW = 36f
+        const val HEADER = 34f   // "Recent" heading
+        const val ROW = 48f      // list row
+        const val POPUP_TITLE = 38f
+        const val POPUP_ROW = 38f
+        const val ICON_BACK = 0
+        const val ICON_GRID = 1
+        const val ICON_MENU = 2
+        const val ICON_OK = 3
     }
 }

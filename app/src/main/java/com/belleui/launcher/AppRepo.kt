@@ -9,6 +9,7 @@ import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
@@ -98,43 +99,44 @@ class AppRepo(private val ctx: Context) {
         return null
     }
 
-    /** Skeuomorphic tile: soft drop shadow, glass plate, gloss, rim light. 128px canvas, plate 96px. */
+    /**
+     * Soft glossy squircle tile on a 128px canvas (shape 96px): drop shadow, then either the
+     * pack art as-is or the app's own icon clipped to the same squircle with gloss and rim light.
+     */
     private fun bake(glyph: Bitmap, full: Boolean): Bitmap {
         val out = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val plate = RectF(16f, 10f, 112f, 106f)
-        val r = 22f
+        val tile = RectF(16f, 10f, 112f, 106f)
+        val r = 26f
         p.color = 0xAA000000.toInt()
-        p.maskFilter = BlurMaskFilter(3.5f, BlurMaskFilter.Blur.NORMAL)
+        p.maskFilter = BlurMaskFilter(4.5f, BlurMaskFilter.Blur.NORMAL)
         c.save()
-        c.translate(0f, 4f)
-        c.drawRoundRect(plate, r, r, p)
+        c.translate(0f, 5f)
+        c.drawRoundRect(tile, r, r, p)
         c.restore()
         p.maskFilter = null
         if (full) {
-            // icon-pack art already has its own gloss and shape: just shadow + draw
-            c.drawBitmap(glyph, null, plate, fp)
+            c.drawBitmap(glyph, null, tile, fp)
             return out
-        } else {
-            p.shader = LinearGradient(0f, plate.top, 0f, plate.bottom, 0xFF4A5461.toInt(), 0xFF141A22.toInt(), Shader.TileMode.CLAMP)
-            c.drawRoundRect(plate, r, r, p)
-            p.shader = null
-            c.drawBitmap(glyph, null, RectF(30f, 24f, 98f, 92f), fp)
         }
-        // gloss on the top half
         c.save()
-        c.clipRect(plate.left, plate.top, plate.right, plate.centerY())
-        p.shader = LinearGradient(0f, plate.top, 0f, plate.centerY(), 0x70FFFFFF, 0x06FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRoundRect(plate, r, r, p)
+        c.clipPath(Path().apply { addRoundRect(tile, r, r, Path.Direction.CW) })
+        p.color = 0xFF222831.toInt()
+        c.drawRect(tile, p)
+        c.drawBitmap(glyph, null, tile, fp)
+        // gloss on the top half, soft shade at the bottom
+        p.shader = LinearGradient(0f, tile.top, 0f, tile.centerY(), 0x66FFFFFF, 0x05FFFFFF, Shader.TileMode.CLAMP)
+        c.drawRect(tile.left, tile.top, tile.right, tile.centerY(), p)
+        p.shader = LinearGradient(0f, tile.centerY(), 0f, tile.bottom, 0x00000000, 0x55000000, Shader.TileMode.CLAMP)
+        c.drawRect(tile.left, tile.centerY(), tile.right, tile.bottom, p)
         p.shader = null
         c.restore()
-        // rim light
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1.5f
         p.color = 0x66FFFFFF
-        c.drawRoundRect(RectF(plate.left + 0.75f, plate.top + 0.75f, plate.right - 0.75f, plate.bottom - 0.75f), r, r, p)
+        c.drawRoundRect(RectF(tile.left + 0.75f, tile.top + 0.75f, tile.right - 0.75f, tile.bottom - 0.75f), r, r, p)
         return out
     }
 
