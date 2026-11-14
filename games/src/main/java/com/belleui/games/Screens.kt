@@ -36,6 +36,14 @@ private fun playTime(ms: Long): String {
 private fun size(bytes: Long): String =
     if (bytes >= 1_000_000_000) "%.1f GB".format(bytes / 1e9) else if (bytes >= 1_000_000) "%.0f MB".format(bytes / 1e6) else "${bytes / 1000} kB"
 
+/** The first genre in a game's gamelist.xml entry, tidied up. */
+fun genreOfGame(g: Game): String? {
+    val raw = g.rep.meta?.genre ?: g.meta?.genre ?: return null
+    val first = raw.split('/', ',', ';', '&').first().trim()
+    if (first.isEmpty()) return null
+    return first.lowercase().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
+}
+
 /** Box art cut to the Belle icon shape (the same superellipse the app icons use), with the icon's gloss and rim. */
 private fun maskedArt(c: Canvas, ui: Ui, bmp: Bitmap, r: RectF) {
     val shape = Path(ui.squircle(r))
@@ -122,9 +130,9 @@ class GameList(private val act: GamesActivity, private val showSystem: Boolean) 
     }
 
     /** Handles list movement and the letter jump; OK is left to the caller. */
-    fun act(a: Act, games: List<Game>, vis: Int): Boolean {
+    fun act(a: Act, games: List<Game>, vis: Int, letters: Boolean = true): Boolean {
         if (games.isEmpty()) return false
-        if (a == Act.PREV || a == Act.NEXT) {
+        if (letters && (a == Act.PREV || a == Act.NEXT)) {
             val cur = list.sel.coerceIn(0, games.size - 1)
             val here = initial(games[cur])
             var i = cur
@@ -189,10 +197,9 @@ private fun startGame(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: 
 
 class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
-    override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Games", Ic.LIST), TabDef("Systems", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
+    override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Library", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
-    private val gameList = GameList(act, true)
     private val systemList = ListState()
     private val emuList = ListState()
     private var remoteStatus: String? = null
@@ -212,20 +219,21 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     private fun rescan() = act.rescan { shell.invalidate() }
 
     override fun onTabChanged() {
-        if (tab == 3) checkRemote()
+        if (tab == 2) checkRemote()
     }
 
     /** The game the highlight is on, for the buttons and the menu. */
-    private fun focused(): Game? = when (tab) {
-        0 -> if (act.games.isEmpty()) null else featured.focused()
-        1 -> gameList.selected(act.games)
-        else -> null
+    private fun focused(): Game? = if (tab == 0 && act.games.isNotEmpty()) featured.focused() else null
+
+    private fun openSearch() {
+        if (act.games.isEmpty()) return
+        shell.push(GameListScreen(act, "Search", { act.games }, true, null, autoSearch = true))
     }
 
     override fun tools(): List<Tool> {
         val g = focused()
         return listOf(
-            Tool(Ic.FAVOURITE, { focused()?.let { act.toggleFavourite(it); shell.toast("Favourites updated"); shell.invalidate() } }, g != null),
+            Tool(Ic.SEARCH, { openSearch() }, act.games.isNotEmpty()),
             Tool(Ic.PLAY, { focused()?.let { startGame(act, shell, it) } }, g != null),
         )
     }
@@ -254,8 +262,8 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     }
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        if (tab >= 2) {
-            if (tab == 2) drawSystems(c, ui, r) else drawEmulators(c, ui, r)
+        if (tab >= 1) {
+            if (tab == 1) drawSystems(c, ui, r) else drawEmulators(c, ui, r)
             return
         }
         val msg = emptyMessage()
@@ -263,25 +271,54 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             message(c, ui, r, msg)
             return
         }
-        if (tab == 0) featured.draw(c, ui, r) else gameList.draw(c, ui, r, act.games, shell)
+        featured.draw(c, ui, r)
     }
 
-    // ---- systems ----------------------------------------------------------------------------
+    // ---- library: collections first, then one row per system ---------------------------------------
 
-    private fun systemsWithGames(): List<Pair<GameSystem, Int>> = act.bySystem.map { it.first to it.second.size }
+    private class Entry(val title: String, val sub: String, val color: Int, val kind: Int, val system: GameSystem?, val source: () -> List<Game>)
+
+    private var entriesFor = -1
+    private var entries: List<Entry> = emptyList()
+
+    private fun entries(): List<Entry> {
+        if (entriesFor == act.version) return entries
+        entriesFor = act.version
+        val st = act.prefs
+        val all = act.games
+        val favs = all.filter { st.peek(it.rep.path)?.fav == true }
+        val played = all.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 }
+        val list = ArrayList<Entry>()
+        fun n(x: Int) = "$x game${if (x == 1) "" else "s"}"
+        list.add(Entry("All games", n(all.size), 0xFF3E5CC8.toInt(), Ic.LIST, null) { act.games })
+        if (favs.isNotEmpty()) list.add(Entry("Favourites", n(favs.size), 0xFFE8761A.toInt(), Ic.FAVOURITE, null) { act.games.filter { st.peek(it.rep.path)?.fav == true } })
+        if (played.isNotEmpty()) list.add(Entry("Played", n(played.size), 0xFF1F9D63.toInt(), Ic.CLOCK, null) { act.games.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 } })
+        for ((s, games) in act.bySystem) {
+            val versions = games.sumOf { it.variants.size }
+            val emu = if (s.emu == Emu.PPSSPP && act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch"
+            list.add(Entry(s.name, "${games.size} title${if (games.size == 1) "" else "s"}${if (versions > games.size) " ($versions files)" else ""} - $emu", s.color, Ic.PLAY, s) {
+                act.bySystem.firstOrNull { it.first === s }?.second ?: emptyList()
+            })
+        }
+        entries = list
+        return list
+    }
 
     private fun drawSystems(c: Canvas, ui: Ui, r: RectF) {
-        val list = systemsWithGames()
-        if (list.isEmpty()) {
+        if (act.games.isEmpty()) {
             message(c, ui, r, emptyMessage() ?: "No games found")
             return
         }
+        val list = entries()
         systemList.draw(c, ui, r, list.size) { i ->
-            val (s, n) = list[i]
-            val versions = act.bySystem.getOrNull(i)?.second?.sumOf { it.variants.size } ?: n
-            val emu = if (s.emu == Emu.PPSSPP && act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch (${act.prefs.core(s)})"
-            Row(s.name, "$n title${if (n == 1) "" else "s"}${if (versions > n) " ($versions files)" else ""} - $emu", iconKind = Ic.PLAY, iconColor = s.color, drill = true)
+            val e = list[i]
+            Row(e.title, e.sub, iconKind = e.kind, iconColor = e.color, drill = true)
         }
+    }
+
+    private fun openEntry(i: Int) {
+        val e = entries().getOrNull(i) ?: return
+        shell.push(GameListScreen(act, e.title, e.source, e.system == null, e.system))
     }
 
     // ---- emulators and the RetroArch remote ----------------------------------------------------
@@ -350,21 +387,11 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             0 -> if (act.games.isEmpty()) false else featured.act(a)
             1 -> {
                 if (act.games.isEmpty()) return false
+                val n = entries().size
                 if (a == Act.OK) {
-                    gameList.selected(act.games)?.let { startGame(act, shell, it) }
+                    openEntry(systemList.sel.coerceIn(0, n - 1))
                     true
-                } else {
-                    gameList.act(a, act.games, gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop))
-                }
-            }
-            2 -> {
-                val list = systemsWithGames()
-                if (list.isEmpty()) return false
-                if (a == Act.OK) {
-                    val s = list[systemList.sel.coerceIn(0, list.size - 1)].first
-                    shell.push(SystemScreen(act, s))
-                    true
-                } else systemList.act(a, list.size, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
+                } else systemList.act(a, n, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
             }
             else -> {
                 val n = emuRows().size
@@ -385,17 +412,10 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         when (tab) {
             0 -> return featured.tap(x, y)
             1 -> {
-                val i = gameList.hit(shell.ui, r, y, act.games.size)
-                if (i < 0) return false
-                gameList.list.sel = i
-                startGame(act, shell, act.games[i])
-            }
-            2 -> {
-                val list = systemsWithGames()
-                val i = systemList.hit(shell.ui, r, y, list.size)
+                val i = systemList.hit(shell.ui, r, y, entries().size)
                 if (i < 0) return false
                 systemList.sel = i
-                shell.push(SystemScreen(act, list[i].first))
+                openEntry(i)
             }
             else -> {
                 val i = emuList.hit(shell.ui, r, y, emuRows().size)
@@ -411,8 +431,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         val d = if (dy > 0) 1 else -1
         when (tab) {
             0 -> featured.scroll(d)
-            1 -> gameList.scroll(d, act.games.size, gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop))
-            2 -> systemList.scrollBy(d, systemsWithGames().size, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
+            1 -> systemList.scrollBy(d, entries().size, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
             else -> emuList.scrollBy(d, emuRows().size, emuList.visible(shell.ui, shell.contentBottom - shell.contentTop))
         }
     }
@@ -422,12 +441,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     private inner class Tile(val title: String, val sub: String, val color: Int, val kind: Int, val game: Game?, val open: (() -> Unit)?)
     private inner class Shelf(val title: String, val tiles: List<Tile>)
 
-    private fun genreOf(g: Game): String? {
-        val raw = g.rep.meta?.genre ?: g.meta?.genre ?: return null
-        val first = raw.split('/', ',', ';', '&').first().trim()
-        if (first.isEmpty()) return null
-        return first.lowercase().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
-    }
+    private fun genreOf(g: Game): String? = genreOfGame(g)
 
     private val genreColors = intArrayOf(0xFFD0342C.toInt(), 0xFF3E5CC8.toInt(), 0xFF1F9D63.toInt(), 0xFFE8761A.toInt(), 0xFF8A4CB5.toInt(), 0xFF2FA6B8.toInt(), 0xFFC2185B.toInt(), 0xFF5C8A3A.toInt())
 
@@ -612,28 +626,127 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 fun SystemScreen(act: GamesActivity, system: GameSystem): Screen =
     GameListScreen(act, system.name, { act.bySystem.firstOrNull { it.first === system }?.second ?: emptyList() }, false, system)
 
-/** Any list of games - a system, a genre - with the same controls: A plays, X menu, L1/R1 letters. */
+/**
+ * Any list of games - a system, a genre, everything - for libraries of thousands: search as you type,
+ * show only favourites / played / never played, pick a genre, change the order, jump by letter (A to Z order).
+ */
 class GameListScreen(
     private val act: GamesActivity,
     private val name: String,
     private val source: () -> List<Game>,
     showSystem: Boolean,
     private val system: GameSystem?,
+    private val autoSearch: Boolean = false,
 ) : Screen() {
-    override val title get() = name
     private val gameList = GameList(act, showSystem)
-    private val games get() = source()
+    private var query = ""
+    private var filter = 0 // 0 all, 1 favourites, 2 played, 3 never played
+    private var sort = 0 // 0 A-Z, 1 recently added, 2 most played, 3 last played
+    private var genre: String? = null
+
+    private var cached: List<Game> = emptyList()
+    private var cacheKey = ""
+    private var cacheVersion = -1
+    private var cacheSource = 0
+
+    private val filterNames = listOf("All games", "Favourites", "Played", "Never played")
+    private val sortNames = listOf("A to Z", "Recently added", "Most played", "Last played")
+
+    /** The games to show, rebuilt only when something that affects them changed. */
+    private val games: List<Game>
+        get() {
+            val src = source()
+            val key = "$query|$filter|$sort|$genre"
+            if (cacheVersion == act.version && cacheKey == key && cacheSource == src.size) return cached
+            cacheVersion = act.version
+            cacheKey = key
+            cacheSource = src.size
+            val st = act.prefs
+            val q = query.trim().lowercase()
+            var out: List<Game> = src
+            if (q.isNotEmpty()) out = out.filter { it.title.lowercase().contains(q) || it.rawName.lowercase().contains(q) }
+            if (genre != null) out = out.filter { genreOfGame(it) == genre }
+            out = when (filter) {
+                1 -> out.filter { st.peek(it.rep.path)?.fav == true }
+                2 -> out.filter { (st.peek(it.rep.path)?.launches ?: 0) > 0 }
+                3 -> out.filter { (st.peek(it.rep.path)?.launches ?: 0) == 0 }
+                else -> out
+            }
+            out = when (sort) {
+                1 -> out.sortedByDescending { it.modified }
+                2 -> out.sortedByDescending { st.peek(it.rep.path)?.launches ?: 0 }
+                3 -> out.sortedByDescending { st.peek(it.rep.path)?.lastPlayed ?: 0L }
+                else -> out
+            }
+            cached = out
+            return out
+        }
+
+    override val title: String
+        get() {
+            val n = games.size
+            val extra = ArrayList<String>()
+            if (query.isNotBlank()) extra.add("\"${query.trim()}\"")
+            if (filter != 0) extra.add(filterNames[filter].lowercase())
+            genre?.let { extra.add(it) }
+            return name + (if (extra.isNotEmpty()) " - " + extra.joinToString(", ") else "") + " ($n)"
+        }
+
+    override fun onShow() {
+        if (autoSearch) {
+            autoSearchDone()
+        }
+    }
+
+    private var started = false
+
+    private fun autoSearchDone() {
+        if (started) return
+        started = true
+        search()
+    }
+
+    private fun search() {
+        act.askSearch(query) { q ->
+            query = q
+            gameList.list.sel = 0
+            gameList.list.top = 0
+            shell.invalidate()
+        }
+    }
 
     override fun tools(): List<Tool> {
         val g = gameList.selected(games)
         return listOf(
-            Tool(Ic.FAVOURITE, { gameList.selected(games)?.let { act.toggleFavourite(it); shell.toast("Favourites updated"); shell.invalidate() } }, g != null),
+            Tool(Ic.SEARCH, { search() }),
             Tool(Ic.PLAY, { gameList.selected(games)?.let { startGame(act, shell, it) } }, g != null),
         )
     }
 
     override fun menu(): List<MenuItem> {
-        val items = ArrayList<MenuItem>(gameMenu(act, shell, gameList.selected(games)))
+        val items = ArrayList<MenuItem>()
+        items.add(MenuItem("Search...") { search() })
+        items.add(MenuItem("Show: ${filterNames[filter]}") {
+            shell.showOverlay(ListDialog("Show", filterNames, filter) { filter = it; gameList.list.sel = 0; gameList.list.top = 0 })
+        })
+        items.add(MenuItem("Order: ${sortNames[sort]}") {
+            shell.showOverlay(ListDialog("Order", sortNames, sort) { sort = it; gameList.list.sel = 0; gameList.list.top = 0 })
+        })
+        val genres = source().mapNotNull { genreOfGame(it) }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second }.map { it.first }
+        if (genres.isNotEmpty()) {
+            items.add(MenuItem("Genre: ${genre ?: "all"}") {
+                val opts = listOf("All genres") + genres
+                shell.showOverlay(ListDialog("Genre", opts, if (genre == null) 0 else opts.indexOf(genre)) { i ->
+                    genre = if (i == 0) null else opts[i]
+                    gameList.list.sel = 0
+                    gameList.list.top = 0
+                })
+            })
+        }
+        if (query.isNotBlank() || filter != 0 || genre != null) {
+            items.add(MenuItem("Clear search and filters") { query = ""; filter = 0; genre = null; gameList.list.sel = 0; gameList.list.top = 0 })
+        }
+        items.addAll(gameMenu(act, shell, gameList.selected(games)))
         if (system?.emu == Emu.PPSSPP) {
             items.add(MenuItem("PSP opens in: " + if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch") { act.prefs.pspWithPpsspp = !act.prefs.pspWithPpsspp })
         }
@@ -643,7 +756,16 @@ class GameListScreen(
     private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
     private fun vis() = gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop)
 
-    override fun draw(c: Canvas, ui: Ui, r: RectF) = gameList.draw(c, ui, r, games, shell)
+    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        val g = games
+        if (g.isEmpty()) {
+            val msg = if (query.isNotBlank() || filter != 0 || genre != null) "Nothing matches.\nPress X, then \"Clear search and filters\"." else "No games here yet"
+            val lines = msg.split("\n")
+            for ((i, l) in lines.withIndex()) ui.text(c, l, r.centerX(), ui.baselineFor(r.centerY() + (i - (lines.size - 1) / 2f) * 30f * ui.sc, 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = r.width() - 40f * ui.sc)
+            return
+        }
+        gameList.draw(c, ui, r, g, shell)
+    }
 
     override fun onAct(a: Act): Boolean {
         val g = games
@@ -652,7 +774,7 @@ class GameListScreen(
             gameList.selected(g)?.let { startGame(act, shell, it) }
             return true
         }
-        return gameList.act(a, g, vis())
+        return gameList.act(a, g, vis(), letters = sort == 0)
     }
 
     override fun onTap(x: Float, y: Float): Boolean {

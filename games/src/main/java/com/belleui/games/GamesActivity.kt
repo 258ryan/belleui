@@ -1,6 +1,16 @@
 package com.belleui.games
 
 import android.Manifest
+import android.content.Context
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -37,6 +47,67 @@ class GamesActivity : BelleActivity() {
     private var folderCb: ((String?) -> Unit)? = null
 
     override fun createRoot(shell: BelleShell): Screen = RootScreen(this)
+
+    // ---- search box: a real text field at the top, so the keyboard (and Belle keyboard) works ----
+    private lateinit var searchField: EditText
+    private var searchCb: ((String) -> Unit)? = null
+
+    override fun buildContent(shell: BelleShell): View {
+        val root = FrameLayout(this)
+        root.addView(shell, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        searchField = EditText(this)
+        searchField.setBackgroundColor(0xFFF2F2F2.toInt())
+        searchField.setTextColor(0xFF1B1B1B.toInt())
+        searchField.setHintTextColor(0xFF8A8A8A.toInt())
+        searchField.hint = "Search games"
+        searchField.setSingleLine()
+        searchField.imeOptions = EditorInfo.IME_ACTION_SEARCH
+        searchField.setPadding(24, 0, 24, 0)
+        searchField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                searchCb?.invoke(s?.toString() ?: "")
+            }
+        })
+        searchField.setOnEditorActionListener { _, _, _ ->
+            closeSearch()
+            true
+        }
+        root.addView(searchField, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 96))
+        searchField.visibility = View.GONE
+        return root
+    }
+
+    override fun shellHandlesKeys() = searchField.visibility != View.VISIBLE
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (searchField.visibility == View.VISIBLE && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP) closeSearch()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** Shows the search box; [onChange] hears every change to the text. */
+    fun askSearch(initial: String, onChange: (String) -> Unit) {
+        searchCb = null
+        searchField.setText(initial)
+        searchField.setSelection(searchField.text.length)
+        searchCb = onChange
+        searchField.visibility = View.VISIBLE
+        searchField.requestFocus()
+        searchField.post { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(searchField, 0) }
+    }
+
+    fun closeSearch() {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(searchField.windowToken, 0)
+        searchField.visibility = View.GONE
+        searchField.clearFocus()
+        searchCb = null
+        shell.requestFocus()
+        shell.invalidate()
+    }
 
     fun hasAccess(): Boolean =
         if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
