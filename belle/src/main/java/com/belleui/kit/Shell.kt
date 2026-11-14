@@ -618,6 +618,9 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private var bannerUntil = 0L
     private var lastNs = System.nanoTime()
     private var passThrough = false
+
+    /** Repeat count of the key currently being handled (0 for the first press), for accelerating cursors. */
+    var keyRepeat = 0
     private var contentChanged: (() -> Unit)? = null
 
     val screen: Screen get() = stack.last()
@@ -797,6 +800,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     /** @return true if the event was consumed; false lets it reach views underneath (e.g. a WebView). */
     fun handleKey(e: KeyEvent): Boolean {
         val a = Keys.actionFor(e.keyCode, swapPad) ?: return false
+        keyRepeat = e.repeatCount
         if (e.action != KeyEvent.ACTION_DOWN) {
             // consume the matching key-up of anything we handle, except when passing through
             return !(overlay == null && screen.transparentContent && isNavKey(a))
