@@ -82,6 +82,19 @@ object Ic {
     const val AUDIO_OFF = 50
     const val TOOLS = 51
     const val WLAN_ON = 52
+    const val BOOKMARKS = 60
+    const val ADD_BOOKMARK = 61
+    const val FIND = 62
+    const val DOWNLOADS = 63
+    const val WEB_HOME = 64
+    const val GOTO = 65
+    const val HISTORY_BACK = 66
+    const val HISTORY_FORWARD = 67
+    const val FULLSCREEN = 68
+    const val IMAGES = 69
+    const val SLIDESHOW = 70
+    const val GALLERY = 71
+    const val NEW_TIMER = 72
 
     val stock = mapOf(
         BACK to "toolbar_back", MENU to "toolbar_menu", SETTINGS to "toolbar_settings", ADD to "toolbar_add",
@@ -95,6 +108,11 @@ object Ic {
         NOWPLAY to "qtg_toolbar_nowplay", FAVOURITE to "qtg_toolbar_favourites", FORWARD to "qtg_toolbar_forward",
         REWIND to "qtg_toolbar_rewind", AUDIO_ON to "qtg_toolbar_audio_on", AUDIO_OFF to "qtg_toolbar_audio_off",
         TOOLS to "qtg_toolbar_tools", WLAN_ON to "qtg_toolbar_wlan_on",
+        BOOKMARKS to "qgn_indi_browser_tb_bm", ADD_BOOKMARK to "qgn_indi_browser_tb_add_bm_new", FIND to "qgn_indi_browser_tb_find",
+        DOWNLOADS to "qgn_indi_browser_tb_downloads", WEB_HOME to "qgn_indi_browser_tb_home", GOTO to "qgn_indi_browser_tb_goto",
+        HISTORY_BACK to "qgn_indi_browser_tb_history_back", HISTORY_FORWARD to "qgn_indi_browser_tb_history_fw",
+        FULLSCREEN to "qgn_indi_browser_tb_full", IMAGES to "qgn_indi_browser_tb_images", SLIDESHOW to "qgn_indi_lgal_tb_slideshow",
+        GALLERY to "qgn_indi_tb_gallery", NEW_TIMER to "qgn_indi_tb_new_timer",
     )
 }
 
