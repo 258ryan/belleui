@@ -1,0 +1,6 @@
+id=belleui_picker
+name=Belle Folder and File Picker
+version=v0.1
+versionCode=1
+author=BelleUI
+description=A Belle-style picker for folders and files, used by every app that asks for one (replaces the stock file picker). Android 11+.
