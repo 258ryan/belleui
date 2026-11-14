@@ -1,0 +1,56 @@
+#!/system/bin/sh
+# BelleUI: runs at every boot once Android is up. It only grants access and sets defaults; nothing else on the system is changed.
+MODDIR=${0%/*}
+DIR=/data/adb/belleui
+CONF=$DIR/config
+mkdir -p $DIR
+if [ ! -f $CONF ]; then
+  cat > $CONF <<'EOT'
+# 1 = on, 0 = off. Edit and reboot.
+# make the Belle launcher the home app
+set_default_home=1
+# make the Belle keyboard the input method
+set_default_keyboard=0
+# install the Belle Chooser (Vector) module APK once
+install_vector_module=1
+EOT
+fi
+. $CONF
+
+until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 3; done
+sleep 12
+
+L=com.belleui.launcher
+# shared storage, for the apps that browse or scan files
+for p in com.belleui.files com.belleui.games com.belleui.picker com.belleui.music com.belleui.gallery com.belleui.video com.belleui.recorder com.belleui.notes com.belleui.styles com.belleui.settings $L; do
+  appops set $p MANAGE_EXTERNAL_STORAGE allow 2>/dev/null
+  pm grant $p android.permission.READ_EXTERNAL_STORAGE 2>/dev/null
+  pm grant $p android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null
+done
+# changing system settings (brightness, tones, sounds)
+for p in $L com.belleui.settings com.belleui.styles; do
+  appops set $p WRITE_SETTINGS allow 2>/dev/null
+done
+# usage access, for the launcher's recent apps and the Settings app's app list
+for p in $L com.belleui.settings; do
+  appops set $p GET_USAGE_STATS allow 2>/dev/null
+done
+pm grant $L android.permission.READ_CALENDAR 2>/dev/null
+pm grant com.belleui.recorder android.permission.RECORD_AUDIO 2>/dev/null
+# the Hub: see notifications, and the music widget: see what is playing
+cmd notification allow_listener $L/$L.HubListenerService 2>/dev/null
+
+if [ "$set_default_home" = "1" ]; then
+  cmd role add-role-holder --user 0 android.app.role.HOME $L 0 2>/dev/null
+fi
+if [ "$set_default_keyboard" = "1" ]; then
+  ime enable com.belleui.keyboard/.BelleIme 2>/dev/null
+  ime set com.belleui.keyboard/.BelleIme 2>/dev/null
+else
+  ime enable com.belleui.keyboard/.BelleIme 2>/dev/null
+fi
+
+# the Belle Chooser Vector module is a normal app (Vector turns it on); install it once
+if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f $MODDIR/extra/BelleUI-Chooser-Vector.apk ]; then
+  pm install -r $MODDIR/extra/BelleUI-Chooser-Vector.apk >/dev/null 2>&1 && touch $DIR/vector_installed
+fi

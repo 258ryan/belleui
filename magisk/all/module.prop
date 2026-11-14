@@ -1,0 +1,6 @@
+id=belleui_all
+name=BelleUI - the whole set
+version=v0.1
+versionCode=1
+author=BelleUI
+description=Installs the Belle launcher and every Belle app as system apps, gives them the access they need at boot, and (optionally) makes the Belle launcher and keyboard the defaults. Android 11+.

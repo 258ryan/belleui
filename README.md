@@ -172,3 +172,8 @@ Home can show one large Belle widget instead of two small ones: **Flip clock**, 
 
 ### Recent tab actions
 On the launcher's Recent tab, X on an app offers **Close app** (ends its background processes), **Force stop** (asks root, Magisk shows its question the first time; without root it opens the app's info page where Force stop is), **Remove from list**, **Close all and clear** and **Clear list**.
+
+### The whole set as one Magisk module
+`magisk/all` + the manual "Build the whole-set Magisk module" workflow: one zip that installs the launcher, Settings, Files and the picker as privileged system apps and every other Belle app as a system app, all systemless. At each boot it grants them file access, system-settings access, usage access, notification access, calendar and microphone, and (config in `/data/adb/belleui/config`) makes the Belle launcher the home app. The Belle Chooser Vector module APK rides along and is installed once. All apps are now signed with one shared key (`keystore/`), so builds install over each other; remove any older Belle apps once before flashing.
+
+Root features inside the apps: quick Wi-Fi, Bluetooth and airplane toggles (launcher Quick settings and Settings > Connectivity), force stop on the Recent tab, and Settings > Performance (CPU governor, speed, temperature).
