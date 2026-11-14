@@ -11,6 +11,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.max
 
 /** Two rows of keys in the Belle style. The selected key is blue; the game pad moves it, A presses it. */
 class KeyboardView(ctx: Context) : View(ctx) {
@@ -21,6 +22,23 @@ class KeyboardView(ctx: Context) : View(ctx) {
     var shift = 0 // 0 off, 1 next letter, 2 caps lock
     var page = 0
     var listener: ((Key) -> Unit)? = null
+    var onSuggestion: ((String) -> Unit)? = null
+
+    /** Word suggestions shown in the bar above the keys; selRow -1 means the bar has the highlight. */
+    var suggestions: List<String> = emptyList()
+        private set
+
+    fun setSuggestions(list: List<String>) {
+        suggestions = list
+        if (list.isEmpty() && selRow < 0) {
+            selRow = 0
+            selCol = selCol.coerceIn(0, rows[0].size - 1)
+        }
+        if (selRow < 0) selCol = selCol.coerceIn(0, list.size - 1)
+        invalidate()
+    }
+
+    fun selectedSuggestion(): String? = if (selRow < 0) suggestions.getOrNull(selCol) else null
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.NORMAL); textAlign = Paint.Align.CENTER }
@@ -39,14 +57,27 @@ class KeyboardView(ctx: Context) : View(ctx) {
         invalidate()
     }
 
-    fun selected(): Key = rows[selRow][selCol]
+    fun selected(): Key = rows[selRow.coerceAtLeast(0)][selCol.coerceIn(0, rows[selRow.coerceAtLeast(0)].size - 1)]
 
     /** Moves the highlight; up and down keep the same spot along the row. */
     fun move(dx: Int, dy: Int) {
-        if (dy != 0) {
-            val here = centreOf(selRow, selCol)
-            selRow = (selRow + dy).coerceIn(0, 1)
-            selCol = nearest(selRow, here)
+        if (selRow < 0) {
+            // in the suggestion bar: left and right pick a word, down goes back to the keys
+            if (dy > 0) {
+                selRow = 0
+                selCol = 0
+            } else if (dx != 0) {
+                selCol = (selCol + dx).coerceIn(0, max(0, suggestions.size - 1))
+            }
+        } else if (dy != 0) {
+            if (dy < 0 && selRow == 0 && suggestions.isNotEmpty()) {
+                selRow = -1
+                selCol = 0
+            } else {
+                val here = centreOf(selRow, selCol)
+                selRow = (selRow + dy).coerceIn(0, 1)
+                selCol = nearest(selRow, here)
+            }
         } else if (dx != 0) {
             val n = rows[selRow].size
             selCol = (selCol + dx + n) % n
@@ -98,9 +129,12 @@ class KeyboardView(ctx: Context) : View(ctx) {
         p.style = Paint.Style.FILL
         p.color = 0xFF3A3A3A.toInt()
         c.drawRect(0f, 0f, w, 1.5f * sc, p)
-        // legend
-        hint.textSize = 13f * sc
-        c.drawText("A press   B delete   X space   Y shift   L1 R1 cursor   R2 enter   L2 123", w / 2f, 19f * sc, hint)
+        if (suggestions.isEmpty()) {
+            hint.textSize = 13f * sc
+            c.drawText("A press   B delete   X space   Y shift   L1 R1 cursor   R2 enter   L2 123   Up = words", w / 2f, 19f * sc, hint)
+        } else {
+            drawSuggestions(c, w)
+        }
 
         keyRects.clear()
         val top = 28f * sc
@@ -118,6 +152,27 @@ class KeyboardView(ctx: Context) : View(ctx) {
             }
         }
     }
+
+    private fun drawSuggestions(c: Canvas, w: Float) {
+        val n = suggestions.size
+        val slot = (w - 12f * sc) / 3f
+        for (i in 0 until n) {
+            rect.set(6f * sc + i * slot + 2f * sc, 4f * sc, 6f * sc + (i + 1) * slot - 2f * sc, 27f * sc)
+            sugRects[i].set(rect)
+            val sel = selRow < 0 && selCol == i
+            if (sel) {
+                p.style = Paint.Style.FILL
+                p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, 0xFF5CB4F8.toInt(), 0xFF1080DD.toInt(), Shader.TileMode.CLAMP)
+                c.drawRoundRect(rect, 6f * sc, 6f * sc, p)
+                p.shader = null
+            }
+            text.color = if (sel) Color.WHITE else if (i == 0) 0xFFFFFFFF.toInt() else 0xFFC8C8C8.toInt()
+            text.textSize = 18f * sc
+            c.drawText(suggestions[i], rect.centerX(), rect.centerY() - (text.ascent() + text.descent()) / 2f, text)
+        }
+    }
+
+    private val sugRects = Array(3) { RectF() }
 
     private fun drawKey(c: Canvas, r: RectF, k: Key, sel: Boolean, down: Boolean) {
         val special = k.kind != K_CHAR
@@ -209,6 +264,13 @@ class KeyboardView(ctx: Context) : View(ctx) {
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked != MotionEvent.ACTION_DOWN) return true
+        for (i in suggestions.indices) if (sugRects[i].contains(e.x, e.y)) {
+            selRow = -1
+            selCol = i
+            invalidate()
+            onSuggestion?.invoke(suggestions[i])
+            return true
+        }
         for ((r, rc) in keyRects) if (r.contains(e.x, e.y)) {
             selRow = rc.first
             selCol = rc.second

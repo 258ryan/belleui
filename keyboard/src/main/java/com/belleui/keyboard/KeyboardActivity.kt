@@ -19,6 +19,7 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Ic
 import com.belleui.kit.ListDialog
 import com.belleui.kit.ListState
+import com.belleui.kit.QueryDialog
 import com.belleui.kit.Row
 import com.belleui.kit.Screen
 import com.belleui.kit.Ui
@@ -77,6 +78,12 @@ class KeyboardActivity : BelleActivity() {
         onResumeHook?.invoke()
     }
 
+    fun learnedCount(): Int = getSharedPreferences("keyboard_words", Context.MODE_PRIVATE).getString("learned", "")!!.split("\n").count { it.isNotBlank() }
+
+    fun forgetWords() {
+        getSharedPreferences("keyboard_words", Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
     fun enabled(): Boolean = imm.enabledInputMethodList.any { it.packageName == packageName }
 
     fun inUse(): Boolean = (Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) ?: "").startsWith("$packageName/")
@@ -100,6 +107,8 @@ class SetupScreen(private val act: KeyboardActivity) : Screen() {
             Row("Use it", if (act.inUse()) "It is the keyboard in use" else "Press A to choose the keyboard", iconKind = Ic.GRID, check = act.inUse()),
             Row("Letter order", layout, iconKind = Ic.LIST, drill = true),
             Row("Capital after a full stop", "Starts sentences with a capital", iconKind = Ic.NOTE, check = flag("autocap", true)),
+            Row("Word suggestions", "Suggests words as you type; up from the keys picks one", iconKind = Ic.SEARCH, check = flag("predict", true)),
+            Row("Forget typed words", "${act.learnedCount()} words learned from you", iconKind = Ic.DELETE, drill = true),
             Row("Key click", "A short sound for each key", iconKind = Ic.AUDIO_ON, check = flag("click", true)),
             Row("Vibrate", "A short buzz for each key", iconKind = Ic.BELL, check = flag("buzz", false)),
             Row("Try it", "Open a text box to type in", iconKind = Ic.FIND, drill = true),
@@ -121,9 +130,14 @@ class SetupScreen(private val act: KeyboardActivity) : Screen() {
                 act.prefs.edit().putInt("layout", k).apply()
             })
             3 -> act.prefs.edit().putBoolean("autocap", !flag("autocap", true)).apply()
-            4 -> act.prefs.edit().putBoolean("click", !flag("click", true)).apply()
-            5 -> act.prefs.edit().putBoolean("buzz", !flag("buzz", false)).apply()
-            6 -> if (act.inUse()) act.showTry() else shell.toast("Choose Belle keyboard first (Use it)")
+            4 -> act.prefs.edit().putBoolean("predict", !flag("predict", true)).apply()
+            5 -> shell.showOverlay(QueryDialog("Forget the words the keyboard learned from you?", "Forget", "Cancel") {
+                act.forgetWords()
+                shell.toast("Forgotten")
+            })
+            6 -> act.prefs.edit().putBoolean("click", !flag("click", true)).apply()
+            7 -> act.prefs.edit().putBoolean("buzz", !flag("buzz", false)).apply()
+            8 -> if (act.inUse()) act.showTry() else shell.toast("Choose Belle keyboard first (Use it)")
         }
     }
 
@@ -132,11 +146,11 @@ class SetupScreen(private val act: KeyboardActivity) : Screen() {
             open(list.sel)
             return true
         }
-        return list.act(a, 7, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+        return list.act(a, 9, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
     }
 
     override fun onTap(x: Float, y: Float): Boolean {
-        val i = list.hit(shell.ui, area(), y, 7)
+        val i = list.hit(shell.ui, area(), y, 9)
         if (i < 0) return false
         list.sel = i
         open(i)

@@ -45,3 +45,6 @@ Nokia Pure Text (proprietary). Text uses the system sans-serif at Belle's sizes.
 A curated subset (toolbar glyphs, music player buttons, default album art, list icons) of the icons in the
 "E6 Belle" theme package supplied with this project (`E6 Belle.zip`), rendered from SVG to PNG. These are Nokia
 artwork with no licence granted for redistribution; check before making the repository public or sharing builds.
+
+## Keyboard word list
+`keyboard/src/main/assets/words.txt` is the 20,000 most frequent English words (profanity filtered) taken from the FrequencyWords project (hermitdave/FrequencyWords, 2018 English list from OpenSubtitles), licensed CC BY-SA 4.0 (content) / MIT (code). The list is used on the device only, for word suggestions.
