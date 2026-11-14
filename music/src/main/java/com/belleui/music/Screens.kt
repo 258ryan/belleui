@@ -16,6 +16,8 @@ import com.belleui.kit.Row
 import com.belleui.kit.Screen
 import com.belleui.kit.TabDef
 import com.belleui.kit.Tool
+import com.belleui.kit.Tumbler
+import com.belleui.kit.TumblerDialog
 import com.belleui.kit.Ui
 import kotlin.math.max
 import kotlin.math.min
@@ -41,6 +43,9 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     override fun onShow() {
         if (!started) {
             started = true
+            request()
+        } else if (act.libraryDirty) {
+            act.libraryDirty = false
             request()
         }
         Player.listeners.add { shell.postInvalidate() }
@@ -88,6 +93,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             })
         }
         items.add(MenuItem("Rescan library") { request() })
+        items.add(MenuItem("Settings") { shell.push(SettingsScreen(act)) })
         return items
     }
 
@@ -347,6 +353,49 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
             transport[4].contains(x, y) -> Player.repeat = (Player.repeat + 1) % 3
             else -> Player.toggle()
         }
+        return true
+    }
+}
+
+private fun limitText(sec: Int) = if (sec <= 0) "Off - show all songs" else "Shorter than ${fmtTime(sec * 1000L)}"
+
+/** Music settings, in Belle SelectionListItem style. */
+class SettingsScreen(private val act: MusicActivity) : Screen() {
+    override val title get() = "Settings"
+    private val list = ListState()
+
+    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        list.draw(c, ui, r, 1) { Row("Hide short songs", limitText(act.library.minSeconds), iconKind = Ic.NOTE, iconColor = MAGENTA, drill = true) }
+        ui.text(
+            c, "Songs shorter than the length you choose (from 0:01 to 2:00) are left out of Songs, Albums and Artists.",
+            r.left + 16f * ui.sc, r.top + 1.5f * Belle.ROW_H * ui.sc, 16f * ui.sc, Belle.TEXT_MID, maxW = r.width() - 32f * ui.sc, face = ui.light,
+        )
+    }
+
+    private fun edit() {
+        val cur = act.library.minSeconds
+        val cols = listOf(
+            Tumbler((0..2).map { "$it min" }, cur / 60),
+            Tumbler((0..59).map { "%02d s".format(it) }, cur % 60),
+        )
+        shell.showOverlay(TumblerDialog("Hide songs shorter than", cols) { r ->
+            val sec = (r[0] * 60 + r[1]).coerceIn(0, 120)
+            act.library.minSeconds = sec
+            act.libraryDirty = true
+            shell.toast(if (sec == 0) "Showing all songs" else "Hiding songs under ${fmtTime(sec * 1000L)}")
+        })
+    }
+
+    override fun onAct(a: Act): Boolean {
+        if (a == Act.OK) {
+            edit()
+            return true
+        }
+        return false
+    }
+
+    override fun onTap(x: Float, y: Float): Boolean {
+        edit()
         return true
     }
 }

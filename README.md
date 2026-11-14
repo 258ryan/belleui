@@ -91,4 +91,5 @@ is the original download and can be deleted.
 ### Music (`belle/music`)
 
 Belle-style music player on the shared kit. Tabs Songs / Albums / Artists over MediaStore audio, Now playing with album art, progress bar, shuffle/repeat, and background playback with a media notification and MediaSession (headset / Bluetooth buttons).
+Settings (X menu) can hide songs shorter than a chosen length, from 0:01 to 2:00.
 Gamepad: D-pad up/down browse, A play, L1/R1 switch tabs (previous/next song on Now playing), left/right seek 10 s, up/down volume, Y play/pause, X options menu.

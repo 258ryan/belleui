@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
+import kotlin.math.max
 
 class Track(
     val id: Long,
@@ -36,6 +37,13 @@ class Library(private val ctx: Context) {
     var tracks: List<Track> = emptyList()
         private set
 
+    private val prefs = ctx.getSharedPreferences("music", Context.MODE_PRIVATE)
+
+    /** Songs shorter than this many seconds are hidden; 0 = show everything. Limited to 0..120. */
+    var minSeconds: Int
+        get() = prefs.getInt("minSeconds", 0).coerceIn(0, 120)
+        set(v) = prefs.edit().putInt("minSeconds", v.coerceIn(0, 120)).apply()
+
     /** Blocking; call off the main thread. */
     fun load() {
         val out = ArrayList<Track>()
@@ -46,7 +54,7 @@ class Library(private val ctx: Context) {
         try {
             ctx.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 10000",
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ${max(1, minSeconds) * 1000L}",
                 null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE",
             )?.use { c ->
                 while (c.moveToNext()) {
