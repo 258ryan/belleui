@@ -39,3 +39,9 @@ By speactra (https://openrepos.net/content/speactra/n9ish-icons). No licence fou
 ## Not bundled
 
 Nokia Pure Text (proprietary). Text uses the system sans-serif at Belle's sizes.
+
+## Nokia E6 Belle theme resources (`qtg_toolbar_*`, `qgn_*` in `belle/src/main/assets/belle/`)
+
+A curated subset (toolbar glyphs, music player buttons, default album art, list icons) of the icons in the
+"E6 Belle" theme package supplied with this project (`E6 Belle.zip`), rendered from SVG to PNG. These are Nokia
+artwork with no licence granted for redistribution; check before making the repository public or sharing builds.

@@ -69,12 +69,32 @@ object Ic {
     const val OK = 35
     const val FLAG = 36
     const val STAR = 37
+    const val SHUFFLE = 40
+    const val SHUFFLE_OFF = 41
+    const val REPEAT = 42
+    const val REPEAT_ONE = 43
+    const val REPEAT_OFF = 44
+    const val NOWPLAY = 45
+    const val FAVOURITE = 46
+    const val FORWARD = 47
+    const val REWIND = 48
+    const val AUDIO_ON = 49
+    const val AUDIO_OFF = 50
+    const val TOOLS = 51
+    const val WLAN_ON = 52
 
     val stock = mapOf(
         BACK to "toolbar_back", MENU to "toolbar_menu", SETTINGS to "toolbar_settings", ADD to "toolbar_add",
-        SEARCH to "toolbar_search", NEXT to "toolbar_next", PREVIOUS to "toolbar_previous",
+        SEARCH to "toolbar_search", NEXT to "qtg_toolbar_next", PREVIOUS to "qtg_toolbar_previous",
         REFRESH to "toolbar_refresh", DELETE to "toolbar_delete", SHARE to "toolbar_share",
         HOME to "toolbar_home", LIST to "toolbar_list", CLOSE to "qtg_graf_popup_close_normal",
+        // original Belle toolbar glyphs from the E6 theme pack
+        PLAY to "qtg_toolbar_play", PAUSE to "qtg_toolbar_pause", STOP to "qtg_toolbar_stop",
+        SHUFFLE to "qtg_toolbar_shuffle", SHUFFLE_OFF to "qtg_toolbar_shuffle_off",
+        REPEAT to "qtg_toolbar_repeat", REPEAT_ONE to "qtg_toolbar_repeat_one", REPEAT_OFF to "qtg_toolbar_repeat_off",
+        NOWPLAY to "qtg_toolbar_nowplay", FAVOURITE to "qtg_toolbar_favourites", FORWARD to "qtg_toolbar_forward",
+        REWIND to "qtg_toolbar_rewind", AUDIO_ON to "qtg_toolbar_audio_on", AUDIO_OFF to "qtg_toolbar_audio_off",
+        TOOLS to "qtg_toolbar_tools", WLAN_ON to "qtg_toolbar_wlan_on",
     )
 }
 
