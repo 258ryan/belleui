@@ -15,6 +15,14 @@ import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.MediaStore
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Color
+import android.graphics.RadialGradient
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.os.Build
+import kotlin.math.max
+import kotlin.math.min
 
 class AppEntry(
     val key: String,
@@ -41,7 +49,7 @@ class AppRepo(private val ctx: Context) {
                 val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                 val custom = loadCustomIcon(cn.packageName)
                     ?: loadPackIcon(cn.packageName, ri.loadLabel(pm).toString())
-                val icon = if (custom != null) bake(custom, full = true) else bake(toBitmap(ri.loadIcon(pm)), full = false)
+                val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm)))
                 AppEntry(cn.flattenToString(), ri.loadLabel(pm).toString(), cn, icon)
             }
     }
@@ -119,44 +127,103 @@ class AppRepo(private val ctx: Context) {
         return path
     }
 
+    private fun render(d: Drawable, w: Int, h: Int): Bitmap {
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, w, h)
+        d.draw(Canvas(b))
+        return b
+    }
+
+    /** Average colour of the clearly coloured, opaque pixels, or null for greys / transparent art. */
+    private fun dominant(b: Bitmap): Int? {
+        var r = 0L
+        var g = 0L
+        var bl = 0L
+        var n = 0
+        val step = max(1, b.width / 12)
+        var y = 0
+        while (y < b.height) {
+            var x = 0
+            while (x < b.width) {
+                val px = b.getPixel(x, y)
+                val mx = max(Color.red(px), max(Color.green(px), Color.blue(px)))
+                val mn = min(Color.red(px), min(Color.green(px), Color.blue(px)))
+                if (Color.alpha(px) > 200 && mx - mn > 40) {
+                    r += Color.red(px); g += Color.green(px); bl += Color.blue(px); n++
+                }
+                x += step
+            }
+            y += step
+        }
+        if (n < 4) return null
+        return Color.rgb((r / n).toInt(), (g / n).toInt(), (bl / n).toInt())
+    }
+
+    private fun hsv(color: Int, sMul: Float, vMul: Float): Int {
+        val h = FloatArray(3)
+        Color.colorToHSV(color, h)
+        h[1] = (h[1] * sMul).coerceIn(0f, 1f)
+        h[2] = (h[2] * vMul).coerceIn(0f, 1f)
+        return Color.HSVToColor(h)
+    }
+
     /**
-     * Soft glossy squircle tile on a 128px canvas (shape 96px): drop shadow, then either the
-     * pack art as-is or the app's own icon clipped to the same squircle with gloss and rim light.
+     * Belle IconFrame for apps that have no pack art: superellipse, vertical gradient (lighter and
+     * more saturated at the top), soft glow at the top centre, thin dark rim, flat white glyph.
+     * Legacy (non-adaptive) icons are left exactly as they are: their own shape, no overlay.
      */
-    private fun bake(glyph: Bitmap, full: Boolean): Bitmap {
+    private fun frameTile(d: Drawable): Bitmap {
+        if (Build.VERSION.SDK_INT >= 26 && d is AdaptiveIconDrawable) {
+            val fg = render(d.foreground, 108, 108)
+            val bg = render(d.background, 108, 108)
+            var base = dominant(bg) ?: dominant(fg) ?: 0xFF4B6178.toInt()
+            val hv = FloatArray(3)
+            Color.colorToHSV(base, hv)
+            hv[1] = max(hv[1], 0.55f)
+            hv[2] = hv[2].coerceIn(0.6f, 0.9f)
+            base = Color.HSVToColor(hv)
+            val tile = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+            val c = Canvas(tile)
+            val shape = squircle(RectF(0f, 0f, 96f, 96f))
+            val p = Paint(Paint.ANTI_ALIAS_FLAG)
+            p.shader = LinearGradient(0f, 0f, 0f, 96f, hsv(base, 0.85f, 1.2f), hsv(base, 1.05f, 0.62f), Shader.TileMode.CLAMP)
+            c.drawPath(shape, p)
+            p.shader = RadialGradient(48f, 4f, 62f, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            c.drawPath(shape, p)
+            p.shader = null
+            val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            fp.colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+                0f, 0f, 0f, 0f, 255f,
+                0f, 0f, 0f, 0f, 255f,
+                0f, 0f, 0f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f,
+            )))
+            c.drawBitmap(fg, null, RectF(-4f, -4f, 100f, 100f), fp)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.5f
+            p.color = 0x88000000.toInt()
+            c.drawPath(squircle(RectF(0.75f, 0.75f, 95.25f, 95.25f)), p)
+            return tile
+        }
+        return render(d, 96, 96)
+    }
+
+    /**
+     * Puts a 96px tile on a 128px canvas with a soft drop shadow traced from the tile's own alpha,
+     * so the shadow always matches the icon's real outline. No overlay is drawn on the art.
+     */
+    private fun withShadow(tile: Bitmap): Bitmap {
+        val art = if (tile.width == 96 && tile.height == 96) tile else Bitmap.createScaledBitmap(tile, 96, 96, true)
         val out = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val tile = RectF(16f, 10f, 112f, 106f)
-        val shape = squircle(tile)
-        p.color = 0xAA000000.toInt()
-        p.maskFilter = BlurMaskFilter(4.5f, BlurMaskFilter.Blur.NORMAL)
-        c.save()
-        c.translate(0f, 5f)
-        c.drawPath(shape, p)
-        c.restore()
-        p.maskFilter = null
-        if (full) {
-            c.drawBitmap(glyph, null, tile, fp)
-            return out
-        }
-        c.save()
-        c.clipPath(shape)
-        p.color = 0xFF222831.toInt()
-        c.drawRect(tile, p)
-        c.drawBitmap(glyph, null, tile, fp)
-        // gloss on the top half, soft shade at the bottom
-        p.shader = LinearGradient(0f, tile.top, 0f, tile.centerY(), 0x66FFFFFF, 0x05FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRect(tile.left, tile.top, tile.right, tile.centerY(), p)
-        p.shader = LinearGradient(0f, tile.centerY(), 0f, tile.bottom, 0x00000000, 0x55000000, Shader.TileMode.CLAMP)
-        c.drawRect(tile.left, tile.centerY(), tile.right, tile.bottom, p)
-        p.shader = null
-        c.restore()
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1.5f
-        p.color = 0x66FFFFFF
-        c.drawPath(squircle(RectF(tile.left + 0.75f, tile.top + 0.75f, tile.right - 0.75f, tile.bottom - 0.75f)), p)
+        val blur = Paint()
+        blur.maskFilter = BlurMaskFilter(4f, BlurMaskFilter.Blur.NORMAL)
+        val off = IntArray(2)
+        val shadow = art.extractAlpha(blur, off)
+        val sp = Paint(Paint.ANTI_ALIAS_FLAG)
+        sp.color = 0xAA000000.toInt()
+        c.drawBitmap(shadow, 16f + off[0], 10f + off[1] + 5f, sp)
+        c.drawBitmap(art, 16f, 10f, Paint(Paint.FILTER_BITMAP_FLAG))
         return out
     }
 

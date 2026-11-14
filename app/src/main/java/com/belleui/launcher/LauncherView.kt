@@ -115,6 +115,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private var monthStr = ""
     private var dayStr = ""
     private var weekdayStr = ""
+    private var dayMonthStr = ""
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
@@ -134,6 +135,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private var bgShader: Shader? = null
     private var lastNs = System.nanoTime()
     private var scrollAccum = 0f
+    private val gfx = BelleGfx(act)
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -295,6 +297,7 @@ class LauncherView(private val act: Activity) : View(act) {
         monthStr = DateFormat.format("MMM", now).toString().uppercase()
         dayStr = DateFormat.format("d", now).toString()
         weekdayStr = DateFormat.format("EEEE", now).toString()
+        dayMonthStr = DateFormat.format("d MMMM", now).toString()
     }
 
     // =====================================================================================
@@ -716,6 +719,17 @@ class LauncherView(private val act: Activity) : View(act) {
         return tp.measureText(s)
     }
 
+    private fun nine(c: Canvas, name: String, to: RectF, srcBorder: Int = 40, dstBorder: Float = 20f, alpha: Int = 255) =
+        gfx.nine(c, name, to, srcBorder, dstBorder * sc, alpha)
+
+    /** Baseline that vertically centres text of [size] on [cy]. */
+    private fun baselineFor(cy: Float, size: Float, face: Typeface = sans): Float {
+        tp.textSize = size
+        tp.typeface = face
+        val fm = tp.fontMetrics
+        return cy - (fm.ascent + fm.descent) / 2f
+    }
+
     private fun drawIcon(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, alpha: Int = 255) {
         val full = size * 128f / 96f // bitmap includes shadow margin around the squircle
         rf.set(cx - full / 2, cy - full / 2, cx + full / 2, cy + full / 2)
@@ -735,17 +749,12 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    /** Belle highlight frame (qtg_fr_list_highlighted): blue with a lighter top, no glow. */
+    /** Belle highlight: the theme's blue pressed frame (qtg_fr_list_pressed). */
     private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
+        if (nine(c, "qtg_fr_list_pressed", r, 40, radius / sc)) return
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, al(mix(theme.accentLight, Color.WHITE, 0.2f), 235), al(theme.accent, 235), Shader.TileMode.CLAMP)
+        p.color = theme.accent
         c.drawRoundRect(r, radius, radius, p)
-        p.shader = null
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1f * sc
-        p.color = al(Color.WHITE, 90)
-        c.drawRoundRect(r, radius, radius, p)
-        p.style = Paint.Style.FILL
     }
 
     override fun onDraw(c: Canvas) {
@@ -818,48 +827,63 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- page 0: home ----------------------------------------------------------------------
 
-    /** Glossy black flip-clock style tile with split line. */
-    private fun flipTile(c: Canvas, r: RectF, big: String, corner: String) {
-        val rad = 10f * sc
-        softShadow(c, r, rad, dy = 5f, alpha = 28)
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF45474C.toInt(), 0xFF0A0A0C.toInt(), Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, rad, rad, p)
-        p.shader = null
-        c.save()
-        c.clipRect(r.left, r.top, r.right, r.centerY())
-        p.color = al(Color.WHITE, 24)
-        c.drawRoundRect(r, rad, rad, p)
-        c.restore()
-        val size = r.height() * 0.62f
-        shadowText(c, big, r.centerX(), r.centerY() + size * 0.36f, size, Color.WHITE, Paint.Align.CENTER, face = medium)
-        p.color = al(Color.BLACK, 215)
-        c.drawRect(r.left, r.centerY() - 1.2f * sc, r.right, r.centerY() + 1.2f * sc, p)
-        p.color = al(Color.WHITE, 45)
-        c.drawRect(r.left, r.centerY() + 1.2f * sc, r.right, r.centerY() + 2.2f * sc, p)
-        if (corner.isNotEmpty()) text(c, corner, r.right - 8f * sc, r.top + 17f * sc, 12f * sc, al(Color.WHITE, 210), Paint.Align.RIGHT, face = medium)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1f * sc
-        p.color = al(Color.WHITE, 60)
-        c.drawRoundRect(r, rad, rad, p)
-        p.style = Paint.Style.FILL
+    /** One-row Belle home screen widget plate (widget_belle00 from the Symbian HomeScreen widget template). */
+    private fun widgetPlate(c: Canvas, r: RectF) {
+        if (!nine(c, "widget_plate", r, 20, 14f)) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFF1A1A1A.toInt()
+            c.drawRoundRect(r, 12f * sc, 12f * sc, p)
+        }
+    }
+
+    /** 24x18 Belle battery meter, filled to [pct]. */
+    private fun drawBattery(c: Canvas, left: Float, top: Float, bw: Float, bh: Float) {
+        rf.set(left, top, left + bw, top + bh)
+        val bg = gfx.get("qtg_graf_battery_level_bg")
+        val full = gfx.get("qtg_graf_battery_level_full")
+        if (bg != null) c.drawBitmap(bg, null, rf, iconPaint)
+        if (full != null) {
+            c.save()
+            c.clipRect(left, top, left + bw * (0.12f + 0.76f * batteryPct / 100f), top + bh)
+            c.drawBitmap(full, null, rf, iconPaint)
+            c.restore()
+        }
     }
 
     private fun drawHome(c: Canvas) {
         val w = width.toFloat()
-        val tw = 112f * sc
-        val th = 98f * sc
+        val m = 14f * sc
+        val gap = 12f * sc
+        val ww = (w - 2 * m - gap) / 2f
         val top = cTop + 14f * sc
-        val x0 = 18f * sc
-        val parts = clockStr.split(":")
-        rf.set(x0, top, x0 + tw, top + th)
-        flipTile(c, rf, parts.getOrElse(0) { "" }, ampmStr)
-        rf.set(x0 + tw + 8f * sc, top, x0 + 2 * tw + 8f * sc, top + th)
-        flipTile(c, rf, parts.getOrElse(1) { "" }, "")
-        rf.set(w - 18f * sc - tw, top, w - 18f * sc, top + th)
-        flipTile(c, rf, dayStr, monthStr)
-        shadowText(c, dateStr, x0 + 2f * sc, top + th + 26f * sc, 17f * sc, al(Color.WHITE, 225), maxW = 2 * tw)
-        shadowText(c, weekdayStr, w - 18f * sc - tw / 2f, top + th + 26f * sc, 15f * sc, al(Color.WHITE, 200), Paint.Align.CENTER, maxW = tw)
+        val wh = 92f * sc
+
+        // clock widget
+        rf.set(m, top, m + ww, top + wh)
+        widgetPlate(c, rf)
+        val cy = rf.centerY()
+        val tsz = 46f * sc
+        val tx = rf.left + 18f * sc
+        text(c, clockStr, tx, baselineFor(cy, tsz), tsz, Color.WHITE)
+        var colX = tx + measure(clockStr, tsz)
+        if (ampmStr.isNotEmpty()) {
+            text(c, ampmStr, colX + 6f * sc, baselineFor(cy, tsz), 16f * sc, theme.accentLight)
+            colX += 6f * sc + measure(ampmStr, 16f * sc)
+        }
+        val dx = max(colX + 16f * sc, rf.left + 150f * sc)
+        text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = rf.right - dx - 10f * sc)
+        text(c, dayMonthStr, dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, 0xFF999999.toInt(), maxW = rf.right - dx - 10f * sc, face = light)
+
+        // battery widget
+        rf.set(m + ww + gap, top, w - m, top + wh)
+        widgetPlate(c, rf)
+        val bcy = rf.centerY()
+        val bw = 60f * sc
+        val bh = bw * 18f / 24f
+        drawBattery(c, rf.left + 18f * sc, bcy - bh / 2f, bw, bh)
+        val px = rf.left + 18f * sc + bw + 16f * sc
+        text(c, "$batteryPct%", px, baselineFor(bcy - 8f * sc, 40f * sc), 40f * sc, Color.WHITE)
+        text(c, if (charging) "Charging" else "Battery", px, baselineFor(bcy + 24f * sc, 18f * sc, light), 18f * sc, 0xFF999999.toInt(), face = light)
 
         // shortcuts straight on the wallpaper
         drawFocus(c, homeFocus.cur, 12f * sc)
@@ -921,24 +945,22 @@ class LauncherView(private val act: Activity) : View(act) {
         drawTabBar(c, 0)
     }
 
-    /** Belle tab bar: right under the status bar, full width, active tab has the lighter frame. */
+    /** Belle tab bar: right under the status bar, full width, theme tab frames. */
     private fun drawTabBar(c: Canvas, selected: Int) {
         val w = width.toFloat()
         val h = TAB * sc
         val labels = arrayOf("Applications", "Recent")
         val kinds = intArrayOf(ICON_GRID, ICON_CLOCK)
         val tw = w / labels.size
+        rf.set(0f, cTop, w, cTop + h)
+        p.style = Paint.Style.FILL
+        p.color = Color.BLACK
+        c.drawRect(rf, p)
+        nine(c, "qtg_fr_tab_bar", rf, 40, 20f)
         for (i in labels.indices) {
             val sel = i == selected
             rf.set(i * tw, cTop, (i + 1) * tw, cTop + h)
-            p.style = Paint.Style.FILL
-            p.shader = if (sel) {
-                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF4E4E4E.toInt(), 0xFF262626.toInt(), Shader.TileMode.CLAMP)
-            } else {
-                LinearGradient(0f, cTop, 0f, cTop + h, 0xFF2A2A2A.toInt(), 0xFF0E0E0E.toInt(), Shader.TileMode.CLAMP)
-            }
-            c.drawRect(rf, p)
-            p.shader = null
+            nine(c, if (sel) "qtg_fr_tab_active" else "qtg_fr_tab_passive_normal", rf, 40, 20f)
             val col = if (sel) Color.WHITE else 0xFF999999.toInt()
             val tsz = 18f * sc
             val face = if (sel) sans else light
@@ -946,14 +968,8 @@ class LauncherView(private val act: Activity) : View(act) {
             val total = 30f * sc + 8f * sc + textW
             val sx = rf.centerX() - total / 2f
             glyph(c, kinds[i], sx + 15f * sc, cTop + h / 2f, 26f * sc, col)
-            text(c, labels[i], sx + 38f * sc, cTop + h / 2f + 6f * sc, tsz, col, face = face)
+            text(c, labels[i], sx + 38f * sc, baselineFor(cTop + h / 2f, tsz, face), tsz, col, face = face)
         }
-        p.color = al(Color.WHITE, 36)
-        c.drawRect(0f, cTop, w, cTop + 1f, p)
-        p.color = Color.BLACK
-        c.drawRect(0f, cTop + h - 1f, w, cTop + h, p)
-        p.color = al(Color.BLACK, 200)
-        c.drawRect(tw - 0.5f, cTop, tw + 0.5f, cTop + h, p)
     }
 
     // ---- page 2: recent (tab 2) -- ListItem: 70px, 12px inset, 50px icon, 22px title, 18px subtitle -
@@ -975,10 +991,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
             }
             // pressed / highlighted frame (qtg_fr_list_pressed): Belle blue with a white fade from the top
-            val f = recentFocus.cur
-            p.shader = LinearGradient(0f, f.top, 0f, f.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
-            c.drawRect(f.left, f.top, f.right, f.bottom - 1f, p)
-            p.shader = null
+            nine(c, "qtg_fr_list_pressed", recentFocus.cur, 40, 20f)
             for (i in recents.indices) {
                 recentRowRect(i, recentTopAnim, tmp)
                 if (tmp.bottom < listTop || tmp.top > cBot) continue
@@ -1021,38 +1034,25 @@ class LauncherView(private val act: Activity) : View(act) {
 
     /** 26px status bar: application title on the left, indicators and clock on the right. */
     private fun drawStatusBar(c: Canvas, w: Float) {
+        rf.set(0f, 0f, w, statusH)
         p.style = Paint.Style.FILL
         p.shader = null
         p.color = Color.BLACK
-        c.drawRect(0f, 0f, w, statusH, p)
+        c.drawRect(rf, p)
+        nine(c, "qtg_fr_statusbar", rf, 20, 10f)
 
-        val base = statusH / 2f + 6.5f * sc
-        text(c, pageTitle(), 8f * sc, base, 18f * sc, Color.WHITE)
+        val cy = statusH / 2f
+        text(c, pageTitle(), 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
         val csz = 18f * sc
         val tw = measure(time, csz)
-        text(c, time, w - 8f * sc, base, csz, Color.WHITE, Paint.Align.RIGHT)
+        text(c, time, w - 8f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
 
-        val bRight = w - 8f * sc - tw - 10f * sc
-        val bw = 22f * sc
-        val bh = 12f * sc
-        val bTop = statusH / 2f - bh / 2f
-        rf.set(bRight - bw, bTop, bRight, bTop + bh)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1.2f * sc
-        p.color = Color.WHITE
-        c.drawRect(rf, p)
-        p.style = Paint.Style.FILL
-        c.drawRect(bRight, bTop + 3.5f * sc, bRight + 2f * sc, bTop + bh - 3.5f * sc, p)
-        p.color = when {
-            charging -> 0xFF63D663.toInt()
-            batteryPct <= 15 -> 0xFFE5484D.toInt()
-            else -> 0xFF63D663.toInt() // Belle's green battery meter
-        }
-        val fillW = (bw - 4f * sc) * batteryPct / 100f
-        c.drawRect(bRight - bw + 2f * sc, bTop + 2f * sc, bRight - bw + 2f * sc + fillW, bTop + bh - 2f * sc, p)
-        var x = bRight - bw - 8f * sc
-        if (wifi) drawWifi(c, x - 8f * sc, statusH * 0.76f, 10f * sc)
+        val bw = 24f * sc
+        val bh = 18f * sc
+        val bLeft = w - 8f * sc - tw - 10f * sc - bw
+        drawBattery(c, bLeft, cy - bh / 2f, bw, bh)
+        if (wifi) drawWifi(c, bLeft - 18f * sc, statusH * 0.76f, 10f * sc)
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float) {
@@ -1073,12 +1073,12 @@ class LauncherView(private val act: Activity) : View(act) {
      * the right edge. Back is always first (apps button on Home); the options menu is always last.
      */
     private fun drawToolbar(c: Canvas, w: Float, h: Float) {
+        rf.set(0f, cBot, w, h)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, cBot, 0f, h, 0xFF343434.toInt(), 0xFF040404.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, cBot, w, h, p)
         p.shader = null
-        p.color = al(Color.WHITE, 55)
-        c.drawRect(0f, cBot, w, cBot + 1f, p)
+        p.color = Color.BLACK
+        c.drawRect(rf, p)
+        nine(c, "qtg_fr_toolbar", rf, 40, 20f)
 
         val cy = cBot + softH / 2f
         val s = 30f * sc
@@ -1111,6 +1111,14 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun glyph(c: Canvas, kind: Int, cx: Float, cy: Float, s: Float, color: Int) {
+        val stock = when (kind) {
+            ICON_BACK -> "toolbar_back"
+            ICON_MENU -> "toolbar_menu"
+            ICON_GEAR -> "toolbar_settings"
+            ICON_CLOSE -> "qtg_graf_popup_close_normal"
+            else -> null
+        }
+        if (stock != null && gfx.glyph(c, stock, cx, cy, s, Color.alpha(color))) return
         p.color = color
         p.strokeCap = Paint.Cap.ROUND
         p.strokeJoin = Paint.Join.ROUND
@@ -1178,21 +1186,8 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- overlays: options Menu, SelectionDialog, InfoBanner. Nothing dims the screen behind them. -----
 
     private fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) {
-        val rad = 6f * sc
-        p.style = Paint.Style.FILL
-        p.shader = if (selected) {
-            LinearGradient(0f, r.top, 0f, r.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
-        } else {
-            LinearGradient(0f, r.top, 0f, r.bottom, 0xFF464646.toInt(), 0xFF1C1C1C.toInt(), Shader.TileMode.CLAMP)
-        }
-        c.drawRoundRect(r, rad, rad, p)
-        p.shader = null
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1f * sc
-        p.color = al(Color.BLACK, 200)
-        c.drawRoundRect(r, rad, rad, p)
-        p.style = Paint.Style.FILL
-        text(c, label, r.centerX(), r.centerY() + 7.5f * sc, 22f * sc, Color.WHITE, Paint.Align.CENTER)
+        nine(c, if (selected) "qtg_fr_pushbutton_pressed" else "qtg_fr_pushbutton_normal", r, 40, 20f)
+        text(c, label, r.centerX(), baselineFor(r.centerY(), 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER)
     }
 
     private fun drawPopup(c: Canvas, pu: Popup, w: Float) {
@@ -1202,39 +1197,18 @@ class LauncherView(private val act: Activity) : View(act) {
         val slide = if (pu.menu) (1f - popupT) * box.height() else (1f - popupT) * 28f * sc
         c.save()
         c.translate(0f, slide)
-        p.style = Paint.Style.FILL
-        p.shader = null
 
         if (pu.menu) {
             // options Menu: slides up from the bottom edge over the toolbar
-            p.color = 0xFF1E1E1E.toInt() // qtg_fr_popup_options
             rf.set(box.left, box.top, box.right, box.bottom + 20f * sc)
-            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
-            p.shader = LinearGradient(0f, box.top, 0f, box.top + 60f * sc, al(Color.WHITE, 40), al(Color.WHITE, 0), Shader.TileMode.CLAMP)
-            c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
-            p.shader = null
-            p.color = al(Color.WHITE, 50)
-            c.drawRect(box.left + 12f * sc, box.top + 1f, box.right - 12f * sc, box.top + 2f, p)
+            nine(c, "qtg_fr_popup_options", rf, 40, 20f)
         } else {
-            // SelectionDialog: dark rounded panel with a blue title
-            val r = 10f * sc
-            p.color = 0xFF1E1E1E.toInt() // qtg_fr_popup
-            c.drawRoundRect(box, r, r, p)
-            c.save()
-            c.clipRect(box.left, box.top, box.right, box.top + titleH)
-            p.color = theme.accent // qtg_fr_popup_heading
-            c.drawRoundRect(box, r, r, p)
-            p.shader = LinearGradient(0f, box.top, 0f, box.top + titleH, al(Color.WHITE, 60), al(Color.WHITE, 0), Shader.TileMode.CLAMP)
-            c.drawRect(box.left, box.top, box.right, box.top + titleH, p)
-            p.shader = null
-            c.restore()
-            text(c, pu.title, box.left + 12f * sc, box.top + titleH / 2f + 7.5f * sc, 22f * sc, Color.WHITE, maxW = box.width() - 80f * sc)
+            // SelectionDialog: dark panel with the theme's heading frame
+            nine(c, "qtg_fr_popup", box, 40, 20f)
+            rf.set(box.left, box.top, box.right, box.top + titleH)
+            nine(c, "qtg_fr_popup_heading", rf, 40, 20f)
+            text(c, pu.title, box.left + 12f * sc, baselineFor(box.top + titleH / 2f, 22f * sc), 22f * sc, Color.WHITE, maxW = box.width() - 80f * sc)
             glyph(c, ICON_CLOSE, box.right - 28f * sc, box.top + titleH / 2f, 30f * sc, Color.WHITE)
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 1f * sc
-            p.color = al(Color.WHITE, 40)
-            c.drawRoundRect(box, r, r, p)
-            p.style = Paint.Style.FILL
         }
 
         val top0 = box.top + titleH + (if (pu.menu) 4f * sc else 0f)
@@ -1243,14 +1217,14 @@ class LauncherView(private val act: Activity) : View(act) {
             val sel = i == pu.sel
             if (sel) {
                 tmp.set(box.left + 4f * sc, top + 1f * sc, box.right - 4f * sc, top + itemH - 1f * sc)
-                p.shader = LinearGradient(0f, tmp.top, 0f, tmp.bottom, mix(theme.accentLight, Color.WHITE, 0.25f), theme.accent, Shader.TileMode.CLAMP)
-                c.drawRoundRect(tmp, 6f * sc, 6f * sc, p)
-                p.shader = null
+                nine(c, "qtg_fr_list_pressed", tmp, 40, 14f)
             } else if (i > 0) {
+                p.style = Paint.Style.FILL
+                p.shader = null
                 p.color = al(Color.WHITE, 30)
                 c.drawRect(box.left + 12f * sc, top, box.right - 12f * sc, top + 1f, p)
             }
-            text(c, pu.items[i].label, box.left + 12f * sc + 4f * sc, top + itemH / 2f + 7.5f * sc, 22f * sc, Color.WHITE, maxW = box.width() - 40f * sc)
+            text(c, pu.items[i].label, box.left + 16f * sc, baselineFor(top + itemH / 2f, 22f * sc), 22f * sc, Color.WHITE, maxW = box.width() - 40f * sc)
         }
         if (pu.menu) {
             val cy0 = top0 + itemH * pu.items.size + 6f * sc
@@ -1270,18 +1244,13 @@ class LauncherView(private val act: Activity) : View(act) {
         val top = statusH - (1f - t) * hgt
         c.save()
         c.clipRect(0f, statusH, w, statusH + hgt)
+        rf.set(0f, top, w, top + hgt)
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, top, 0f, top + hgt, 0xFF2A2A2A.toInt(), 0xFF000000.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, top, w, top + hgt, p)
         p.shader = null
-        p.color = al(Color.WHITE, 60)
-        c.drawRect(0f, top + hgt - 1f, w, top + hgt, p)
-        rf.set(12f * sc, top + hgt / 2f - 15f * sc, 42f * sc, top + hgt / 2f + 15f * sc)
-        p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, mix(theme.accentLight, Color.WHITE, 0.2f), theme.accent, Shader.TileMode.CLAMP)
-        c.drawRoundRect(rf, 9f * sc, 9f * sc, p)
-        p.shader = null
-        text(c, "i", rf.centerX(), rf.centerY() + 7f * sc, 22f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
-        text(c, toast, 54f * sc, top + hgt / 2f + 7f * sc, 20f * sc, Color.WHITE, maxW = w - 70f * sc)
+        p.color = Color.BLACK
+        c.drawRect(rf, p)
+        nine(c, "qtg_fr_popup_infobanner", rf, 40, 20f)
+        text(c, toast, 16f * sc, baselineFor(top + hgt / 2f, 20f * sc), 20f * sc, Color.WHITE, maxW = w - 32f * sc)
         c.restore()
     }
 

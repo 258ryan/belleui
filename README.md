@@ -61,9 +61,10 @@ screen is ~228 ppi, close to Belle's 210 ppi.
 - **Dialogs** (Settings) are `SelectionDialog` style: `#1E1E1E` rounded panel, Belle-blue title with a close icon, 64px items, max 504px wide
 - **Info banner**: 60px, slides in under the status bar and dismisses itself
 - Nothing dims the screen behind an overlay. Belle blue is `#1080DD`; text white / `#999999`.
-- **Home** is the wallpaper page: glossy flip-clock tiles and shortcuts. Icons are glossy superellipse (exponent 2.8) frames with soft shadows.
+- **Home** is the wallpaper page: a clock widget and a battery widget on the Belle widget plate, then shortcuts.
+- **Icons:** pack art is drawn exactly as supplied, with a drop shadow traced from the icon's own outline (no overlay). Apps without pack art get a Belle IconFrame (superellipse, exponent 2.8, gradient, top glow, rim, flat white glyph); legacy non-adaptive icons are left untouched.
 
-The Nokia Pure typeface is proprietary and not bundled; text uses the system sans-serif at the same sizes.
+Frames and stock glyphs (status bar, toolbar, tab bar, list pressed, popups, buttons, info banner, back/menu/settings/close, battery) are the real Belle theme graphics rendered to PNG in `assets/belle/` and drawn as 9-slice images. Home widgets use the Belle widget plate from the Symbian HomeScreen widget template. The Nokia Pure typeface is proprietary and not bundled; text uses the system sans-serif at the same sizes. See `docs/THIRD-PARTY.md` for licences.
 
 ### Icons
 
