@@ -123,7 +123,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
     private var statusH = 26f
-    private var softH = 50f
+    private var softH = 60f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -635,7 +635,7 @@ class LauncherView(private val act: Activity) : View(act) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
         statusH = 26f * sc
-        softH = 50f * sc
+        softH = 60f * sc
         cTop = statusH
         cBot = h - softH
         buildBackground()
@@ -1102,7 +1102,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /**
-     * 50px (landscape) toolbar, 30px white glyphs spread evenly: first button at the left edge, last at
+     * 60px toolbar (heightToolBar), 30px white glyphs spread evenly: first button at the left edge, last at
      * the right edge. Back is always first (apps button on Home); the options menu is always last.
      */
     private fun drawToolbar(c: Canvas, w: Float, h: Float) {

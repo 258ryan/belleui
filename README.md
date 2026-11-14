@@ -53,7 +53,7 @@ plus the All About Symbian write-up of the Belle design guidelines. One design p
 screen is ~228 ppi, close to Belle's 210 ppi.
 
 - **Status bar** 26px, black: page title on the left; wifi, battery and clock on the right
-- **Toolbar** 50px (Belle's landscape height), 30px white glyphs spread evenly edge to edge. First button is Back (the apps button on Home), last is the three-line options menu; select and settings sit between. The gamepad letter is shown beside each.
+- **Toolbar** 60px (`heightToolBar`), 30px white glyphs spread evenly edge to edge. First button is Back (the apps button on Home), last is the three-line options menu; select and settings sit between. The gamepad letter is shown beside each.
 - **Tab bar** 50px under the status bar: Applications / Recent are real tabs that switch in place (no sliding). Press Up from the top row to focus the tab bar, then Left/Right to switch; L1/R1 also switch tabs.
 - **Applications**: black page, 70px icon frames, 18px labels, blue highlight
 - **Recent**: 70px `ListItem`s, 12px inset, 50px icon, 22px title, 18px light subtitle, `#444` 1px separators, blue pressed frame
