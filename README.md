@@ -163,3 +163,6 @@ Styles > Theme colour recolours the launcher and every Belle app (selection, pro
 
 ### Home widgets
 Home can show one large Belle widget instead of two small ones: **Flip clock**, **Today** (calendar), **Music player** (controls whichever app is playing; needs notification access), **Notifications** and **Quick switches**. Choose it with X > Edit widgets. Press Up from the shortcut row to focus a widget; left/right pick a button.
+
+### Belle picker (Magisk module)
+`magisk/picker` + `picker/`: a Belle-style, gamepad-friendly replacement for Android's folder and file picker, packed as a Magisk module (release `picker-latest`). It installs the picker as a system app, so every app that asks for a folder (open document tree), a file (open document / get content) or a place to save a file gets it. It hands the app access to just what you chose, through its own documents provider. Needs Magisk 20.4+ and Android 11+; reboot after flashing. Untested on hardware: if anything misbehaves, disable or remove the module in Magisk (safe mode also turns modules off).
