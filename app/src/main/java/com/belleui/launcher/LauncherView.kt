@@ -86,7 +86,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- data ------------------------------------------------------------------
     private val repo = AppRepo(act)
-    private var theme = Themes.all[repo.themeIndex]
+    private var theme: Theme = run {
+        com.belleui.kit.ThemeStore.load(context)
+        com.belleui.kit.Sounds.init(context)
+        com.belleui.kit.ThemeStore.shared?.let { Themes.fromAccent(it) } ?: Themes.all[repo.themeIndex]
+    }
     private var menuApps: List<AppEntry> = emptyList()
     private var favs: List<AppEntry> = emptyList()
     private var recents: List<AppEntry> = emptyList()
@@ -370,6 +374,12 @@ class LauncherView(private val act: Activity) : View(act) {
         gestures.onTouchEvent(event) || super.onTouchEvent(event)
 
     private fun perform(a: Act) {
+        com.belleui.kit.Sounds.play(when (a) {
+            Act.OK -> com.belleui.kit.Sounds.SELECT
+            Act.BACK -> com.belleui.kit.Sounds.BACK
+            Act.OPTIONS, Act.SETTINGS, Act.MENU -> com.belleui.kit.Sounds.OPEN
+            else -> com.belleui.kit.Sounds.TICK
+        })
         if (a == Act.OK || a == Act.OPTIONS) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         val pu = popup
         if (pu != null) {
@@ -709,12 +719,18 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun openSettings(sel: Int) {
         val items = listOf(
-            PopupItem("Theme: ${theme.name}") {
-                val next = (repo.themeIndex + 1) % Themes.all.size
-                repo.themeIndex = next
-                theme = Themes.all[next]
-                buildBackground()
-                openSettings(0)
+            PopupItem(if (com.belleui.kit.ThemeStore.shared != null) "Theme colour: set in Styles" else "Theme: ${theme.name}") {
+                if (com.belleui.kit.ThemeStore.shared != null) {
+                    val i = context.packageManager.getLaunchIntentForPackage("com.belleui.styles")
+                    if (i != null) context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    popup = null
+                } else {
+                    val next = (repo.themeIndex + 1) % Themes.all.size
+                    repo.themeIndex = next
+                    theme = Themes.all[next]
+                    buildBackground()
+                    openSettings(0)
+                }
             },
             PopupItem("Buttons: " + if (repo.swapPad) "Nintendo (B = OK)" else "Xbox (A = OK)") {
                 repo.swapPad = !repo.swapPad
