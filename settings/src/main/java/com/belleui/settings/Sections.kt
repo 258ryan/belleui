@@ -46,9 +46,19 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
     override val title get() = "Settings"
     override val tickMs get() = 3000L
 
+    private var appCount = -1
+
     override fun onShow() {
         act.onResumeHook = { shell.postInvalidate() }
+        if (appCount < 0) {
+            Thread {
+                appCount = act.packageManager.getInstalledApplications(0).count { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
+                shell.postInvalidate()
+            }.start()
+        }
     }
+
+    override val cacheMs get() = 2500L
 
     override fun rows(): List<Row> {
         val g = shell.ui.gfx
@@ -61,7 +71,7 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
         val (ram, _) = Sys.memory(act)
         return listOf(
             Row("Storage", "${Sys.fmtSize(v.free)} free of ${Sys.fmtSize(v.total)}", icon = g.get("qgn_prop_fmgr_phone_memc_sub"), drill = true),
-            Row("Apps", "${act.packageManager.getInstalledApplications(0).count { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }} installed", icon = g.get("qgn_prop_set_apps_am"), drill = true),
+            Row("Apps", if (appCount >= 0) "$appCount installed" else "Counting...", icon = g.get("qgn_prop_set_apps_am"), drill = true),
             Row("Connectivity", "$wifi - Bluetooth ${onOff(Sys.bluetooth()).lowercase()}", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
             Row("Battery", "${b.pct}% - ${b.status}", icon = g.get("qgn_indi_battery_strength"), drill = true),
             Row("Display", "Brightness, screen timeout", icon = g.get("qgn_prop_set_gene_phone"), drill = true),
@@ -132,7 +142,8 @@ class StorageScreen(act: SettingsActivity) : RowsScreen(act) {
     override fun rows(): List<Row> {
         val g = shell.ui.gfx
         val out = ArrayList<Row>()
-        for (v in Sys.volumes(act)) {
+        vols = Sys.volumes(act)
+        for (v in vols) {
             out.add(Row(v.label, "${Sys.fmtSize(v.free)} free of ${Sys.fmtSize(v.total)}", icon = g.get(if (v.label.startsWith("Memory card")) "qgn_prop_fmgr_mmc_sub" else "qgn_prop_fmgr_phone_memc_sub")))
         }
         val m = media
@@ -147,19 +158,17 @@ class StorageScreen(act: SettingsActivity) : RowsScreen(act) {
         return out
     }
 
+    private var vols: List<Sys.Vol> = emptyList()
+
     override fun bar(i: Int): Float? {
-        val vols = Sys.volumes(act)
+        if (i == 0) vols = Sys.volumes(act)
         if (i >= vols.size) return null
         val v = vols[i]
         return if (v.total > 0) (v.total - v.free).toFloat() / v.total else null
     }
 
-    override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        super.draw(c, ui, r)
-    }
-
     override fun open(i: Int) {
-        if (media == null && !hasMedia() && i == Sys.volumes(act).size) {
+        if (media == null && !hasMedia() && i == vols.size) {
             act.requestPerms(mediaPerms()) { ok -> if (ok) compute() }
         }
     }
@@ -182,6 +191,7 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
     private val lists = arrayOf(ListState(), ListState())
     private val icons = LruCache<String, Bitmap>(80)
     private val versions = HashMap<String, String>()
+    private val subtitles = HashMap<String, String>()
 
     override fun onShow() {
         if (user.isEmpty() && system.isEmpty()) {
@@ -224,7 +234,7 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
         }
         lists[tab].draw(c, ui, r, apps.size) { i ->
             val a = apps[i]
-            Row(a.label, version(a) + " - " + Sys.fmtSize(File(a.info.sourceDir).length()), icon = icon(a), drill = true)
+            Row(a.label, subtitles.getOrPut(a.info.packageName) { version(a) + " - " + Sys.fmtSize(File(a.info.sourceDir).length()) }, icon = icon(a), drill = true)
         }
     }
 
@@ -350,6 +360,7 @@ class ConnectivityScreen(act: SettingsActivity) : RowsScreen(act) {
 class BatteryScreen(act: SettingsActivity) : RowsScreen(act) {
     override val title get() = "Battery"
     override val tickMs get() = 2000L
+    override val cacheMs get() = 1500L
 
     override fun rows(): List<Row> {
         val b = Sys.battery(act)
