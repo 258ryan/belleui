@@ -21,12 +21,25 @@ object Player {
     var shuffle = false
     var repeat = 0 // 0 off, 1 all, 2 one
 
+    @Volatile
     private var mp: MediaPlayer? = null
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile
+    private var gen = 0
     private var prepared = false
     private var session: MediaSession? = null
     private lateinit var app: Context
     private var audio: AudioManager? = null
-    val listeners = ArrayList<() -> Unit>()
+    private val listeners = LinkedHashMap<Any, () -> Unit>()
+
+    /** One listener per owner, so reopening a screen never stacks up callbacks. */
+    fun listen(owner: Any, fn: () -> Unit) {
+        synchronized(listeners) { listeners[owner] = fn }
+    }
+
+    fun unlisten(owner: Any) {
+        synchronized(listeners) { listeners.remove(owner) }
+    }
 
     val current: Track? get() = queue.getOrNull(index)
     val position: Long get() = try { if (prepared) mp?.currentPosition?.toLong() ?: 0L else 0L } catch (_: Exception) { 0L }
@@ -34,7 +47,8 @@ object Player {
 
     private fun changed() {
         updateSession()
-        for (l in listeners.toList()) l()
+        val ls = synchronized(listeners) { listeners.values.toList() }
+        for (l in ls) l()
     }
 
     fun playQueue(ctx: Context, tracks: List<Track>, start: Int) {
@@ -52,35 +66,45 @@ object Player {
         if (Build.VERSION.SDK_INT >= 26) app.startForegroundService(i) else app.startService(i)
     }
 
+    /** Opening the file and preparing the player can block, so it happens off the UI thread; the newest request wins. */
     private fun playCurrent() {
         val t = current ?: return
-        try {
-            mp?.release()
-            prepared = false
-            @Suppress("DEPRECATION")
-            audio?.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
-            val m = MediaPlayer()
-            m.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            m.setWakeMode(app, android.os.PowerManager.PARTIAL_WAKE_LOCK)
-            m.setDataSource(app, t.uri)
-            m.setOnPreparedListener {
-                prepared = true
-                it.start()
-                playing = true
-                changed()
-            }
-            m.setOnCompletionListener { onCompleted() }
-            m.setOnErrorListener { _, _, _ ->
+        val g = ++gen
+        prepared = false
+        changed()
+        io.execute {
+            if (g != gen) return@execute
+            try {
+                mp?.release()
+                @Suppress("DEPRECATION")
+                audio?.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+                val m = MediaPlayer()
+                m.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                m.setWakeMode(app, android.os.PowerManager.PARTIAL_WAKE_LOCK)
+                m.setDataSource(app, t.uri)
+                m.setOnPreparedListener {
+                    if (g != gen) {
+                        it.release()
+                        return@setOnPreparedListener
+                    }
+                    prepared = true
+                    it.start()
+                    playing = true
+                    changed()
+                }
+                m.setOnCompletionListener { if (g == gen) onCompleted() }
+                m.setOnErrorListener { _, _, _ ->
+                    playing = false
+                    changed()
+                    true
+                }
+                mp = m
+                m.prepareAsync()
+            } catch (_: Exception) {
                 playing = false
                 changed()
-                true
             }
-            mp = m
-            m.prepareAsync()
-        } catch (_: Exception) {
-            playing = false
         }
-        changed()
     }
 
     private fun onCompleted() {
