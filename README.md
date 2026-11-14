@@ -96,3 +96,7 @@ Gamepad: D-pad up/down browse, A play, L1/R1 switch tabs (previous/next song on 
 
 Tabs Clock / Alarms / Stopwatch / Timer. Analog + digital clock with world clocks; alarms with Belle tumblers and switches that really fire (AlarmManager alarm-clock API, foreground ringing service, lock-screen ring screen with Snooze 10 min / Stop, re-armed after reboot); stopwatch with laps; countdown timer that rings when done.
 Gamepad: A toggles an alarm / starts-stops, Y adds an alarm (Alarms) or starts / pauses, Start laps / resets, X opens the options menu (edit time, repeat, delete), L1/R1 switch tabs.
+### Gallery (`belle/gallery`)
+
+Tabs Photos / Albums over MediaStore images and videos. 5-column square thumbnail grid (loaded in the background), album list, and a full-screen viewer with zoom + pan (EXIF-aware), slideshow, share and details.
+Gamepad: D-pad moves, A opens / zooms / plays a video, L1/R1 previous / next photo, Y share, Start zoom, X options menu (details, share, slideshow).
