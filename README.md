@@ -119,3 +119,8 @@ An Ovi Store-style games hub: a Featured tab with a hero banner and shelves (rec
 - This branch has its own workflow (`games.yml`) that builds only the Games app, and its own release (`games-latest`).
 
 **EmulationStation-style cards (EasyRoms and similar):** point the app at a card and it reads it the way EmulationStation does. A `roms` folder with one subfolder per system (`gba`, `SNES`, `psx`, `megadrive`, `mastersystem`, `neogeo`, `dreamcast`... any capitalisation) is detected on its own (Settings > Find ROM cards); only the file types each system uses are listed; `bios`, `media`, `images` and save folders are skipped; `.m3u` playlists stand in for their discs; `gamelist.xml` supplies names, descriptions, developer, genre, year, players and rating; local art from `images/`, `media/box2dfront|boxart|screenshots`, `downloaded_images` and the like is used before anything is downloaded; and an `es_systems.xml` on the card teaches it extra system names and file types. 40 systems are built in.
+### Files (`belle/files`)
+
+A Symbian-style file manager. A home page of drives (phone memory, memory card, USB) with free-space bars and quick places (Downloads, Pictures, Camera, Music, Videos, Documents), then drill-down folders with the original Symbian folder and file icons. Mark items, copy, cut, paste, delete, rename, new folder, details, sort and hidden files; opens files with the matching app.
+Gamepad: D-pad up/down browse, right or A opens, left or B goes up, Y marks and moves on, Start pastes (or makes a new folder), X opens the options menu.
+Own workflow `files.yml` builds only this app and publishes `files-latest`.
