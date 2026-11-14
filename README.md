@@ -87,3 +87,8 @@ is the original download and can be deleted.
 ## Belle kit (`:belle`) and apps
 
 `belle/` is a shared Android library with the Belle look: the theme graphics (`assets/belle`), `Ui` (glyphs, lists, tab bar, toolbar, status bar, IconFrame, progress bar, switch), and a small app shell (`BelleActivity`, `BelleShell`, `Screen`) with gamepad key mapping, options menu, selection / query / tumbler dialogs and info banners. The launcher uses its graphics; the apps on the `belle/music`, `belle/clock`, `belle/gallery` and `belle/browser` branches are built on it.
+
+### Clock (`belle/clock`)
+
+Tabs Clock / Alarms / Stopwatch / Timer. Analog + digital clock with world clocks; alarms with Belle tumblers and switches that really fire (AlarmManager alarm-clock API, foreground ringing service, lock-screen ring screen with Snooze 10 min / Stop, re-armed after reboot); stopwatch with laps; countdown timer that rings when done.
+Gamepad: A toggles an alarm / starts-stops, Y adds an alarm (Alarms) or starts / pauses, Start laps / resets, X opens the options menu (edit time, repeat, delete), L1/R1 switch tabs.
