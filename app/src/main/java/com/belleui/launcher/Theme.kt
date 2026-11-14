@@ -10,9 +10,9 @@ class Theme(
 
 object Themes {
     val all = listOf(
-        Theme("Belle Blue", 0xFF0B1B33.toInt(), 0xFF02060D.toInt(), 0xFF2E9BFF.toInt(), 0xFF9AD3FF.toInt()),
-        Theme("Asha Lime", 0xFF11261A.toInt(), 0xFF030A06.toInt(), 0xFF8BC53F.toInt(), 0xFFD2F29A.toInt()),
-        Theme("Symbian Orange", 0xFF2A1608.toInt(), 0xFF0A0502.toInt(), 0xFFFF8A1E.toInt(), 0xFFFFD099.toInt()),
-        Theme("Teal", 0xFF082524.toInt(), 0xFF020A0A.toInt(), 0xFF1ED7C7.toInt(), 0xFFA6F5EE.toInt()),
+        Theme("Symbian Blue", 0xFF0A1A30.toInt(), 0xFF01040A.toInt(), 0xFF1F78C8.toInt(), 0xFF6CC3F2.toInt()),
+        Theme("Belle Silver", 0xFF22262B.toInt(), 0xFF020304.toInt(), 0xFF59718A.toInt(), 0xFFA9C0D6.toInt()),
+        Theme("Anna Green", 0xFF0B2414.toInt(), 0xFF020A05.toInt(), 0xFF2E9A44.toInt(), 0xFF8EDB9B.toInt()),
+        Theme("Orange", 0xFF2A1608.toInt(), 0xFF0A0502.toInt(), 0xFFE0701A.toInt(), 0xFFFFB866.toInt()),
     )
 }

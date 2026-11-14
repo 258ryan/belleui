@@ -47,9 +47,13 @@ Install it, press Home, and choose BelleUI as the default launcher.
 
 ## Look
 
-Skeuomorphic, Belle-style: every app icon is baked onto a glossy glass plate with a soft
-drop shadow and rim light; tiles, widgets, popups and the focus highlight cast soft layered
-shadows.
+Modelled on S60 / Symbian^3 / Belle rather than a modern "retro" skin:
+
+- glossy black status pane (profile name, wifi, segmented battery, clock) and soft-key bar with hardware-style keycaps
+- blue title pane ("Menu", "Recent") over a dark list/grid backdrop, condensed type with 1px label shadows
+- flat glossy blue highlight bar, no glows or large soft shadows
+- Options menu pops up from the bottom-left corner; dialogs have a title pane; messages show as a centred information note
+- home: clock and calendar widgets, wallpaper with the Symbian^3-style light swirl, shortcut bar along the bottom
 
 ### Icons
 

@@ -106,10 +106,10 @@ class AppRepo(private val ctx: Context) {
         val fp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         val plate = RectF(16f, 10f, 112f, 106f)
         val r = 22f
-        p.color = 0x99000000.toInt()
-        p.maskFilter = BlurMaskFilter(7f, BlurMaskFilter.Blur.NORMAL)
+        p.color = 0xAA000000.toInt()
+        p.maskFilter = BlurMaskFilter(3.5f, BlurMaskFilter.Blur.NORMAL)
         c.save()
-        c.translate(0f, 6f)
+        c.translate(0f, 4f)
         c.drawRoundRect(plate, r, r, p)
         c.restore()
         p.maskFilter = null
