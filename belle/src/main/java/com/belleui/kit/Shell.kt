@@ -782,10 +782,14 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         val tabs = screen.tabs
         val tabTop = Belle.STATUS_H * ui.sc
         if (tabs.isNotEmpty() && y >= tabTop && y < tabTop + Belle.TAB_H * ui.sc) {
+            Sounds.play(Sounds.TICK)
             switchTab((x / (width.toFloat() / tabs.size)).toInt())
             return
         }
-        if (y >= contentTop && screen.onTap(x, y)) invalidate()
+        if (y >= contentTop && screen.onTap(x, y)) {
+            Sounds.play(Sounds.SELECT)
+            invalidate()
+        }
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -812,7 +816,20 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
 
     private fun isNavKey(a: Act) = a == Act.UP || a == Act.DOWN || a == Act.LEFT || a == Act.RIGHT || a == Act.OK
 
+    private fun soundFor(a: Act): Int = when (a) {
+        Act.OK, Act.TOOL1, Act.TOOL2 -> Sounds.SELECT
+        Act.BACK -> Sounds.BACK
+        Act.OPTIONS -> Sounds.OPEN
+        else -> Sounds.TICK
+    }
+
     fun perform(a: Act): Boolean {
+        val r = performInner(a)
+        if (r) Sounds.play(soundFor(a))
+        return r
+    }
+
+    private fun performInner(a: Act): Boolean {
         if (a == Act.OK || a == Act.OPTIONS) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         overlay?.let {
             it.onAct(a, this)
@@ -948,10 +965,18 @@ abstract class BelleActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeStore.load(this)
+        Sounds.init(this)
         shell = BelleShell(this)
         setContentView(buildContent(shell), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         hideSystemBars()
         shell.push(createRoot(shell))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // pick up a theme colour or sound setting changed in Styles
+        ThemeStore.refresh(this) { if (::shell.isInitialized) shell.invalidate() }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
