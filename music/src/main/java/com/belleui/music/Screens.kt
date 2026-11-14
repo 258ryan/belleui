@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.media.AudioManager
+import android.os.SystemClock
 import com.belleui.kit.Act
 import com.belleui.kit.Belle
 import com.belleui.kit.Ic
@@ -15,7 +16,10 @@ import com.belleui.kit.Row
 import com.belleui.kit.Screen
 import com.belleui.kit.TabDef
 import com.belleui.kit.Tool
+import com.belleui.kit.Tumbler
+import com.belleui.kit.TumblerDialog
 import com.belleui.kit.Ui
+import kotlin.math.max
 import kotlin.math.min
 
 private const val MAGENTA = 0xFFE9338A.toInt()
@@ -39,6 +43,9 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     override fun onShow() {
         if (!started) {
             started = true
+            request()
+        } else if (act.libraryDirty) {
+            act.libraryDirty = false
             request()
         }
         Player.listeners.add { shell.postInvalidate() }
@@ -71,7 +78,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     }
 
     override fun tools(): List<Tool> = listOf(
-        Tool(Ic.NOTE, { openNowPlaying() }, Player.current != null),
+        Tool(Ic.NOWPLAY, { openNowPlaying() }, Player.current != null),
         playPauseTool { Player.toggle() },
     )
 
@@ -86,6 +93,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             })
         }
         items.add(MenuItem("Rescan library") { request() })
+        items.add(MenuItem("Settings") { shell.push(SettingsScreen(act)) })
         return items
     }
 
@@ -111,10 +119,13 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         }
     }
 
-    private fun rowAt(i: Int): Row = when (tab) {
-        0 -> act.library.tracks[i].let { Row(it.title, "${it.artist} - ${it.album}", iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(it.durationMs)) }
-        1 -> albums[i].let { (name, ts) -> Row(name, "${ts.first().artist} - ${ts.size} songs", iconKind = Ic.DISC, iconColor = ORANGE, drill = true) }
-        else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
+    private fun rowAt(i: Int): Row {
+        val gfx = shell.ui.gfx
+        return when (tab) {
+            0 -> act.library.tracks[i].let { Row(it.title, "${it.artist} - ${it.album}", icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(it.durationMs)) }
+            1 -> albums[i].let { (name, ts) -> Row(name, "${ts.first().artist} - ${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.DISC, iconColor = ORANGE, drill = true) }
+            else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_artist"), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
+        }
     }
 
     private fun open(i: Int) {
@@ -169,7 +180,7 @@ class TrackListScreen(private val act: MusicActivity, private val name: String, 
     private val list = ListState()
 
     override fun tools(): List<Tool> = listOf(
-        Tool(Ic.NOTE, { if (Player.current != null) shell.push(NowPlayingScreen(act)) }, Player.current != null),
+        Tool(Ic.NOWPLAY, { if (Player.current != null) shell.push(NowPlayingScreen(act)) }, Player.current != null),
         playPauseTool { Player.toggle() },
     )
 
@@ -189,7 +200,7 @@ class TrackListScreen(private val act: MusicActivity, private val name: String, 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         list.draw(c, ui, r, tracks.size) { i ->
             val t = tracks[i]
-            Row(t.title, t.artist, iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(t.durationMs))
+            Row(t.title, t.artist, icon = ui.gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = fmtTime(t.durationMs))
         }
     }
 
@@ -221,12 +232,14 @@ class TrackListScreen(private val act: MusicActivity, private val name: String, 
     }
 }
 
-/** Belle "now playing": album art, title, artist, progress bar. */
+/** Belle "now playing": album art, title, artist, progress bar, on-screen transport buttons, volume. */
 class NowPlayingScreen(private val act: MusicActivity) : Screen() {
     override val title get() = "Now playing"
     override val tickMs get() = 500L
     private var artFor = -1L
     private val progress = RectF()
+    private val transport = Array(5) { RectF() }
+    private var volumeUntil = 0L
 
     override fun onShow() {
         Player.listeners.add { if (shell.screen === this) shell.postInvalidate() }
@@ -242,6 +255,8 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         MenuItem("Repeat: " + arrayOf("off", "all", "one")[Player.repeat]) { Player.repeat = (Player.repeat + 1) % 3 },
         MenuItem("Previous song") { Player.prev() },
     )
+
+    private fun audio() = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         val t = Player.current
@@ -261,7 +276,8 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
             c.drawRect(art, ui.p)
             ui.p.style = Paint.Style.FILL
         } else {
-            ui.iconFrame(c, art, MAGENTA, Ic.NOTE)
+            // the original Belle "no album art" graphic from the E6 theme
+            if (!ui.gfx.draw(c, "qgn_graf_mup_npv_defalbumart", art)) ui.iconFrame(c, art, MAGENTA, Ic.NOTE)
             if (artFor != t.id) {
                 artFor = t.id
                 ArtCache.load(act, t, 600) { shell.invalidate() }
@@ -277,14 +293,41 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         y += 28f * ui.sc
         ui.text(c, t.album, x, y, 18f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
 
-        val barY = art.bottom - 70f * ui.sc
+        val barY = art.bottom - 134f * ui.sc
         progress.set(x, barY, x + maxW, barY + 20f * ui.sc)
         ui.progressBar(c, progress, if (Player.duration > 0) Player.position.toFloat() / Player.duration else 0f)
         ui.text(c, fmtTime(Player.position), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
         ui.text(c, fmtTime(Player.duration), x + maxW, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
-        val flags = listOfNotNull(if (Player.shuffle) "Shuffle" else null, arrayOf(null, "Repeat all", "Repeat one")[Player.repeat]).joinToString("  -  ")
-        if (flags.isNotEmpty()) ui.text(c, flags, x, art.bottom + 2f * ui.sc, 16f * ui.sc, Belle.BLUE_LIGHT, face = ui.light)
-        if (!Player.playing) ui.text(c, "Paused", x + maxW, y, 18f * ui.sc, Belle.BLUE_LIGHT, Paint.Align.RIGHT, face = ui.light)
+
+        // transport: shuffle, previous, play / pause, next, repeat
+        val cy = art.bottom - 38f * ui.sc
+        val xs = floatArrayOf(0.08f, 0.30f, 0.50f, 0.70f, 0.92f).map { x + maxW * it }
+        val shuffleKind = if (Player.shuffle) Ic.SHUFFLE else Ic.SHUFFLE_OFF
+        val repeatKind = when (Player.repeat) { 1 -> Ic.REPEAT; 2 -> Ic.REPEAT_ONE; else -> Ic.REPEAT_OFF }
+        ui.glyph(c, shuffleKind, xs[0], cy, 36f * ui.sc)
+        ui.glyph(c, Ic.PREVIOUS, xs[1], cy, 44f * ui.sc)
+        val round = if (Player.playing) "qgn_indi_mup2_button_pause" else "qgn_indi_mup2_button_play"
+        if (!ui.gfx.glyph(c, round, xs[2], cy, 64f * ui.sc)) ui.glyph(c, if (Player.playing) Ic.PAUSE else Ic.PLAY, xs[2], cy, 44f * ui.sc)
+        ui.glyph(c, Ic.NEXT, xs[3], cy, 44f * ui.sc)
+        ui.glyph(c, repeatKind, xs[4], cy, 36f * ui.sc)
+        val half = 30f * ui.sc
+        for (i in 0..4) transport[i].set(xs[i] - half, cy - half, xs[i] + half, cy + half)
+
+        // transient volume indicator
+        if (SystemClock.uptimeMillis() < volumeUntil) {
+            val am = audio()
+            val frac = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+            val box = RectF(r.centerX() - 150f * ui.sc, r.top + 14f * ui.sc, r.centerX() + 150f * ui.sc, r.top + 70f * ui.sc)
+            ui.nine(c, "qtg_fr_popup", box, 40, 20f)
+            ui.glyph(c, if (frac <= 0f) Ic.AUDIO_OFF else Ic.AUDIO_ON, box.left + 34f * ui.sc, box.centerY(), 34f * ui.sc)
+            ui.progressBar(c, RectF(box.left + 64f * ui.sc, box.centerY() - 10f * ui.sc, box.right - 20f * ui.sc, box.centerY() + 10f * ui.sc), frac)
+            ui.busy = true
+        }
+    }
+
+    private fun volume(up: Boolean) {
+        audio().adjustStreamVolume(AudioManager.STREAM_MUSIC, if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, 0)
+        volumeUntil = SystemClock.uptimeMillis() + 1500
     }
 
     override fun onAct(a: Act): Boolean {
@@ -294,21 +337,65 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
             Act.RIGHT -> Player.seekBy(10_000)
             Act.PREV -> Player.prev()
             Act.NEXT -> Player.next()
-            Act.UP, Act.DOWN -> {
-                val am = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (a == Act.UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
-            }
+            Act.UP -> volume(true)
+            Act.DOWN -> volume(false)
             else -> return false
         }
         return true
     }
 
     override fun onTap(x: Float, y: Float): Boolean {
-        if (progress.contains(x, y) && Player.duration > 0) {
-            Player.seek((Player.duration * ((x - progress.left) / progress.width())).toLong())
-        } else {
-            Player.toggle()
+        when {
+            progress.contains(x, y) && Player.duration > 0 -> Player.seek((Player.duration * ((x - progress.left) / progress.width())).toLong())
+            transport[0].contains(x, y) -> Player.shuffle = !Player.shuffle
+            transport[1].contains(x, y) -> Player.prev()
+            transport[3].contains(x, y) -> Player.next()
+            transport[4].contains(x, y) -> Player.repeat = (Player.repeat + 1) % 3
+            else -> Player.toggle()
         }
+        return true
+    }
+}
+
+private fun limitText(sec: Int) = if (sec <= 0) "Off - show all songs" else "Shorter than ${fmtTime(sec * 1000L)}"
+
+/** Music settings, in Belle SelectionListItem style. */
+class SettingsScreen(private val act: MusicActivity) : Screen() {
+    override val title get() = "Settings"
+    private val list = ListState()
+
+    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        list.draw(c, ui, r, 1) { Row("Hide short songs", limitText(act.library.minSeconds), iconKind = Ic.NOTE, iconColor = MAGENTA, drill = true) }
+        ui.text(
+            c, "Songs shorter than the length you choose (from 0:01 to 2:00) are left out of Songs, Albums and Artists.",
+            r.left + 16f * ui.sc, r.top + 1.5f * Belle.ROW_H * ui.sc, 16f * ui.sc, Belle.TEXT_MID, maxW = r.width() - 32f * ui.sc, face = ui.light,
+        )
+    }
+
+    private fun edit() {
+        val cur = act.library.minSeconds
+        val cols = listOf(
+            Tumbler((0..2).map { "$it min" }, cur / 60),
+            Tumbler((0..59).map { "%02d s".format(it) }, cur % 60),
+        )
+        shell.showOverlay(TumblerDialog("Hide songs shorter than", cols) { r ->
+            val sec = (r[0] * 60 + r[1]).coerceIn(0, 120)
+            act.library.minSeconds = sec
+            act.libraryDirty = true
+            shell.toast(if (sec == 0) "Showing all songs" else "Hiding songs under ${fmtTime(sec * 1000L)}")
+        })
+    }
+
+    override fun onAct(a: Act): Boolean {
+        if (a == Act.OK) {
+            edit()
+            return true
+        }
+        return false
+    }
+
+    override fun onTap(x: Float, y: Float): Boolean {
+        edit()
         return true
     }
 }

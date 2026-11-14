@@ -9,6 +9,9 @@ import com.belleui.kit.Screen
 class MusicActivity : BelleActivity() {
     val library by lazy { Library(this) }
 
+    /** Set when a setting changed what the library should contain; the main screen reloads on return. */
+    var libraryDirty = false
+
     override fun createRoot(shell: BelleShell): Screen = RootScreen(this)
 
     /** Audio access first, then (best effort) notifications for the playback controls. */

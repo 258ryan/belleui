@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
+import kotlin.math.max
 
 class Track(
     val id: Long,
@@ -23,7 +24,11 @@ class Track(
 
 fun fmtTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(s / 60, s % 60)
+    return if (s >= 3600) {
+        String.format(java.util.Locale.ROOT, "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+    } else {
+        String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)
+    }
 }
 
 /** Music on the device via MediaStore. */
@@ -31,6 +36,13 @@ class Library(private val ctx: Context) {
     @Volatile
     var tracks: List<Track> = emptyList()
         private set
+
+    private val prefs = ctx.getSharedPreferences("music", Context.MODE_PRIVATE)
+
+    /** Songs shorter than this many seconds are hidden; 0 = show everything. Limited to 0..120. */
+    var minSeconds: Int
+        get() = prefs.getInt("minSeconds", 0).coerceIn(0, 120)
+        set(v) = prefs.edit().putInt("minSeconds", v.coerceIn(0, 120)).apply()
 
     /** Blocking; call off the main thread. */
     fun load() {
@@ -42,7 +54,7 @@ class Library(private val ctx: Context) {
         try {
             ctx.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj,
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 10000",
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ${max(1, minSeconds) * 1000L}",
                 null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE",
             )?.use { c ->
                 while (c.moveToNext()) {
