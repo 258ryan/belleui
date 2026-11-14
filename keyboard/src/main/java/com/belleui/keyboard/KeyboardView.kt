@@ -11,6 +11,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.MotionEvent
 import android.view.View
+import com.belleui.kit.Belle
 import kotlin.math.max
 
 /** Two rows of keys in the Belle style. The selected key is blue; the game pad moves it, A presses it. */
@@ -162,7 +163,7 @@ class KeyboardView(ctx: Context) : View(ctx) {
             val sel = selRow < 0 && selCol == i
             if (sel) {
                 p.style = Paint.Style.FILL
-                p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, 0xFF5CB4F8.toInt(), 0xFF1080DD.toInt(), Shader.TileMode.CLAMP)
+                p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, Belle.BLUE_LIGHT, Belle.BLUE, Shader.TileMode.CLAMP)
                 c.drawRoundRect(rect, 6f * sc, 6f * sc, p)
                 p.shader = null
             }
@@ -179,8 +180,8 @@ class KeyboardView(ctx: Context) : View(ctx) {
         val topCol: Int
         val botCol: Int
         when {
-            down -> { topCol = 0xFF1080DD.toInt(); botCol = 0xFF0A5BA3.toInt() }
-            sel -> { topCol = 0xFF5CB4F8.toInt(); botCol = 0xFF1080DD.toInt() }
+            down -> { topCol = Belle.BLUE; botCol = Color.rgb(Color.red(Belle.BLUE) * 6 / 10, Color.green(Belle.BLUE) * 6 / 10, Color.blue(Belle.BLUE) * 6 / 10) }
+            sel -> { topCol = Belle.BLUE_LIGHT; botCol = Belle.BLUE }
             special -> { topCol = 0xFF4A5560.toInt(); botCol = 0xFF2E363E.toInt() }
             else -> { topCol = 0xFF4A4A4A.toInt(); botCol = 0xFF2C2C2C.toInt() }
         }
@@ -190,7 +191,7 @@ class KeyboardView(ctx: Context) : View(ctx) {
         p.shader = null
         p.style = Paint.Style.STROKE
         p.strokeWidth = 1f * sc
-        p.color = if (sel) 0xFFB5DEFF.toInt() else 0xFF5A5A5A.toInt()
+        p.color = if (sel) Belle.BLUE_LIGHT else 0xFF5A5A5A.toInt()
         c.drawRoundRect(r, 7f * sc, 7f * sc, p)
         p.style = Paint.Style.FILL
         p.color = Color.WHITE

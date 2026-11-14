@@ -28,6 +28,11 @@ class BelleIme : InputMethodService() {
     private val predict get() = prefs.getBoolean("predict", true)
     private val buzz get() = prefs.getBoolean("buzz", false)
 
+    override fun onCreate() {
+        super.onCreate()
+        com.belleui.kit.ThemeStore.load(this)
+    }
+
     override fun onCreateInputView(): View {
         kv = KeyboardView(this)
         kv.listener = { press(it) }
@@ -42,6 +47,7 @@ class BelleIme : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        com.belleui.kit.ThemeStore.refresh(this) { kv.invalidate() }
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val page = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) 1 else 0
         kv.selRow = 0
