@@ -52,7 +52,9 @@ class AppRepo(private val ctx: Context) {
                 try {
                     val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                     val label = ri.loadLabel(pm).toString()
-                    val custom = loadCustomIcon(cn.packageName) ?: loadPackIcon(cn.packageName, label)
+                    // Belle apps show their own icon; the bundled pack only dresses other apps
+                    val own = cn.packageName.startsWith("com.belleui.")
+                    val custom = loadCustomIcon(cn.packageName) ?: if (own) null else loadPackIcon(cn.packageName, label)
                     val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm), label))
                     AppEntry(cn.flattenToString(), label, cn, icon, if (Build.VERSION.SDK_INT >= 26) ri.activityInfo.applicationInfo.category else -1)
                 } catch (_: Throwable) {
