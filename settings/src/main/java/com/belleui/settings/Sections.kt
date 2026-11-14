@@ -76,6 +76,7 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Battery", "${b.pct}% - ${b.status}", icon = g.get("qgn_indi_battery_strength"), drill = true),
             Row("Display", "Brightness, screen timeout", icon = g.get("qgn_prop_set_gene_phone"), drill = true),
             Row("Sound", "Media volume $media%", icon = g.get("qgn_prop_set_tones_sub"), drill = true),
+            Row("Performance", "CPU speed and temperature (root)", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
             Row("Styles", "Wallpaper, tones and sounds", icon = g.get("qgn_menu_theme"), drill = true),
             Row("About", "${Build.MODEL} - Android ${Build.VERSION.RELEASE} - ${Sys.fmtSize(ram)} RAM", icon = g.get("qgn_prop_cp_dev_about"), drill = true),
             Row("Android settings", "Everything else", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
@@ -90,11 +91,12 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             3 -> shell.push(BatteryScreen(act))
             4 -> shell.push(DisplayScreen(act))
             5 -> shell.push(SoundScreen(act))
-            6 -> {
+            6 -> shell.push(PerformanceScreen(act))
+            7 -> {
                 val i = act.packageManager.getLaunchIntentForPackage("com.belleui.styles")
                 if (i == null || !act.tryStart(i)) shell.toast("Styles isn't installed")
             }
-            7 -> shell.push(AboutScreen(act))
+            8 -> shell.push(AboutScreen(act))
             else -> if (!act.tryStart(Intent(Settings.ACTION_SETTINGS))) shell.toast("Not available")
         }
     }
@@ -344,11 +346,28 @@ class ConnectivityScreen(act: SettingsActivity) : RowsScreen(act) {
         )
     }
 
+    /** With root, A switches the radio right here; otherwise (or if root says no) the usual settings page opens. */
+    private fun toggle(kind: String, nowOn: Boolean?, fallback: () -> Boolean): Boolean {
+        shell.toast("Switching...")
+        Thread {
+            val cmd = when (kind) {
+                "airplane" -> "cmd connectivity airplane-mode ${if (nowOn == true) "disable" else "enable"}"
+                else -> "svc $kind ${if (nowOn == true) "disable" else "enable"}"
+            }
+            val done = com.belleui.kit.Root.run(cmd) != null
+            shell.post {
+                if (done) shell.toast("Done") else if (!fallback()) shell.toast("Not available on this device")
+                shell.invalidate()
+            }
+        }.start()
+        return true
+    }
+
     override fun open(i: Int) {
         val ok = when (i) {
-            0 -> act.systemPanel(PANEL_WIFI, Settings.ACTION_WIFI_SETTINGS)
-            1 -> act.tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-            2 -> act.tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS))
+            0 -> toggle("wifi", Sys.wifiEnabled(act)) { act.systemPanel(PANEL_WIFI, Settings.ACTION_WIFI_SETTINGS) }
+            1 -> toggle("bluetooth", Sys.bluetooth()) { act.tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            2 -> toggle("airplane", Sys.airplane(act)) { act.tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)) }
             3 -> act.systemPanel(PANEL_INTERNET, Settings.ACTION_WIRELESS_SETTINGS)
             4 -> act.tryStart(Intent(Settings.ACTION_NFC_SETTINGS))
             5 -> return
@@ -543,5 +562,89 @@ class AboutScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Up time", Sys.uptime()),
             Row("System settings", "BelleUI 0.1"),
         )
+    }
+}
+
+
+// ================================================================================================
+// performance (root)
+// ================================================================================================
+
+/** CPU governor and speed. Reading is free; changing needs root, and it lasts until the next reboot. */
+class PerformanceScreen(act: SettingsActivity) : RowsScreen(act) {
+    override val title get() = "Performance"
+    override val tickMs get() = 2000L
+    override val cacheMs get() = 1500L
+    private var rootState = 0 // 0 unknown, 1 yes, 2 no
+
+    private fun read(path: String): String? = try { java.io.File(path).readText().trim().ifEmpty { null } } catch (_: Exception) { null }
+
+    private val cpu0 = "/sys/devices/system/cpu/cpu0/cpufreq"
+
+    private fun governors(): List<String> = read("$cpu0/scaling_available_governors")?.split(" ")?.filter { it.isNotBlank() } ?: emptyList()
+
+    private fun mhz(path: String): String? = read(path)?.toLongOrNull()?.let { "${it / 1000} MHz" }
+
+    private fun temperature(): String? {
+        for (i in 0..12) {
+            val t = read("/sys/class/thermal/thermal_zone$i/temp")?.toLongOrNull() ?: continue
+            val c = if (t > 1000) t / 1000.0 else t.toDouble()
+            if (c in 10.0..120.0) return "%.0f C".format(c)
+        }
+        return null
+    }
+
+    override fun rows(): List<Row> {
+        val g = shell.ui.gfx
+        val gov = read("$cpu0/scaling_governor")
+        return listOf(
+            Row("Mode", gov?.let { presetOf(it) } ?: "Not available", icon = g.get("qgn_prop_set_gene_sub"), drill = true, dim = gov == null),
+            Row("CPU governor", gov ?: "Not available", icon = g.get("qgn_prop_set_gene_phone"), drill = true, dim = gov == null),
+            Row("CPU speed now", mhz("$cpu0/scaling_cur_freq") ?: "-", icon = g.get("qgn_prop_set_gene_sensor")),
+            Row("CPU speed limit", mhz("$cpu0/scaling_max_freq") ?: "-", icon = g.get("qgn_prop_set_gene_sensor")),
+            Row("Temperature", temperature() ?: "-", icon = g.get("qgn_indi_battery_strength")),
+            Row("Root", when (rootState) { 1 -> "Available"; 2 -> "Not available - changes won't apply"; else -> "Press A to check" }, icon = g.get("qgn_prop_cp_dev_about")),
+        )
+    }
+
+    private fun presetOf(gov: String) = when (gov) {
+        "performance" -> "Performance"
+        "powersave", "conservative" -> "Battery saver"
+        else -> "Balanced"
+    }
+
+    private fun apply(gov: String) {
+        shell.toast("Setting $gov...")
+        Thread {
+            val cmd = "for c in /sys/devices/system/cpu/cpu[0-9]*; do echo $gov > \$c/cpufreq/scaling_governor; done"
+            val ok = com.belleui.kit.Root.run(cmd) != null
+            rootState = if (ok) 1 else 2
+            shell.post { shell.toast(if (ok) "Governor: $gov" else "Needs root - it said no"); refresh(true); shell.invalidate() }
+        }.start()
+    }
+
+    override fun open(i: Int) {
+        val gl = governors()
+        when (i) {
+            0 -> {
+                val pick = mapOf(
+                    "Battery saver" to listOf("powersave", "conservative"),
+                    "Balanced" to listOf("schedutil", "interactive", "ondemand"),
+                    "Performance" to listOf("performance"),
+                )
+                val names = pick.keys.toList()
+                shell.showOverlay(com.belleui.kit.ListDialog("Mode", names, 1) { k ->
+                    val want = pick[names[k]]!!.firstOrNull { it in gl }
+                    if (want == null) shell.toast("This device has no such governor") else apply(want)
+                })
+            }
+            1 -> if (gl.isEmpty()) shell.toast("Not available") else shell.showOverlay(com.belleui.kit.ListDialog("CPU governor", gl, gl.indexOf(read("$cpu0/scaling_governor"))) { k -> apply(gl[k]) })
+            5 -> {
+                Thread {
+                    rootState = if (com.belleui.kit.Root.available()) 1 else 2
+                    shell.postInvalidate()
+                }.start()
+            }
+        }
     }
 }

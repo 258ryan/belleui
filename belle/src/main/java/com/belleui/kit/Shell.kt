@@ -30,6 +30,9 @@ import kotlin.math.min
 enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, TOOL1, TOOL2, PREV, NEXT }
 
 object Keys {
+    /** How many times the key being handled has repeated (0 for the first press). */
+    @Volatile @JvmField var repeat = 0
+
     fun actionFor(code: Int, swap: Boolean): Act? = when (code) {
         KeyEvent.KEYCODE_DPAD_UP -> Act.UP
         KeyEvent.KEYCODE_DPAD_DOWN -> Act.DOWN
@@ -157,11 +160,13 @@ class ListState(val rowH: Float = Belle.ROW_H) {
     }
 
     /** Handles UP/DOWN; returns true if the selection moved. */
-    fun act(a: Act, count: Int, vis: Int): Boolean {
+    fun act(a: Act, count: Int, vis: Int, repeat: Int = Keys.repeat): Boolean {
         val before = sel
+        // holding UP or DOWN speeds up: 1 row at first, then 2, then 4
+        val step = if (repeat > 24) 4 else if (repeat > 10) 2 else 1
         when (a) {
-            Act.UP -> if (sel > 0) sel--
-            Act.DOWN -> if (sel < count - 1) sel++
+            Act.UP -> sel = max(0, sel - step)
+            Act.DOWN -> sel = min(count - 1, sel + step)
             Act.PREV -> sel = max(0, sel - vis)
             Act.NEXT -> sel = min(count - 1, sel + vis)
             else -> return false
@@ -671,11 +676,21 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
 
     // ---- navigation ---------------------------------------------------------------------------
 
+    private val uiPrefs by lazy { context.getSharedPreferences("belle_ui", Context.MODE_PRIVATE) }
+
     fun push(s: Screen) {
         s.shell = this
         stack.add(s)
         tabFocus = false
         s.onShow()
+        // reopen on the tab used last time
+        if (s.tabs.size > 1) {
+            val saved = uiPrefs.getInt("tab_" + s.javaClass.name, 0).coerceIn(0, s.tabs.size - 1)
+            if (saved != 0) {
+                s.tab = saved
+                s.onTabChanged()
+            }
+        }
         invalidate()
     }
 
@@ -715,6 +730,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         if (nt != screen.tab) {
             screen.tab = nt
             screen.onTabChanged()
+            if (screen.tabs.size > 1) uiPrefs.edit().putInt("tab_" + screen.javaClass.name, nt).apply()
         }
         invalidate()
     }
@@ -805,6 +821,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     fun handleKey(e: KeyEvent): Boolean {
         val a = Keys.actionFor(e.keyCode, swapPad) ?: return false
         keyRepeat = e.repeatCount
+        Keys.repeat = e.repeatCount
         if (e.action != KeyEvent.ACTION_DOWN) {
             // consume the matching key-up of anything we handle, except when passing through
             return !(overlay == null && screen.transparentContent && isNavKey(a))

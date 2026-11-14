@@ -774,11 +774,48 @@ class LauncherView(private val act: Activity) : View(act) {
         false
     }
 
+    private fun btOn(): Boolean = try {
+        @Suppress("DEPRECATION")
+        android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun airplaneOn(): Boolean = try {
+        Settings.Global.getInt(act.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Switches a radio with root when it is there; otherwise (or if root says no) the normal panel opens. */
+    private fun radio(kind: String, nowOn: Boolean, sel: Int, fallback: () -> Unit) {
+        showToast("Switching...")
+        Thread {
+            val cmd = if (kind == "airplane") "cmd connectivity airplane-mode ${if (nowOn) "disable" else "enable"}" else "svc $kind ${if (nowOn) "disable" else "enable"}"
+            val ok = com.belleui.kit.Root.run(cmd) != null
+            post {
+                if (ok) {
+                    showToast("Done")
+                    postDelayed({ if (popup != null) openQuick(sel); invalidate() }, 900)
+                } else {
+                    popup = null
+                    fallback()
+                }
+            }
+        }.start()
+    }
+
     /** Y: the Quick settings panel. */
     private fun openQuick(sel: Int) {
         val items = listOf(
             PopupItem("Wi-Fi: " + if (wifiOn()) "on" else "off") {
-                tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
+                radio("wifi", wifiOn(), 0) { tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS)) }
+            },
+            PopupItem("Bluetooth: " + if (btOn()) "on" else "off") {
+                radio("bluetooth", btOn(), 1) { tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            },
+            PopupItem("Airplane mode: " + if (airplaneOn()) "on" else "off") {
+                radio("airplane", airplaneOn(), 2) { tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)) }
             },
             PopupItem("Volume: ${volumePct()}%") {
                 val next = if (volumePct() >= 100) 0 else (volumePct() / 20 + 1) * 20
@@ -787,7 +824,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * next / 100.0).roundToInt(), 0)
                 } catch (_: SecurityException) {
                 }
-                openQuick(1)
+                openQuick(3)
             },
             PopupItem("Brightness: " + (brightnessPct().takeIf { it >= 0 }?.let { "$it%" } ?: "-")) {
                 if (Settings.System.canWrite(act)) {
@@ -795,7 +832,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     val next = if (b < 25) 25 else if (b < 50) 50 else if (b < 75) 75 else if (b < 100) 100 else 25
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 255 * next / 100)
-                    openQuick(2)
+                    openQuick(4)
                 } else {
                     tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
                 }
@@ -1125,6 +1162,10 @@ class LauncherView(private val act: Activity) : View(act) {
         val gap = 12f * sc
         val ww = (w - 2 * m - gap) / 2f
         val top = cTop + 14f * sc
+        // the highlight sits behind a widget so it shows as a border and never covers it; a button inside a widget
+        // gets a ring drawn on top instead
+        val subFocus = homeSel < 0 && (repo.widgetLarge == 2 || repo.widgetLarge == 4) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty
+        if (!subFocus) drawFocus(c, homeFocus.cur, 12f * sc)
         val wh = 92f * sc
         if (repo.widgetLarge >= 0) {
             val avail = homeTileRect(0, tmp).top - 10f * sc - top
@@ -1138,9 +1179,16 @@ class LauncherView(private val act: Activity) : View(act) {
             drawWidget(c, repo.widgetLeft, homeWidgetRects[0])
             drawWidget(c, repo.widgetRight, homeWidgetRects[1])
         }
+        if (subFocus) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 3f * sc
+            p.color = theme.accentLight
+            val ring = homeFocus.cur
+            c.drawRoundRect(ring, ring.height() / 2f, ring.height() / 2f, p)
+            p.style = Paint.Style.FILL
+        }
 
         // shortcuts straight on the wallpaper
-        drawFocus(c, homeFocus.cur, 12f * sc)
         for (i in 0..3) {
             homeTileRect(i, tmp)
             val app = favs.getOrNull(i)
