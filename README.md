@@ -91,4 +91,4 @@ is the original download and can be deleted.
 ### Gallery (`belle/gallery`)
 
 Tabs Photos / Albums over MediaStore images and videos. 5-column square thumbnail grid (loaded in the background), album list, and a full-screen viewer with zoom + pan (EXIF-aware), slideshow, share and details.
-Gamepad: D-pad moves, A opens / zooms / plays a video, L1/R1 previous / next photo, Y share, Start zoom, X options menu (details, share, slideshow).
+Gamepad: D-pad moves, A opens / zooms / plays a video, L1/R1 previous / next photo, Y share, Start slideshow, A zoom, X options menu (details, share, slideshow).

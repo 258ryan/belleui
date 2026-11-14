@@ -209,7 +209,11 @@ class ViewerScreen(private val act: GalleryActivity, private val items: List<Med
 
     override fun tools() = listOf(
         Tool(Ic.SHARE, { share() }),
-        Tool(Ic.SEARCH, { cycleZoom() }, !current.isVideo),
+        Tool(Ic.SLIDESHOW, {
+            slideshow = !slideshow
+            lastAdvance = System.currentTimeMillis()
+            shell.toast(if (slideshow) "Slideshow started" else "Slideshow stopped")
+        }),
     )
 
     override fun menu() = listOf(
