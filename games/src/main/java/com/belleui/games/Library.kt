@@ -19,12 +19,16 @@ class Game(
     val system: GameSystem,
     val size: Long,
     val modified: Long,
+    val meta: Meta? = null,
+    /** The system's own folder on the card, where gamelist.xml and art live. */
+    val sysDir: String? = null,
 ) {
     val file: File get() = File(path)
     val rawName: String = File(path).nameWithoutExtension
 
-    /** "Super Mario Land (World) [!]" -> "Super Mario Land" */
-    val title: String = rawName.replace(Regex("\\s*[\\(\\[][^\\)\\]]*[\\)\\]]"), "").trim().ifEmpty { rawName }
+    /** From gamelist.xml if given, else "Super Mario Land (World) [!]" -> "Super Mario Land" */
+    val title: String = meta?.name?.takeIf { it.isNotBlank() }
+        ?: rawName.replace(Regex("\\s*[\\(\\[][^\\)\\]]*[\\)\\]]"), "").trim().ifEmpty { rawName }
 }
 
 class Stat(var launches: Int = 0, var lastPlayed: Long = 0, var playMs: Long = 0, var fav: Boolean = false)
@@ -61,7 +65,18 @@ class Prefs(ctx: Context) {
 
     private fun defaultRoots(): List<String> {
         val base = android.os.Environment.getExternalStorageDirectory().path
-        return listOf("$base/ROMs", "$base/roms", "$base/Games", "$base/RetroArch/roms").filter { File(it).isDirectory }
+        val found = try { Es.discoverRoots() } catch (_: Exception) { emptyList() }
+        val fallback = listOf("$base/ROMs", "$base/roms", "$base/Games", "$base/RetroArch/roms").filter { File(it).isDirectory }
+        return (found + fallback).distinct()
+    }
+
+    /** Looks for ROM folders (one subfolder per system) on phone storage and SD cards and adds them. */
+    fun addDiscoveredRoots(): List<String> {
+        val found = Es.discoverRoots()
+        val cur = roots.toMutableList()
+        val added = found.filter { it !in cur }
+        if (added.isNotEmpty()) roots = cur + added
+        return added
     }
 
     var downloadArt: Boolean
@@ -81,32 +96,53 @@ class Prefs(ctx: Context) {
     fun setCore(system: GameSystem, core: String) = p.edit().putString("core_" + system.id, core).apply()
 }
 
-/** Finds games under the chosen folders. */
+/** Finds games under the chosen folders, the way EmulationStation lays a card out. */
 object Scanner {
-    private const val MAX_FILES = 6000
+    private const val MAX_FILES = 8000
 
     /** Blocking; call off the main thread. */
-    fun scan(roots: List<String>): List<Game> {
+    fun scan(rootPaths: List<String>): List<Game> {
+        val roots = rootPaths.map { File(it) }
         val out = ArrayList<Game>()
         val seen = HashSet<String>()
-        fun walk(dir: File, depth: Int) {
-            if (depth > 5 || out.size >= MAX_FILES) return
+        val hidden = HashSet<String>() // discs that a .m3u playlist already represents
+
+        val extra = ArrayList<GameSystem>()
+        Es.loadSystems(roots, extra)
+
+        fun walk(dir: File, sys: GameSystem?, sysDir: File?, depth: Int, meta: Map<String, Meta>) {
+            if (depth > 6 || out.size >= MAX_FILES) return
             val files = try { dir.listFiles() } catch (_: SecurityException) { null } ?: return
+            // playlists first, so their member discs can be hidden
+            for (f in files) if (f.isFile && f.extension.equals("m3u", true)) hidden.addAll(Es.m3uMembers(f))
             for (f in files) {
                 if (f.name.startsWith(".")) continue
                 if (f.isDirectory) {
-                    walk(f, depth + 1)
+                    val key = Systems.norm(f.name)
+                    if (key in Systems.ignoredFolders) continue
+                    val s = sys ?: Systems.byFolder(f.name)
+                    if (sys == null && s != null) {
+                        // entering a system folder: read its gamelist.xml once
+                        walk(f, s, f, depth + 1, Es.loadGamelist(f, roots))
+                    } else {
+                        walk(f, s, sysDir, depth + 1, meta)
+                    }
                 } else {
-                    val sys = Systems.detect(f) ?: continue
-                    // cue sheets and bins describe one disc: keep the .cue / .chd / .m3u, skip stray tracks
-                    val path = f.path
-                    if (seen.add(path)) out.add(Game(path, sys, f.length(), f.lastModified()))
+                    val ext = f.extension.lowercase()
+                    val s = if (sys != null) (if (sys.accepts(ext, true)) sys else null) else Systems.detect(f)
+                    if (s == null) continue
+                    if (!seen.add(f.path)) continue
+                    out.add(Game(f.path, s, f.length(), f.lastModified(), meta[f.path], (sysDir ?: f.parentFile)?.path))
                 }
             }
         }
-        for (r in roots) walk(File(r), 0)
-        out.sortBy { it.title.lowercase() }
-        return out
+        for (r in roots) {
+            // the chosen folder may itself be a system folder (e.g. .../roms/gba) or hold many
+            val own = Systems.byFolder(r.name)
+            if (own != null) walk(r, own, r, 0, Es.loadGamelist(r, roots)) else walk(r, null, null, 0, emptyMap())
+        }
+        val result = out.filter { it.path !in hidden }.sortedBy { it.title.lowercase() }
+        return result
     }
 }
 
@@ -136,9 +172,41 @@ class Art(private val ctx: Context, private val prefs: Prefs) {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
+    private val noLocal = HashSet<String>()
+    private val imageExts = listOf("png", "jpg", "jpeg", "webp")
+    private val artDirs = listOf(
+        "images", "media/box2dfront", "media/boxart", "media/covers", "media/images", "media/mixrbv2", "media/screenshots", "media/thumbnails",
+        "downloaded_images", "boxart", "covers", "snap", "imgs", "Named_Boxarts", "media/Named_Boxarts",
+    )
+
+    /** Art that came with the card: gamelist.xml's image, or the usual scraper folders next to the ROMs. */
+    private fun localArt(g: Game): File? {
+        g.meta?.image?.let { p -> File(p).takeIf { it.isFile }?.let { return it } }
+        val base = g.sysDir?.let { File(it) } ?: return null
+        val names = listOf(g.rawName, g.title).distinct()
+        for (n in names) for (d in artDirs) for (e in imageExts) {
+            for (suffix in listOf("", "-image", "-thumb")) {
+                val f = File(base, "$d/$n$suffix.$e")
+                if (f.isFile) return f
+            }
+        }
+        return null
+    }
+
     fun get(g: Game, onReady: () -> Unit): Bitmap? {
         val k = key(g)
         mem.get(k)?.let { return it }
+        if (k !in noLocal) {
+            val local = localArt(g)
+            if (local != null) {
+                val bmp = BitmapFactory.decodeFile(local.path, BitmapFactory.Options().apply { inSampleSize = 2 })
+                if (bmp != null) {
+                    mem.put(k, bmp)
+                    return bmp
+                }
+            }
+            noLocal.add(k)
+        }
         val file = File(dir, "$k.png")
         if (file.exists()) {
             val bmp = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = 2 })

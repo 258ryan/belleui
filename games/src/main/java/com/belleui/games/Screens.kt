@@ -120,7 +120,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     private fun emptyMessage(): String? = when {
         !act.hasAccess() -> "Games needs access to your files to find ROMs.\nPress A to allow."
         act.scanning && act.games.isEmpty() -> "Looking for games..."
-        act.games.isEmpty() -> "No games found.\nAdd a ROM folder in Settings (X menu)."
+        act.games.isEmpty() -> "No games found.\nIn Settings use \"Find ROM cards\", or add a ROM folder."
         else -> null
     }
 
@@ -531,6 +531,25 @@ class GameScreen(private val act: GamesActivity, private val game: Game) : Scree
         shell.showOverlay(QueryDialog("${game.rawName}\n${game.system.name}  -  ${size(game.size)}\n$played\n${game.file.parent}", "OK", null) { })
     }
 
+    /** Word-wraps [text] into at most [maxLines] lines that fit [maxW]. */
+    private fun wrap(ui: Ui, text: String, size: Float, maxW: Float, maxLines: Int): List<String> {
+        val out = ArrayList<String>()
+        var line = ""
+        for (w in text.split(Regex("\\s+"))) {
+            val t = if (line.isEmpty()) w else "$line $w"
+            if (ui.measure(t, size, ui.light) <= maxW) {
+                line = t
+            } else {
+                if (line.isNotEmpty()) out.add(line)
+                line = w
+                if (out.size == maxLines) break
+            }
+        }
+        if (out.size < maxLines && line.isNotEmpty()) out.add(line)
+        if (out.size == maxLines && text.length > out.joinToString(" ").length) out[maxLines - 1] = out[maxLines - 1].trimEnd('.', ',') + "..."
+        return out
+    }
+
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         val sc = ui.sc
         val pad = 20f * sc
@@ -539,19 +558,41 @@ class GameScreen(private val act: GamesActivity, private val game: Game) : Scree
         drawArt(c, ui, act, shell, game, art)
         val x = art.right + pad
         val maxW = r.right - x - pad
-        ui.text(c, game.title, x, r.top + pad + 28f * sc, 26f * sc, maxW = maxW)
-        ui.text(c, game.system.name, x, r.top + pad + 56f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        val m = game.meta
+        var y = r.top + pad + 28f * sc
+        ui.text(c, game.title, x, y, 26f * sc, maxW = maxW)
+        y += 28f * sc
+        val sysLine = game.system.name + (m?.year?.let { " - $it" } ?: "")
+        ui.text(c, sysLine, x, y, 18f * sc, Belle.TEXT_MID, maxW = maxW - 90f * sc, face = ui.light)
+        // rating from gamelist.xml, as five stars
+        m?.rating?.let { rating ->
+            val stars = (rating * 5f + 0.5f).toInt().coerceIn(0, 5)
+            for (i in 0 until 5) ui.glyph(c, Ic.STAR, x + maxW - 84f * sc + i * 17f * sc, y - 6f * sc, 15f * sc, if (i < stars) 0xFFFFB300.toInt() else ui.al(Color.WHITE, 60))
+        }
+        val credits = listOfNotNull(m?.developer, m?.publisher?.takeIf { it != m.developer }, m?.genre, m?.players?.let { "$it player${if (it == "1") "" else "s"}" }).joinToString("  -  ")
+        if (credits.isNotEmpty()) {
+            y += 24f * sc
+            ui.text(c, credits, x, y, 15f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        }
         val st = act.prefs.peek(game.path)
         val played = if (st != null && st.launches > 0) {
             "Played ${st.launches}x - ${playTime(st.playMs)} - last ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(st.lastPlayed))}"
         } else "Not played yet"
-        ui.text(c, played, x, r.top + pad + 84f * sc, 16f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-        ui.text(c, size(game.size) + "  -  ." + game.file.extension.lowercase(), x, r.top + pad + 108f * sc, 16f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        y += 24f * sc
+        ui.text(c, played, x, y, 15f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
         val how = when (act.emus.emulatorFor(game)) {
             Emu.PPSSPP -> "Opens in PPSSPP"
             Emu.RETROARCH -> if (act.emus.retroArch() != null) "Opens in RetroArch - ${act.prefs.core(game.system)} core" else "RetroArch is not installed"
         }
-        ui.text(c, how, x, r.top + pad + 134f * sc, 16f * sc, if (act.emus.retroArch() == null && act.emus.emulatorFor(game) == Emu.RETROARCH) 0xFFE5844D.toInt() else Belle.BLUE_LIGHT, maxW = maxW, face = ui.light)
+        y += 24f * sc
+        ui.text(c, how, x, y, 15f * sc, if (act.emus.retroArch() == null && act.emus.emulatorFor(game) == Emu.RETROARCH) 0xFFE5844D.toInt() else Belle.BLUE_LIGHT, maxW = maxW, face = ui.light)
+        m?.desc?.takeIf { it.isNotBlank() }?.let { d ->
+            var dy = y + 24f * sc
+            for (line in wrap(ui, d, 15f * sc, maxW, 2)) {
+                ui.text(c, line, x, dy, 15f * sc, ui.al(Color.WHITE, 200), maxW = maxW, face = ui.light)
+                dy += 20f * sc
+            }
+        }
         val by = art.bottom - 52f * sc
         playBtn.set(x, by, x + 150f * sc, by + 52f * sc)
         favBtn.set(x + 160f * sc, by, min(r.right - pad, x + 160f * sc + 190f * sc), by + 52f * sc)
@@ -589,6 +630,7 @@ class SettingsScreen(private val act: GamesActivity) : Screen() {
             Row("PSP games open with", if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch (ppsspp core)", iconKind = Ic.PLAY, iconColor = 0xFF2B2F36.toInt()),
             Row("Download box art", "From the libretro thumbnail server", iconKind = Ic.IMAGES, iconColor = 0xFFC2185B.toInt(), check = act.prefs.downloadArt),
             Row("RetroArch app", act.emus.retroArch() ?: "Not installed", iconKind = Ic.TOOLS, iconColor = 0xFF58606B.toInt(), drill = ra.size > 1),
+            Row("Find ROM cards", "Look for roms/<system> folders on SD cards", iconKind = Ic.SEARCH, iconColor = 0xFF1F9D63.toInt(), drill = true),
         )
     }
 
@@ -607,6 +649,16 @@ class SettingsScreen(private val act: GamesActivity) : Screen() {
                 val ra = act.emus.installedRetroArch()
                 if (ra.size > 1) shell.showOverlay(ListDialog("RetroArch build", ra, ra.indexOf(act.emus.retroArch())) { k -> act.prefs.retroarchPackage = ra[k] })
                 else if (ra.isEmpty()) shell.toast("Install RetroArch first")
+            }
+            5 -> {
+                shell.toast("Looking for ROM cards...")
+                Thread {
+                    val added = act.prefs.addDiscoveredRoots()
+                    shell.post {
+                        shell.toast(if (added.isEmpty()) "No new ROM folders found" else "Added ${added.size} folder${if (added.size == 1) "" else "s"}")
+                        act.rescan { shell.invalidate() }
+                    }
+                }.start()
             }
         }
     }
