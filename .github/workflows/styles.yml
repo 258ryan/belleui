@@ -1,11 +1,24 @@
-name: Build Styles app
-# This branch has its own workflow: it builds only the Styles module and publishes only its own release.
+name: Build Styles
+# Runs only when this app (or the shared kit / build styles) changes, so one app never rebuilds the others.
 on:
   push:
+    branches: [belle/all]
+    paths:
+      - 'styles/**'
+      - 'belle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/styles.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-styles
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,5 +44,5 @@ jobs:
           gh release delete styles-latest --yes --cleanup-tag || true
           gh release create styles-latest BelleUI-Styles.apk \
             --title "BelleUI Styles (latest build)" \
-            --notes "Wallpapers and sounds built from branch belle/styles at ${GITHUB_SHA::7}." \
+            --notes "Wallpapers and sounds built from branch belle/all at ${GITHUB_SHA::7}." \
             --prerelease --target "$GITHUB_SHA"

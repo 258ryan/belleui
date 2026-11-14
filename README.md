@@ -139,3 +139,15 @@ On `belle/all` every app has its own workflow (`launcher.yml`, `music.yml`, `clo
 
 - **Hub:** press left past the first Home tile (or L1) to reach it. It lists the notifications your apps post, newest first, with app icon, title, text and time, and keeps them after you clear them from the shade. A opens the notification (or its app); X offers Remove, Clear all and Notification access. The first time, press A on the Hub to open Android's notification-access screen and switch BelleUI Hub on - Android only lets an app read notifications with that permission.
 - **Home widgets:** X on any Home tile > **Edit widgets** (or X on an empty tile) chooses what the left and right slots show: Clock, Date, Battery, Storage or Notifications. Tapping a widget opens its app (the Notifications widget jumps to the Hub). These are BelleUI's own widgets; hosting other apps' Android widgets is not built.
+
+### Styles (`belle/styles`)
+Wallpapers and sounds. **Wallpaper** has built-in Belle-style backgrounds and your own photos; D-pad pans, L1/R1 zoom, A sets it for the Home screen, the lock screen or both. **Ringtone / Notification tone / Alarm tone** list the system tones and your music (A previews and sets). Touch sounds, vibrate-on-touch and the screen-lock sound are switches. Setting tones needs the "Modify system settings" switch for Styles.
+
+### Keyboard (`belle/keyboard`)
+A two-row on-screen keyboard (an Android input method) built for game pads. Turn it on in the Keyboard app (Turn on, then Use it). While it is up: D-pad moves along the keys, **A** types, **B** deletes, **X** space, **Y** shift (twice for caps lock), **L1/R1** move the text cursor, **R2** or Start is enter, **L2** swaps letters and symbols, Select hides it. Letters are A to Z or QWERTY; number fields open on the number page.
+
+### Games, redesigned
+List-first like a Belle app: **Home** (a "Continue playing" banner, favourites and recently added shelves), **Games** (box-art list; L1/R1 jump by letter), **Systems**, **Emulators**. **A starts a game straight away**; X opens the menu for the highlighted game (favourite, details, another version or disc, core), Y favourites it. Versions and discs of one title are a single entry.
+
+### Music folders
+Music Settings > Music folders limits the library to the folders you pick (such as the Music folder on an SD card). Choosing a folder also asks Android to index its files.
