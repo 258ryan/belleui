@@ -210,7 +210,15 @@ class LauncherView(private val act: Activity) : View(act) {
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (popup == null && onTap(e.x, e.y, selectOnly = true)) perform(Act.OPTIONS)
+            if (popup != null) return
+            if (page == 0 && !homeEdit && onTap(e.x, e.y, selectOnly = true) && homeItems.isNotEmpty()) {
+                // hold on an icon or widget: pick it up, then drag
+                homeEdit = true
+                carrying = true
+                dragging = true
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                invalidate()
+            } else if (onTap(e.x, e.y, selectOnly = true)) perform(Act.OPTIONS)
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -499,6 +507,24 @@ class LauncherView(private val act: Activity) : View(act) {
             if (searchEditing) return false // the text box gets the keys
         }
         val a = actionFor(e.keyCode) ?: return false
+        if (a == Act.OK && page == 0 && popup == null && !homeEdit && homeItems.isNotEmpty()) {
+            // press A = open; hold A = pick the item up to move it
+            if (e.action == KeyEvent.ACTION_DOWN) {
+                if (e.repeatCount == 0) okLong = false
+                else if (!okLong) {
+                    okLong = true
+                    homeEdit = true
+                    carrying = true
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    showToast("D-pad moves, ${okLetter()} drops")
+                    invalidate()
+                }
+            } else if (e.action == KeyEvent.ACTION_UP) {
+                if (!okLong) perform(Act.OK)
+                okLong = false
+            }
+            return true
+        }
         if (e.action == KeyEvent.ACTION_DOWN) {
             val directional = a == Act.UP || a == Act.DOWN || a == Act.LEFT || a == Act.RIGHT
             if (e.repeatCount == 0 || directional) perform(a)
@@ -506,8 +532,30 @@ class LauncherView(private val act: Activity) : View(act) {
         return true
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean =
-        gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (page == 0 && homeEdit && carrying && dragging) {
+            val cur = homeItems.getOrNull(homeIdx)
+            if (cur != null && (event.action == MotionEvent.ACTION_MOVE || event.action == MotionEvent.ACTION_UP)) {
+                val cw = width / HC.toFloat()
+                val ch = (cBot - cTop - 12f * sc) / HR
+                val nc = (event.x / cw).toInt().coerceIn(0, HC - cur.w)
+                val nr = ((event.y - cTop - 6f * sc) / ch).toInt().coerceIn(0, HR - cur.h)
+                if ((nc != cur.col || nr != cur.row) && !occupied(nc, nr, cur.w, cur.h, cur)) {
+                    cur.col = nc
+                    cur.row = nr
+                }
+                if (event.action == MotionEvent.ACTION_UP) {
+                    dragging = false
+                    carrying = false
+                    saveHome()
+                    showToast("Dropped - press ${backLetter()} when done")
+                }
+                invalidate()
+                return true
+            }
+        }
+        return gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    }
 
     private fun perform(a: Act) {
         com.belleui.kit.Sounds.play(when (a) {
@@ -568,7 +616,13 @@ class LauncherView(private val act: Activity) : View(act) {
             Act.PREV -> setPage(page - 1) // L1 on Home opens the Hub
             Act.NEXT -> setPage(page + 1)
             Act.MENU -> setPage(if (page != 0) 0 else 1)
-            Act.SETTINGS -> if (page == 1) openSearch() else openQuick(0)
+            Act.SETTINGS -> if (page == 1) openSearch() else if (page == 2) {
+                recents.getOrNull(recentSel)?.let {
+                    closeApp(listOf(it))
+                    refreshLists()
+                    showToast("${it.label} closed")
+                }
+            } else openQuick(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
             else -> navigate(a)
@@ -601,7 +655,7 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> {
                 val n = menuApps.size
                 if (n == 0) {
-                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP && page == 2) tabFocus = true
+                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) 
                     return
                 }
                 when (a) {
@@ -614,10 +668,11 @@ class LauncherView(private val act: Activity) : View(act) {
                 }
             }
             2 -> when (a) {
-                Act.UP -> if (recentSel > 0) recentSel-- else tabFocus = true
+                Act.UP -> if (recentSel > 0) recentSel--
                 Act.DOWN -> if (recentSel < recents.size - 1) recentSel++
                 Act.LEFT -> setPage(1)
                 Act.OK -> recents.getOrNull(recentSel)?.let { launch(it) }
+                Act.RIGHT -> {}
                 else -> {}
             }
         }
@@ -663,17 +718,12 @@ class LauncherView(private val act: Activity) : View(act) {
         if (abs(pageAnim - pagePos()) > 0.05f) return false
         if (y > cBot) { // soft-key bar
             if (!selectOnly) {
-                if (page == 1 || page == 0) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 1) Act.SETTINGS else Act.OK) else Act.OPTIONS)
+                if (page == 1 || page == 0 || page == 2) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 0) Act.OK else Act.SETTINGS) else Act.OPTIONS)
                 else perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
             }
             return true
         }
         if (y < cTop) return false
-        if (page == 2 && y < cTop + TAB * sc) {
-            setPage(if (x < width / 2f) 1 else 2)
-            invalidate()
-            return true
-        }
         var hit = false
         when (page) {
             -1 -> for ((rect, idx) in hubHits) if (rect.contains(x, y)) {
@@ -698,7 +748,13 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (idx in recents.indices && y > cTop + HEADER * sc) {
                     recentSel = idx
                     hit = true
-                    if (!selectOnly) perform(Act.OK)
+                    if (!selectOnly) {
+                        // the cross at the right closes the app, anywhere else opens it
+                        if (x > width - 64f * sc) {
+                            closeApp(listOf(recents[idx]))
+                            refreshLists()
+                        } else perform(Act.OK)
+                    }
                 }
             }
         }
@@ -1271,6 +1327,8 @@ class LauncherView(private val act: Activity) : View(act) {
     private var homeIdx = 0
     private var homeEdit = false
     private var carrying = false
+    private var okLong = false
+    private var dragging = false
     private var homeLoaded = false
     private var curWidget = -1
     private val HC = 4
@@ -1279,7 +1337,10 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2, 5 -> 4 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 1, 5 -> 4 to 2; else -> 4 to 1 }
+
+    /** The heights (in rows) each widget looks right at. */
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(1, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); else -> intArrayOf(1) }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1403,9 +1464,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun resizeCurrent() {
         val it = homeItems.getOrNull(homeIdx) ?: return
         if (!it.widget) return
-        for (step in 1..3) {
-            val nh = (it.h - 1 + step) % 3 + 1
-            if (it.row + nh <= HR && !occupied(it.col, it.row, it.w, nh, it)) {
+        val hs = widgetHeights(it.type)
+        for (step in 1..hs.size) {
+            val nh = hs[(hs.indexOf(it.h).let { k -> if (k < 0) 0 else k } + step) % hs.size]
+            if (nh != it.h && it.row + nh <= HR && !occupied(it.col, it.row, it.w, nh, it)) {
                 it.h = nh
                 saveHome()
                 return
@@ -2035,10 +2097,10 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun drawInbox(c: Canvas, r: RectF) {
-        paperCard(c, r)
+        darkCard(c, r, 16f * sc)
         HubStore.load(act)
-        val ink = 0xFF2B2B2B.toInt()
-        val grey = 0xFF6A6A6A.toInt()
+        val ink = Color.WHITE
+        val grey = 0xFFB5B5B5.toInt()
         // header strip
         p.style = Paint.Style.FILL
         p.shader = LinearGradient(0f, r.top, 0f, r.top + 38f * sc, al(theme.accentLight, 255), al(theme.accent, 255), Shader.TileMode.CLAMP)
@@ -2046,7 +2108,8 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
         p.shader = null
         text(c, "Notifications", r.left + 16f * sc, baselineFor(r.top + 19f * sc, 19f * sc, medium), 19f * sc, Color.WHITE, face = medium)
-        val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(3)
+        val fit = max(1, ((r.height() - 46f * sc) / (50f * sc)).toInt())
+        val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(min(3, fit))
         if (!HubStore.hasAccess(act)) {
             text(c, "Press A and allow notification access", r.centerX(), baselineFor(r.top + 100f * sc, 18f * sc), 18f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
             return
@@ -2057,7 +2120,7 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         val fmt = DateFormat.getTimeFormat(act)
         var y = r.top + 40f * sc
-        val rowH = ((r.bottom - y - 6f * sc) / 3f).coerceAtMost(58f * sc)
+        val rowH = ((r.bottom - y - 6f * sc) / list.size.toFloat()).coerceAtMost(58f * sc)
         for ((i, n) in list.withIndex()) {
             if (i > 0) {
                 p.color = al(Color.BLACK, 40)
@@ -2081,7 +2144,7 @@ class LauncherView(private val act: Activity) : View(act) {
         val on = booleanArrayOf(wifi || wifiOn(), ringer == android.media.AudioManager.RINGER_MODE_NORMAL, false)
         for (i in 0..2) {
             val cx = r.left + r.width() * (0.2f + 0.3f * i)
-            val d = r.height() * 0.62f
+            val d = min(r.height() * 0.62f, 54f * sc)
             rf.set(cx - d / 2f, r.top + 8f * sc, cx + d / 2f, r.top + 8f * sc + d)
             subRects[i].set(rf)
             p.style = Paint.Style.FILL
@@ -2242,6 +2305,11 @@ class LauncherView(private val act: Activity) : View(act) {
         hubHits.clear()
         buildHub()
         hubTick = true
+        // the same dimmed wallpaper as the Menu and Recent
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 150)
+        c.drawRect(0f, cTop, w, cBot, p)
 
         val hr = RectF(m, cTop + 10f * sc, w - m, cTop + 88f * sc)
         card(c, hr)
@@ -2268,8 +2336,7 @@ class LauncherView(private val act: Activity) : View(act) {
         var total = 0f
         for (it in hubItems) total += if (it.header != null) headH else rowH
         val panelH = min(avail, total + 12f * sc)
-        val panel = RectF(m, panelTop, w - m, panelTop + panelH)
-        card(c, panel)
+        val panel = RectF(0f, panelTop, w, panelTop + panelH)
 
         // keep the selected notification in view
         var y = 6f * sc
@@ -2296,14 +2363,19 @@ class LauncherView(private val act: Activity) : View(act) {
             val h = if (it.header != null) headH else rowH
             if (yy + h >= panel.top && yy <= panel.bottom) {
                 if (it.header != null) {
-                    text(c, it.header, panel.left + 16f * sc, baselineFor(yy + h / 2f, 15f * sc, medium), 15f * sc, theme.accentLight, face = medium)
-                    p.color = al(Color.WHITE, 40)
-                    c.drawRect(panel.left + 12f * sc, yy + h - 2f * sc, panel.right - 12f * sc, yy + h - 1f * sc, p)
+                    // a grey section bar, as on the Status menu
+                    p.shader = LinearGradient(0f, yy, 0f, yy + h, 0xFF4A4A4A.toInt(), 0xFF383838.toInt(), Shader.TileMode.CLAMP)
+                    c.drawRect(panel.left, yy, panel.right, yy + h, p)
+                    p.shader = null
+                    text(c, it.header, panel.left + 14f * sc, baselineFor(yy + h / 2f, 16f * sc, medium), 16f * sc, Color.WHITE, face = medium)
                 } else {
                     val n = it.note!!
                     val rr = RectF(panel.left + 6f * sc, yy + 1f * sc, panel.right - 6f * sc, yy + h - 1f * sc)
-                    if (i == hubSel) drawFocus(c, rr, 10f * sc)
-                    val isz = 38f * sc
+                    if (i == hubSel) nine(c, "qtg_fr_list_pressed", rr, 40, 14f) else {
+                        p.color = al(Color.WHITE, 30)
+                        c.drawRect(rr.left + 8f * sc, rr.bottom, rr.right - 8f * sc, rr.bottom + 1f, p)
+                    }
+                    val isz = 42f * sc
                     noteIcon(n.pkg)?.let { b ->
                         rf.set(rr.left + 10f * sc, rr.centerY() - isz / 2f, rr.left + 10f * sc + isz, rr.centerY() + isz / 2f)
                         c.drawBitmap(b, null, rf, iconPaint)
@@ -2411,42 +2483,45 @@ class LauncherView(private val act: Activity) : View(act) {
         val listTop = cTop + HEADER * sc
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = Color.BLACK
+        // the same dimmed wallpaper as the Menu
+        p.color = al(Color.BLACK, 170)
         c.drawRect(0f, cTop, w, cBot, p)
         if (recents.isEmpty()) {
-            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 22f * sc, 0xFF999999.toInt(), Paint.Align.CENTER)
-        } else {
-            for (i in recents.indices) {
-                recentRowRect(i, recentTopAnim, tmp)
-                if (tmp.bottom < listTop || tmp.top > cBot) continue
-                p.color = 0xFF444444.toInt() // colorDisabledMid separator
-                c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
-            }
-            // pressed / highlighted frame (qtg_fr_list_pressed): Belle blue with a white fade from the top
-            nine(c, "qtg_fr_list_pressed", recentFocus.cur, 40, 20f)
-            for (i in recents.indices) {
-                recentRowRect(i, recentTopAnim, tmp)
-                if (tmp.bottom < listTop || tmp.top > cBot) continue
-                val app = recents[i]
-                val sel = i == recentSel
-                val pad = 12f * sc // paddingLarge
-                drawIcon(c, app.icon, pad + 25f * sc, tmp.centerY(), 50f * sc)
-                val tx = pad + 50f * sc + pad
-                text(c, app.label, tx, tmp.centerY() - 4f * sc, 22f * sc, Color.WHITE, maxW = w - tx - 24f * sc)
-                text(c, app.component.packageName, tx, tmp.centerY() + 20f * sc, 18f * sc, if (sel) Color.WHITE else 0xFF999999.toInt(), maxW = w - tx - 24f * sc, face = light)
-            }
-            val vis = recentVisible()
-            if (recents.size > vis) {
-                val trackH = cBot - listTop - 8f * sc
-                val thumbH = max(24f * sc, trackH * vis / recents.size)
-                val prog = (recentTopAnim / (recents.size - vis).toFloat()).coerceIn(0f, 1f)
-                val ty = listTop + 4f * sc + (trackH - thumbH) * prog
-                rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
-                p.color = al(Color.WHITE, 150)
-                c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
-            }
+            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 22f * sc, 0xFFBBBBBB.toInt(), Paint.Align.CENTER)
+            return
         }
-        drawTabBar(c, 1)
+        nine(c, "qtg_fr_list_pressed", recentFocus.cur, 40, 20f)
+        val used = repo.lastUsed
+        val now = System.currentTimeMillis()
+        for (i in recents.indices) {
+            recentRowRect(i, recentTopAnim, tmp)
+            if (tmp.bottom < listTop || tmp.top > cBot) continue
+            val app = recents[i]
+            val sel = i == recentSel
+            if (i != recentSel) {
+                p.color = al(Color.WHITE, 30)
+                c.drawRect(14f * sc, tmp.bottom - 1f, w - 14f * sc, tmp.bottom, p)
+            }
+            val pad = 14f * sc
+            drawIcon(c, app.icon, pad + 30f * sc, tmp.centerY(), 60f * sc)
+            val tx = pad + 60f * sc + pad
+            val t = used[app.component.packageName]
+            val sub = if (t != null) android.text.format.DateUtils.getRelativeTimeSpanString(t, now, android.text.format.DateUtils.MINUTE_IN_MILLIS).toString() else "Opened from here"
+            text(c, app.label, tx, tmp.centerY() - 3f * sc, 23f * sc, Color.WHITE, maxW = w - tx - 70f * sc, face = medium)
+            text(c, sub, tx, tmp.centerY() + 22f * sc, 16f * sc, if (sel) Color.WHITE else 0xFFB5B5B5.toInt(), maxW = w - tx - 70f * sc, face = light)
+            // the cross on the right closes the app
+            glyph(c, ICON_CLOSE, w - 34f * sc, tmp.centerY(), 26f * sc, if (sel) Color.WHITE else al(Color.WHITE, 150))
+        }
+        val vis = recentVisible()
+        if (recents.size > vis) {
+            val trackH = cBot - listTop - 8f * sc
+            val thumbH = max(24f * sc, trackH * vis / recents.size)
+            val prog = (recentTopAnim / (recents.size - vis).toFloat()).coerceIn(0f, 1f)
+            val ty = listTop + 4f * sc + (trackH - thumbH) * prog
+            rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
+            p.color = al(Color.WHITE, 150)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+        }
     }
 
     private fun mix(a: Int, b: Int, t: Float): Int {
@@ -2516,12 +2591,12 @@ class LauncherView(private val act: Activity) : View(act) {
         val cy = cBot + softH / 2f
         val s = 30f * sc
         val inModal = popup != null || reorder
-        if (page == 1 && !inModal) {
-            // the Belle Menu toolbar: back, search, menu
+        if ((page == 1 || page == 2) && !inModal) {
+            // the Belle Menu toolbar: back, search (or close, on Recent), menu
             val mm = 56f * sc
             toolIcon(c, ICON_BACK, mm, cy, s)
             hintLetter(c, backLetter(), mm + 26f * sc, cy)
-            gfx.glyph(c, "toolbar_search", w / 2f, cy, s, 255)
+            if (page == 1) gfx.glyph(c, "toolbar_search", w / 2f, cy, s, 255) else glyph(c, ICON_CLOSE, w / 2f, cy, s, Color.WHITE)
             hintLetter(c, settingsLetter(), w / 2f + 26f * sc, cy)
             toolIcon(c, ICON_MENU, w - mm, cy, s)
             hintLetter(c, optLetter(), w - mm - 26f * sc, cy)
@@ -2746,7 +2821,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private companion object {
         const val SEARCH_H = 44f
         const val TAB = 50f      // tab bar (landscape; 60 in portrait)
-        const val HEADER = 50f   // list starts under the tab bar
+        const val HEADER = 6f    // a little air above the first row
         const val ROW = 70f      // heightListItem
         const val POPUP_ROW = 64f // heightMenuItem
         const val WIDGET_CLOCK = 0

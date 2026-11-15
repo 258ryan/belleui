@@ -415,6 +415,11 @@ class AppRepo(private val ctx: Context) {
         return (usageRecents() + own).distinctBy { it.component.packageName }.take(MAX_RECENTS)
     }
 
+    /** When each app was last in front, from the usage record (refreshed with the recents list). */
+    @Volatile
+    var lastUsed: Map<String, Long> = emptyMap()
+        private set
+
     private fun usageRecents(): List<AppEntry> {
         try {
             val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
@@ -427,6 +432,7 @@ class AppRepo(private val ctx: Context) {
                 if (e.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) last[e.packageName] = e.timeStamp
             }
             val byPkg = apps.groupBy { it.component.packageName }
+            lastUsed = last
             return last.entries
                 .filter { it.value > prefs.getLong("dismissed_" + it.key, 0L) }
                 .sortedByDescending { it.value }

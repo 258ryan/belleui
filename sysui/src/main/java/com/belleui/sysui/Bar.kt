@@ -203,6 +203,11 @@ object Bar {
     }
 
     private fun handle(name: String) {
+        Log.i(TAG, "system asked: $name")
+        try {
+            Settings.Global.putString(ctx.contentResolver, "belle_sysui_last", name)
+        } catch (_: Throwable) {
+        }
         try {
             when (name) {
                 "animateExpandNotificationsPanel", "animateExpandSettingsPanel" -> if (!Hud.statusOpen) Hud.toggleStatus(ctx, ctx)
