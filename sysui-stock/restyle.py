@@ -6,7 +6,10 @@ Colours only: panels, notification rows, quick-settings, power menu and the acce
 Layouts and code are untouched, so the lock screen, notifications, recents, screenshots and the device's hint bar
 all keep working exactly as in the stock System UI.
 
-usage: restyle.py <decoded-dir>
+usage: restyle.py <decoded-dir> [<decoded Belle System UI apk>]
+
+With the second argument the Belle Status menu, power menu and volume pop-up (the code and graphics of the from-scratch
+Belle System UI) are merged into the stock System UI and called from it, so the stock one looks like the Belle one.
 """
 import os
 import re
@@ -154,6 +157,101 @@ def patch_tiles(d):
     return 1
 
 
+def merge_belle(d, b):
+    """Adds the Belle kit and panels (as an extra dex, with its own copy of the Kotlin runtime) and their graphics."""
+    smali2 = os.path.join(d, "smali_classes2")
+    os.makedirs(smali2, exist_ok=True)
+    n = 0
+    for root in sorted(os.listdir(b)):
+        if not root.startswith("smali"):
+            continue
+        for pkg in ("com/belleui", "kotlin", "kotlinx"):
+            src = os.path.join(b, root, pkg)
+            if not os.path.isdir(src):
+                continue
+            dst = os.path.join(smali2, pkg.replace("kotlin", "bellikotlin") if pkg.startswith("kotlin") else pkg)
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            n += 1
+    # our own copy of the Kotlin runtime lives under another name, so the stock (trimmed) one never gets in the way
+    for dp, _, files in os.walk(smali2):
+        for f in files:
+            if not f.endswith(".smali"):
+                continue
+            path = os.path.join(dp, f)
+            t = open(path, encoding="utf-8").read()
+            t2 = t.replace("Lkotlin/", "Lbellikotlin/").replace("Lkotlinx/", "Lbellikotlinx/")
+            if t2 != t:
+                open(path, "w", encoding="utf-8").write(t2)
+    ga = os.path.join(b, "assets", "belle")
+    if os.path.isdir(ga):
+        shutil.copytree(ga, os.path.join(d, "assets", "belle"), dirs_exist_ok=True)
+        n += 1
+    return n
+
+
+def _hook(path, signature, body, locals_min):
+    """Puts [body] (smali) at the start of the method whose declaration line contains [signature]."""
+    s = open(path, encoding="utf-8").read()
+    i = s.find(signature)
+    if i < 0:
+        print("hook: not found:", signature)
+        return 0
+    j = s.find(".locals ", i)
+    k = s.find("\n", j)
+    cur = int(s[j + 8:k].strip())
+    new_locals = max(cur, locals_min)
+    s = s[:j] + ".locals %d" % new_locals + s[k:]
+    k = s.find("\n", j)
+    s = s[: k + 1] + body + s[k + 1:]
+    open(path, "w", encoding="utf-8").write(s)
+    return 1
+
+
+def hooks(d):
+    base = os.path.join(d, "smali/com/android/systemui")
+    status = (
+        "\n    :belle_a\n"
+        "    iget-object v0, p0, Lcom/android/systemui/SystemUI;->mContext:Landroid/content/Context;\n\n"
+        "    invoke-static {v0}, Lcom/belleui/hook/BelleHook;->status(Landroid/content/Context;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    return-void\n\n"
+        "    :belle_c\n\n"
+    )
+    power = (
+        "\n    :belle_a\n"
+        "    iget-object v0, p0, Lcom/android/systemui/globalactions/GlobalActionsDialog;->mContext:Landroid/content/Context;\n\n"
+        "    invoke-static {v0}, Lcom/belleui/hook/BelleHook;->power(Landroid/content/Context;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    return-void\n\n"
+        "    :belle_c\n\n"
+    )
+    volume = (
+        "\n    :belle_a\n"
+        "    iget-object v0, p0, Lcom/android/systemui/volume/VolumeDialogImpl;->mContext:Landroid/content/Context;\n\n"
+        "    iget v1, p0, Lcom/android/systemui/volume/VolumeDialogImpl;->mActiveStream:I\n\n"
+        "    invoke-static {v0, v1}, Lcom/belleui/hook/BelleHook;->volume(Landroid/content/Context;I)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    return-void\n\n"
+        "    :belle_c\n\n"
+    )
+    n = 0
+    sb = os.path.join(base, "statusbar/phone/StatusBar.smali")
+    n += _hook(sb, ".method public animateExpandNotificationsPanel()V", status, 2)
+    n += _hook(sb, ".method public animateExpandSettingsPanel(Ljava/lang/String;)V", status, 2)
+    n += _hook(os.path.join(base, "globalactions/GlobalActionsDialog.smali"), ".method public showOrHideDialog(ZZLcom/android/systemui/plugins/GlobalActionsPanelPlugin;)V", power, 2)
+    n += _hook(os.path.join(base, "volume/VolumeDialogImpl.smali"), ".method private showH(I)V", volume, 2)
+    return n
+
+
 def copy_overlay(src, dst):
     """Whole-file replacements (flat Belle panels and rows) from overlay/res/ over the decoded res/."""
     n = 0
@@ -204,6 +302,12 @@ if __name__ == "__main__":
     total += k
     k = patch_tiles(d)
     print("tiles", k, "shape patched")
+    if len(sys.argv) > 2:
+        k = merge_belle(d, sys.argv[2])
+        print("belle code and graphics merged:", k)
+        k = hooks(d)
+        print("stock calls hooked:", k)
+        total += k
     here = os.path.dirname(os.path.abspath(__file__))
     k = copy_overlay(os.path.join(here, "overlay", "res"), "%s/res" % d)
     print("overlay", k, "files copied")

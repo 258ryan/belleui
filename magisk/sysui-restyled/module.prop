@@ -3,4 +3,4 @@ name=BelleUI - System UI (restyled stock)
 version=v0.1
 versionCode=1
 author=BelleUI
-description=Only the System UI: the ROM's own System UI with the Belle look. Keeps the lock screen, notifications and the hint bar. Android 11, AOSP test-key ROMs. The stock System UI comes back after 2 boots that do not come up.
+description=Only the System UI: the ROM's own System UI with the Belle Status menu, power menu and volume pop-up merged in. Keeps the lock screen, notifications and the hint bar. Android 11, AOSP test-key ROMs. The stock System UI comes back after 2 boots that do not come up.
