@@ -1,14 +1,11 @@
 package com.belleui.gallery
 
-import android.content.Intent
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.text.format.DateFormat
+import android.view.MotionEvent
 import com.belleui.kit.Act
 import com.belleui.kit.Belle
-import com.belleui.kit.GridState
 import com.belleui.kit.Ic
 import com.belleui.kit.ListState
 import com.belleui.kit.MenuItem
@@ -18,53 +15,59 @@ import com.belleui.kit.Screen
 import com.belleui.kit.TabDef
 import com.belleui.kit.Tool
 import com.belleui.kit.Ui
-import kotlin.math.max
-import kotlin.math.min
 
-private fun fmtDuration(ms: Long): String {
-    val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
-}
+private val LEVELS = arrayOf("Years", "Months", "Days")
 
-/** Square thumbnail grid shared by Photos and album screens. */
-class MediaGrid(private val act: GalleryActivity) {
-    val grid = GridState(5, 1f)
+/** A screen whose body is a date-grouped photo grid. */
+abstract class GridScreen(protected val act: GalleryActivity) : Screen() {
+    protected val grid = PhotosGrid(act) { shell }
+    override val rawTouch get() = true
+    abstract fun shown(): List<Media>
 
-    fun draw(c: Canvas, ui: Ui, r: RectF, items: List<Media>, shell: com.belleui.kit.BelleShell) {
-        grid.draw(c, ui, r, items.size) { cv, cell, i, selected ->
-            val m = items[i]
-            // the selected thumbnail is drawn smaller so the blue highlight frame shows around it
-            val g = (if (selected) 8f else 2f) * ui.sc
-            val box = RectF(cell.left + g, cell.top + g, cell.right - g, cell.bottom - g)
-            val bmp = Thumbs.get(act, m) { shell.invalidate() }
-            if (bmp != null) {
-                ui.drawBitmapCover(cv, bmp, box)
-            } else {
-                ui.fill(cv, box, 0xFF1E1E1E.toInt())
-                ui.glyph(cv, if (m.isVideo) Ic.PLAY else Ic.PHOTO, box.centerX(), box.centerY(), 36f * ui.sc, ui.al(Color.WHITE, 70))
-            }
-            if (m.isVideo) {
-                ui.p.style = Paint.Style.FILL
-                ui.p.shader = null
-                ui.p.color = ui.al(Color.BLACK, 140)
-                cv.drawCircle(box.centerX(), box.centerY(), 20f * ui.sc, ui.p)
-                ui.glyph(cv, Ic.PLAY, box.centerX() + 1.5f * ui.sc, box.centerY(), 26f * ui.sc)
-                ui.text(cv, fmtDuration(m.durationMs), box.right - 4f * ui.sc, box.bottom - 5f * ui.sc, 14f * ui.sc, Color.WHITE, Paint.Align.RIGHT)
-            }
-        }
+    protected fun content() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
+
+    protected open fun open(i: Int) {
+        val list = shown()
+        if (i in list.indices) shell.push(ViewerScreen(act, list, i, viewerMode()))
     }
+
+    protected open fun viewerMode() = ViewerScreen.NORMAL
+
+    protected fun drawGrid(c: Canvas, ui: Ui, r: RectF) {
+        grid.onOpen = { open(it) }
+        grid.draw(c, ui, r, shown()) { act.marks.isFav(it) }
+    }
+
+    protected fun gridAct(a: Act): Boolean {
+        grid.onOpen = { open(it) }
+        return grid.act(a, shown(), content())
+    }
+
+    protected fun gridTouch(e: MotionEvent): Boolean {
+        grid.onOpen = { open(it) }
+        return grid.touch(e, shown(), content(), shell.ui.sc)
+    }
+
+    protected fun zoomItems() = (0..2).map { l -> MenuItem("Show by " + LEVELS[l].lowercase() + if (grid.level == l) "  (now)" else "") { grid.changeLevel(l) } }
+
+    protected fun zoomTool() = Tool(Ic.GRID, { grid.changeLevel((grid.level + 1) % 3); shell.toast("By " + LEVELS[grid.level].lowercase()) })
 }
 
-/** Photos / Albums, as Belle tabs. */
-class RootScreen(private val act: GalleryActivity) : Screen() {
+/** Photos / Albums / Favourites, as Belle tabs. */
+class RootScreen(act: GalleryActivity) : GridScreen(act) {
     override val title get() = "Gallery"
-    override val tabs = listOf(TabDef("Photos", Ic.PHOTO), TabDef("Albums", Ic.ALBUMS))
+    override val tabs = listOf(TabDef("Photos", Ic.PHOTO), TabDef("Albums", Ic.ALBUMS), TabDef("Favourites", Ic.FAVOURITE))
 
-    private val photos = MediaGrid(act)
+    private val favGrid = PhotosGrid(act) { shell }
     private val albumList = ListState()
     private var albums: List<Pair<String, List<Media>>> = emptyList()
+    private var albumsVersion = -1
     private var state = 0 // 0 loading, 1 ready, 2 denied
     private var started = false
+
+    override fun shown(): List<Media> = if (tab == 2) act.favourites() else act.photos()
+
+    private val activeGrid get() = if (tab == 2) favGrid else grid
 
     override fun onShow() {
         if (!started) {
@@ -86,8 +89,9 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
                 Thread {
                     if (act.library.folders.isNotEmpty()) act.library.indexFolders()
                     act.library.load()
-                    albums = act.library.albums()
+                    act.marks.purge(act.library.items)
                     shell.post {
+                        albumsVersion = -1
                         state = 1
                         shell.invalidate()
                     }
@@ -96,7 +100,11 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
         }
     }
 
-    override fun menu() = listOf(
+    override fun tools() = listOf(zoomTool())
+
+    override fun menu() = zoomItems() + listOf(
+        MenuItem("Hidden") { shell.push(ItemsScreen(act, "Hidden", ViewerScreen.HIDDEN)) },
+        MenuItem("Recently deleted") { shell.push(ItemsScreen(act, "Recently deleted", ViewerScreen.TRASH)) },
         MenuItem("Refresh") { load() },
         MenuItem("Choose folders") { shell.push(FoldersScreen(act)) },
     )
@@ -108,227 +116,116 @@ class RootScreen(private val act: GalleryActivity) : Screen() {
         }
     }
 
+    private fun albumsNow(): List<Pair<String, List<Media>>> {
+        val v = act.marks.version * 100003 + act.library.items.size
+        if (v != albumsVersion) {
+            albumsVersion = v
+            albums = act.photos().groupBy { it.bucketId }.values.map { it.first().bucket to it }.sortedByDescending { it.second.first().dateSec }
+        }
+        return albums
+    }
+
+    override fun open(i: Int) {
+        val list = shown()
+        if (i in list.indices) shell.push(ViewerScreen(act, list, i, ViewerScreen.NORMAL))
+    }
+
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        val items = act.library.items
+        val all = act.photos()
         when {
             state == 0 -> message(c, ui, r, "Loading...")
             state == 2 -> message(c, ui, r, "Gallery needs access to your photos and videos.\nPress A to allow.")
-            items.isEmpty() -> message(c, ui, r, "No photos or videos")
-            tab == 0 -> photos.draw(c, ui, r, items, shell)
-            else -> albumList.draw(c, ui, r, albums.size) { i ->
-                val (name, list) = albums[i]
-                val thumb = Thumbs.get(act, list.first()) { shell.invalidate() }
-                Row(name, "${list.size} items", icon = thumb ?: ui.gfx.get("qgn_prop_album_photo_video"), iconKind = Ic.PHOTO, drill = true)
+            tab == 1 -> {
+                val al = albumsNow()
+                if (al.isEmpty()) message(c, ui, r, "No albums") else albumList.draw(c, ui, r, al.size) { i ->
+                    val (name, list) = al[i]
+                    val thumb = Thumbs.get(act, list.first()) { shell.invalidate() }
+                    Row(name, "${list.size} items", icon = thumb ?: ui.gfx.get("qgn_prop_album_photo_video"), iconKind = Ic.PHOTO, drill = true)
+                }
             }
+            tab == 2 -> if (act.favourites().isEmpty()) message(c, ui, r, "No favourites yet\nOpen a photo and choose Favourite") else {
+                favGrid.onOpen = { open(it) }
+                favGrid.draw(c, ui, r, act.favourites()) { true }
+            }
+            all.isEmpty() -> message(c, ui, r, "No photos or videos")
+            else -> drawGrid(c, ui, r)
         }
     }
-
-    private fun contentRect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
 
     override fun onAct(a: Act): Boolean {
         if (state == 2 && a == Act.OK) {
             load()
             return true
         }
-        val items = act.library.items
-        if (state != 1 || items.isEmpty()) return false
-        if (tab == 0) {
+        if (state != 1) return false
+        if (tab == 1) {
+            val al = albumsNow()
+            val vis = albumList.visible(shell.ui, shell.contentBottom - shell.contentTop)
             if (a == Act.OK) {
-                shell.push(ViewerScreen(act, items, photos.grid.sel))
+                al.getOrNull(albumList.sel)?.let { shell.push(AlbumScreen(act, it.first, it.second)) }
                 return true
             }
-            return photos.grid.act(a, items.size, contentRect())
+            return albumList.act(a, al.size, vis)
         }
-        val vis = albumList.visible(shell.ui, shell.contentBottom - shell.contentTop)
-        if (a == Act.OK) {
-            albums.getOrNull(albumList.sel)?.let { shell.push(AlbumScreen(act, it.first, it.second)) }
-            return true
-        }
-        return albumList.act(a, albums.size, vis)
+        favGrid.onOpen = { open(it) }
+        return activeGrid.act(a, shown(), content())
     }
 
-    override fun onTap(x: Float, y: Float): Boolean {
-        if (state == 2) {
+    override fun onTouch(e: MotionEvent): Boolean {
+        if (state == 2 && e.actionMasked == MotionEvent.ACTION_UP) {
             load()
             return true
         }
-        val items = act.library.items
-        if (tab == 0) {
-            val i = photos.grid.hit(contentRect(), x, y, items.size)
-            if (i < 0) return false
-            photos.grid.sel = i
-            shell.push(ViewerScreen(act, items, i))
-        } else {
-            val i = albumList.hit(shell.ui, contentRect(), y, albums.size)
-            if (i < 0) return false
-            albumList.sel = i
-            shell.push(AlbumScreen(act, albums[i].first, albums[i].second))
-        }
-        return true
-    }
-
-    override fun onScroll(dy: Float) {
-        val d = if (dy > 0) 1 else -1
-        if (tab == 0) photos.grid.scrollBy(d, act.library.items.size, contentRect())
-        else albumList.scrollBy(d, albums.size, albumList.visible(shell.ui, shell.contentBottom - shell.contentTop))
-    }
-}
-
-class AlbumScreen(private val act: GalleryActivity, private val name: String, private val items: List<Media>) : Screen() {
-    override val title get() = name
-    private val grid = MediaGrid(act)
-
-    override fun draw(c: Canvas, ui: Ui, r: RectF) = grid.draw(c, ui, r, items, shell)
-
-    private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
-
-    override fun onAct(a: Act): Boolean {
-        if (a == Act.OK) {
-            shell.push(ViewerScreen(act, items, grid.grid.sel))
+        if (state != 1) return true
+        if (tab == 1) {
+            if (e.actionMasked == MotionEvent.ACTION_UP) {
+                val i = albumList.hit(shell.ui, content(), e.y, albumsNow().size)
+                if (i >= 0 && Math.abs(e.y - lastDownY) < 20f * shell.ui.sc) {
+                    albumList.sel = i
+                    shell.push(AlbumScreen(act, albumsNow()[i].first, albumsNow()[i].second))
+                }
+            } else if (e.actionMasked == MotionEvent.ACTION_DOWN) lastDownY = e.y
+            else if (e.actionMasked == MotionEvent.ACTION_MOVE) {
+                val dy = lastDownY - e.y
+                if (Math.abs(dy) > 40f * shell.ui.sc) {
+                    albumList.scrollBy(if (dy > 0) 1 else -1, albumsNow().size, albumList.visible(shell.ui, shell.contentBottom - shell.contentTop))
+                    lastDownY = e.y
+                }
+            }
             return true
         }
-        return grid.grid.act(a, items.size, rect())
+        favGrid.onOpen = { open(it) }
+        return activeGrid.touch(e, shown(), content(), shell.ui.sc)
     }
 
-    override fun onTap(x: Float, y: Float): Boolean {
-        val i = grid.grid.hit(rect(), x, y, items.size)
-        if (i < 0) return false
-        grid.grid.sel = i
-        shell.push(ViewerScreen(act, items, i))
-        return true
-    }
-
-    override fun onScroll(dy: Float) = grid.grid.scrollBy(if (dy > 0) 1 else -1, items.size, rect())
+    private var lastDownY = 0f
 }
 
-/** Full-screen viewer: next / previous, zoom and pan, slideshow, share, details. */
-class ViewerScreen(private val act: GalleryActivity, private val items: List<Media>, start: Int) : Screen() {
-    private var index = start.coerceIn(0, items.size - 1)
-    private var zoom = 1f
-    private var panX = 0f
-    private var panY = 0f
-    private var slideshow = false
-    private var lastAdvance = 0L
+/** Hidden, Recently deleted: a grid with its own way of opening. */
+class ItemsScreen(act: GalleryActivity, override val title: String, private val mode: Int) : GridScreen(act) {
+    override fun shown(): List<Media> = if (mode == ViewerScreen.TRASH) act.trashed() else act.hiddenItems()
+    override fun viewerMode() = mode
 
-    private val current get() = items[index]
-    override val title get() = current.name
-    override val tickMs get() = if (slideshow) 500L else 0L
-
-    override fun tools() = listOf(
-        Tool(Ic.SHARE, { share() }),
-        Tool(Ic.SLIDESHOW, {
-            slideshow = !slideshow
-            lastAdvance = System.currentTimeMillis()
-            shell.toast(if (slideshow) "Slideshow started" else "Slideshow stopped")
-        }),
-    )
-
-    override fun menu() = listOf(
-        MenuItem("Details") { details() },
-        MenuItem("Share") { share() },
-        MenuItem("Slideshow: " + if (slideshow) "stop" else "start") {
-            slideshow = !slideshow
-            lastAdvance = System.currentTimeMillis()
-        },
-    )
-
-    private fun go(d: Int) {
-        val n = index + d
-        if (n in items.indices) {
-            index = n
-            zoom = 1f
-            panX = 0f
-            panY = 0f
-            shell.invalidate()
-        } else if (slideshow) {
-            slideshow = false
-        }
-    }
-
-    private fun cycleZoom() {
-        if (current.isVideo) return
-        zoom = if (zoom >= 4f) 1f else zoom * 2f
-        panX = 0f
-        panY = 0f
-    }
-
-    private fun share() {
-        val i = Intent(Intent.ACTION_SEND).setType(current.mime).putExtra(Intent.EXTRA_STREAM, current.uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        act.startActivity(Intent.createChooser(i, "Share"))
-    }
-
-    private fun play() {
-        val i = Intent(Intent.ACTION_VIEW).setDataAndType(current.uri, current.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try {
-            act.startActivity(i)
-        } catch (_: Exception) {
-            shell.toast("No video player found")
-        }
-    }
-
-    private fun details() {
-        val m = current
-        val date = DateFormat.format("d MMM yyyy, HH:mm", m.dateSec * 1000).toString()
-        val size = if (m.size > 1_000_000) "%.1f MB".format(m.size / 1_000_000.0) else "${m.size / 1000} kB"
-        val dims = if (m.width > 0) "${m.width} x ${m.height}  -  $size" else size
-        shell.showOverlay(QueryDialog("${m.name}\n$dims\n$date\n${m.bucket}", "OK", null) { })
-    }
+    override fun menu() = zoomItems()
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        val m = current
-        if (slideshow && System.currentTimeMillis() - lastAdvance > 3000) {
-            lastAdvance = System.currentTimeMillis()
-            go(1)
+        if (shown().isEmpty()) {
+            ui.text(c, if (mode == ViewerScreen.TRASH) "Nothing recently deleted" else "Nothing hidden", r.centerX(), ui.baselineFor(r.centerY(), 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
+            return
         }
-        val maxPx = 1600
-        val bmp = if (m.isVideo) Thumbs.get(act, m) { shell.invalidate() } else FullImages.peek(m)
-        if (!m.isVideo) {
-            FullImages.load(act, m, maxPx) { shell.invalidate() }
-            items.getOrNull(index + 1)?.let { FullImages.load(act, it, maxPx) { } }
-        }
-        if (bmp == null) {
-            ui.text(c, "Loading...", r.centerX(), ui.baselineFor(r.centerY(), 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-        } else {
-            val scale = min(r.width() / bmp.width, r.height() / bmp.height) * zoom
-            val maxX = max(0f, (bmp.width * scale - r.width()) / 2f)
-            val maxY = max(0f, (bmp.height * scale - r.height()) / 2f)
-            panX = panX.coerceIn(-maxX, maxX)
-            panY = panY.coerceIn(-maxY, maxY)
-            ui.drawBitmapFit(c, bmp, r, zoom, panX, panY)
-        }
-        if (m.isVideo) {
-            ui.p.style = Paint.Style.FILL
-            ui.p.shader = null
-            ui.p.color = ui.al(Color.BLACK, 150)
-            c.drawCircle(r.centerX(), r.centerY(), 44f * ui.sc, ui.p)
-            ui.glyph(c, Ic.PLAY, r.centerX() + 3f * ui.sc, r.centerY(), 56f * ui.sc)
-            ui.text(c, fmtDuration(m.durationMs), r.right - 12f * ui.sc, r.bottom - 12f * ui.sc, 18f * ui.sc, Color.WHITE, Paint.Align.RIGHT)
-        }
-        ui.text(c, "${index + 1} / ${items.size}" + if (zoom > 1f) "   ${zoom.toInt()}x" else "", r.left + 12f * ui.sc, r.bottom - 12f * ui.sc, 18f * ui.sc, ui.al(Color.WHITE, 220), face = ui.light)
+        drawGrid(c, ui, r)
+        if (mode == ViewerScreen.TRASH) ui.text(c, "Photos here are removed for good after 30 days", r.centerX(), r.bottom - 10f * ui.sc, 15f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
     }
 
-    override fun onAct(a: Act): Boolean {
-        when (a) {
-            Act.OK -> if (current.isVideo) play() else cycleZoom()
-            Act.PREV -> go(-1)
-            Act.NEXT -> go(1)
-            Act.LEFT -> if (zoom > 1f) panX += 80f else go(-1)
-            Act.RIGHT -> if (zoom > 1f) panX -= 80f else go(1)
-            Act.UP -> if (zoom > 1f) panY += 80f else return false
-            Act.DOWN -> if (zoom > 1f) panY -= 80f else return false
-            else -> return false
-        }
-        return true
-    }
+    override fun onAct(a: Act) = gridAct(a)
+    override fun onTouch(e: MotionEvent) = gridTouch(e)
+}
 
-    override fun onTap(x: Float, y: Float): Boolean {
-        when {
-            x < shell.width / 3f -> go(-1)
-            x > shell.width * 2f / 3f -> go(1)
-            current.isVideo -> play()
-            else -> cycleZoom()
-        }
-        return true
-    }
+class AlbumScreen(act: GalleryActivity, override val title: String, private val items: List<Media>) : GridScreen(act) {
+    override fun shown(): List<Media> = items.filter { !act.marks.isHidden(it) && !act.marks.isTrashed(it) }
+    override fun menu() = zoomItems()
+    override fun tools() = listOf(zoomTool())
+    override fun draw(c: Canvas, ui: Ui, r: RectF) = drawGrid(c, ui, r)
+    override fun onAct(a: Act) = gridAct(a)
+    override fun onTouch(e: MotionEvent) = gridTouch(e)
 }

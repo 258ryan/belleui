@@ -20,8 +20,8 @@ android {
         applicationId = "com.belleui.gallery"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 20
+        versionName = "0.2-v2"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
