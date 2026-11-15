@@ -724,10 +724,8 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (page == 0 && popup == null && !reorder) {
                     val f = x / width
                     when {
-                        f < 0.17f -> perform(Act.BACK)
-                        f in 0.2f..0.35f -> lockScreen()
-                        f in 0.62f..0.8f -> toggleSilent()
-                        f > 0.86f -> perform(Act.OPTIONS)
+                        f < 0.25f -> perform(Act.BACK)
+                        f > 0.75f -> perform(Act.OPTIONS)
                     }
                 } else if (page == 1 || page == 0 || page == 2) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 0) Act.OK else Act.SETTINGS) else Act.OPTIONS)
                 else perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
@@ -1068,25 +1066,6 @@ class LauncherView(private val act: Activity) : View(act) {
         popup = Popup("Hidden apps", items)
     }
 
-    /** The lock key on the home toolbar: put the screen to sleep (the device is rooted; needs no app permission). */
-    private fun lockScreen() {
-        try {
-            Runtime.getRuntime().exec(arrayOf("su", "-c", "input keyevent 223"))
-        } catch (_: Throwable) {
-            showToast("Can't lock the screen")
-        }
-    }
-
-    private fun toggleSilent() {
-        try {
-            val am = act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-            am.ringerMode = if (am.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL) android.media.AudioManager.RINGER_MODE_SILENT else android.media.AudioManager.RINGER_MODE_NORMAL
-            invalidate()
-        } catch (_: Throwable) {
-            showToast("Not available")
-        }
-    }
-
     private fun showToast(s: String) {
         toast = s
         toastStart = System.currentTimeMillis()
@@ -1256,7 +1235,26 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawRoundRect(r, radius, radius, p)
     }
 
+    private var drawFaults = 0
+
     override fun onDraw(c: Canvas) {
+        val mark = c.save()
+        try {
+            drawAll(c)
+            drawFaults = 0
+        } catch (t: Throwable) {
+            // one bad widget or page must never crash the home screen: log it and keep the wallpaper and chrome
+            c.restoreToCount(mark)
+            android.util.Log.e("BelleLauncher", "draw failed", t)
+            drawFaults++
+            c.drawColor(Color.BLACK)
+            text(c, "Home screen problem", width / 2f, height / 2f, 24f * sc, Color.WHITE, Paint.Align.CENTER)
+            if (drawFaults < 30) postInvalidateDelayed(500)
+        }
+        c.restoreToCount(mark)
+    }
+
+    private fun drawAll(c: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
         val now = System.nanoTime()
@@ -2748,13 +2746,10 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
         if (page == 0 && !inModal) {
-            // the E6 home toolbar: Menu, lock, page dots, the sound profile, options (positions measured on the device)
+            // the E6 home toolbar: Menu, page dots, options (positions measured on the device)
             val k = w / 640f
             toolIcon(c, ICON_GRID, 60f * k, cy, s)
             hintLetter(c, backLetter(), 60f * k + 26f * sc, cy)
-            gfx.glyph(c, "qtg_toolbar_lock", 176f * k, cy, s, 255)
-            val silent = try { (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL } catch (_: Throwable) { false }
-            gfx.glyph(c, if (silent) "qtg_toolbar_audio_off" else "qtg_toolbar_audio_on", 458f * k, cy, s, 255)
             toolIcon(c, ICON_MENU, w - 57f * k, cy, s)
             hintLetter(c, optLetter(), w - 57f * k - 26f * sc, cy)
             // page dots: Hub and Home, the current one lit

@@ -272,7 +272,22 @@ def hooks(d):
         "    return-void\n\n"
         "    :belle_c\n\n"
     )
+    # the ROM's own app switcher (Fn+B, and the Recents key when no Quickstep launcher is there) is a page of the stock power
+    # menu; it opens the Belle recents list instead, and the stock switcher page is left alone if that fails
+    switcher = (
+        "\n    :belle_a\n"
+        "    iget-object v0, p0, Lcom/android/systemui/globalactions/GlobalActionsDialog;->mContext:Landroid/content/Context;\n\n"
+        "    invoke-static {v0}, Lcom/belleui/hook/BelleHook;->recents(Landroid/content/Context;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    const/4 v0, 0x0\n\n"
+        "    return v0\n\n"
+        "    :belle_c\n\n"
+    )
     n = 0
+    n += _hook(os.path.join(base, "globalactions/GlobalActionsDialog.smali"), ".method public showAppSwitcher(ZZLcom/android/systemui/plugins/GlobalActionsPanelPlugin;)Z", switcher, 2)
     n += _hook(os.path.join(base, "statusbar/AlertingNotificationManager.smali"), ".method public showNotification(Lcom/android/systemui/statusbar/notification/collection/NotificationEntry;)V", banner, 2)
     rc = os.path.join(base, "recents/Recents.smali")
     n += _hook(rc, ".method public toggleRecentApps()V", recents, 2)

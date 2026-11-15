@@ -1035,6 +1035,15 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
 
     // ---- drawing ------------------------------------------------------------------------------
 
+    private fun drawFault(c: Canvas, t: Throwable) {
+        android.util.Log.e("BelleShell", "screen failed to draw", t)
+        ui.rf.set(content)
+        ui.fill(c, ui.rf, Color.BLACK)
+        val sc = ui.sc
+        ui.text(c, "This screen had a problem", content.centerX(), content.centerY() - 10f * sc, 24f * sc, Color.WHITE, Paint.Align.CENTER)
+        ui.text(c, (t.message ?: t.javaClass.simpleName).take(70), content.centerX(), content.centerY() + 24f * sc, 18f * sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = content.width() - 40f * sc, face = ui.light)
+    }
+
     override fun onDraw(c: Canvas) {
         if (stack.isEmpty()) return
         val w = width.toFloat()
@@ -1056,14 +1065,24 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
             ui.fill(c, ui.rf, if (light) Belle.LIGHT_BG else Color.BLACK)
         }
         ui.lightMode = light
-        c.save()
-        c.clipRect(content)
-        s.draw(c, ui, content)
-        c.restore()
-        c.save()
-        c.clipRect(content)
-        s.drawOver(c, ui, content)
-        c.restore()
+        // a screen that throws while drawing must not take the whole app down: show what happened instead
+        val mark = c.save()
+        try {
+            c.clipRect(content)
+            s.draw(c, ui, content)
+        } catch (t: Throwable) {
+            c.restoreToCount(mark)
+            drawFault(c, t)
+        }
+        c.restoreToCount(mark)
+        val mark2 = c.save()
+        try {
+            c.clipRect(content)
+            s.drawOver(c, ui, content)
+        } catch (t: Throwable) {
+            c.restoreToCount(mark2)
+        }
+        c.restoreToCount(mark2)
         ui.lightMode = false
         if (s.tabs.isNotEmpty()) {
             ui.tabBar(c, w, statusH, s.tabs.map { it.label }, IntArray(s.tabs.size) { s.tabs[it].kind }, s.tab, tabFocus)

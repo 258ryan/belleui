@@ -397,6 +397,28 @@ object Hud {
             if (entries.isEmpty()) {
                 showList(sys, mod, "Recent", listOf(Entry("No other apps open") { }))
             } else {
+                // the same "close apps" action as the ROM's switcher: every task but the one on screen, home and the system,
+                // including the running tasks of apps that keep themselves out of recents
+                val ids = ArrayList<Int>()
+                for (t in tasks) ids.add(t.javaClass.getField("taskId").getInt(t))
+                entries.add(Entry("Close all apps", "Frees memory; apps keep their saved data") {
+                    Thread {
+                        val keep = setOf("com.android.systemui", "com.belleui.launcher", "android")
+                        val all = HashSet<Int>(ids)
+                        try {
+                            @Suppress("UNCHECKED_CAST")
+                            val run = iface.getMethod("getFilteredTasks", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType).invoke(atm, Int.MAX_VALUE, false) as List<Any>
+                            for (r in run) {
+                                val pkg = (r.javaClass.getField("baseActivity").get(r) as? android.content.ComponentName)?.packageName
+                                if (pkg != null && pkg !in keep) all.add(r.javaClass.getField("taskId").getInt(r))
+                            }
+                        } catch (_: Throwable) { }
+                        for (id in all) {
+                            if (id == topId) continue
+                            try { remove.invoke(atm, id) } catch (_: Throwable) { }
+                        }
+                    }.start()
+                })
                 showList(sys, mod, "Recent apps", entries)
             }
             true
