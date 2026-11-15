@@ -1948,6 +1948,8 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun darkCard(c: Canvas, r: RectF, radius: Float) {
+        // the Belle widget plate (widget_belle00); the drawn glass is only the fallback
+        if (nine(c, "widget_plate", r, 20, 14f)) return
         p.style = Paint.Style.FILL
         p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF3A3D42.toInt(), 0xFF0C0D0F.toInt(), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radius, radius, p)
@@ -2138,54 +2140,28 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun drawSwitches(c: Canvas, r: RectF) {
-        darkCard(c, r, r.height() / 2f)
+        darkCard(c, r, 14f * sc)
         val ringer = try { (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode } catch (_: Exception) { 2 }
-        val labels = arrayOf("Wi-Fi", if (ringer == android.media.AudioManager.RINGER_MODE_NORMAL) "Sound on" else "Quiet", "Quick settings")
+        val labels = arrayOf("Wi-Fi", if (ringer == android.media.AudioManager.RINGER_MODE_NORMAL) "Sound on" else "Quiet", "Settings")
         val on = booleanArrayOf(wifi || wifiOn(), ringer == android.media.AudioManager.RINGER_MODE_NORMAL, false)
+        val h = min(r.height() - 30f * sc, 68f * sc)
+        val w = h * 58f / 66f
         for (i in 0..2) {
             val cx = r.left + r.width() * (0.2f + 0.3f * i)
-            val d = min(r.height() * 0.62f, 54f * sc)
-            rf.set(cx - d / 2f, r.top + 8f * sc, cx + d / 2f, r.top + 8f * sc + d)
+            rf.set(cx - w / 2f, r.top + 6f * sc, cx + w / 2f, r.top + 6f * sc + h)
             subRects[i].set(rf)
-            p.style = Paint.Style.FILL
-            p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, if (on[i]) theme.accentLight else 0xFF6B7078.toInt(), if (on[i]) theme.accent else 0xFF3A3E44.toInt(), Shader.TileMode.CLAMP)
-            c.drawOval(rf, p)
-            p.shader = null
-            p.color = Color.WHITE
-            when (i) {
-                0 -> { // wi-fi arcs
-                    p.style = Paint.Style.STROKE
-                    p.strokeWidth = 2.6f * sc
-                    for (k in 1..3) c.drawArc(RectF(rf.centerX() - k * 6f * sc, rf.centerY() + 6f * sc - k * 6f * sc, rf.centerX() + k * 6f * sc, rf.centerY() + 6f * sc + k * 6f * sc), -135f, 90f, false, p)
-                    p.style = Paint.Style.FILL
-                    c.drawCircle(rf.centerX(), rf.centerY() + 7f * sc, 2.4f * sc, p)
-                }
-                1 -> { // speaker
-                    val cx2 = rf.centerX() - 3f * sc
-                    val path = Path()
-                    path.moveTo(cx2 - 7f * sc, rf.centerY() - 4f * sc)
-                    path.lineTo(cx2 - 2f * sc, rf.centerY() - 4f * sc)
-                    path.lineTo(cx2 + 4f * sc, rf.centerY() - 9f * sc)
-                    path.lineTo(cx2 + 4f * sc, rf.centerY() + 9f * sc)
-                    path.lineTo(cx2 - 2f * sc, rf.centerY() + 4f * sc)
-                    path.lineTo(cx2 - 7f * sc, rf.centerY() + 4f * sc)
-                    path.close()
-                    c.drawPath(path, p)
-                    if (on[i]) {
-                        p.style = Paint.Style.STROKE
-                        p.strokeWidth = 2.2f * sc
-                        c.drawArc(RectF(cx2 + 2f * sc, rf.centerY() - 8f * sc, cx2 + 14f * sc, rf.centerY() + 8f * sc), -50f, 100f, false, p)
-                        p.style = Paint.Style.FILL
-                    }
-                }
-                else -> { // three sliders
-                    for (k in -1..1) c.drawRoundRect(rf.centerX() - 9f * sc, rf.centerY() + k * 7f * sc - 1.5f * sc, rf.centerX() + 9f * sc, rf.centerY() + k * 7f * sc + 1.5f * sc, 1.5f * sc, 1.5f * sc, p)
-                    c.drawCircle(rf.centerX() - 3f * sc, rf.centerY() - 7f * sc, 3.2f * sc, p)
-                    c.drawCircle(rf.centerX() + 4f * sc, rf.centerY(), 3.2f * sc, p)
-                    c.drawCircle(rf.centerX() - 2f * sc, rf.centerY() + 7f * sc, 3.2f * sc, p)
-                }
+            // the real Belle panel switch pictures, as on the Status menu
+            val art = when (i) { 0 -> "wlan"; 1 -> "audio"; else -> null }
+            if (art != null) {
+                gfx.draw(c, "qtg_graf_panel_switch_${art}_${if (on[i]) "on" else "off"}", rf)
+            } else {
+                p.style = Paint.Style.FILL
+                p.shader = LinearGradient(0f, rf.top + 4f * sc, 0f, rf.bottom - 8f * sc, 0xFF3A3A3A.toInt(), 0xFF1C1C1C.toInt(), Shader.TileMode.CLAMP)
+                c.drawRoundRect(rf.left + 3f * sc, rf.top + 5f * sc, rf.right - 3f * sc, rf.bottom - 9f * sc, 14f * sc, 14f * sc, p)
+                p.shader = null
+                gfx.glyph(c, "toolbar_settings", rf.centerX(), rf.centerY() - 2f * sc, 30f * sc, 255)
             }
-            text(c, labels[i], cx, r.bottom - 8f * sc, 14f * sc, al(Color.WHITE, 210), Paint.Align.CENTER, face = light)
+            text(c, labels[i], cx, r.bottom - 7f * sc, 14f * sc, Color.WHITE, Paint.Align.CENTER, face = light)
         }
     }
 
