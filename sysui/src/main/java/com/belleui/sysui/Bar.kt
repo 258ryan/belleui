@@ -42,6 +42,8 @@ object Bar {
         private set
     var batteryPct = 100
         private set
+    var title = ""
+        private set
     var charging = false
         private set
 
@@ -54,6 +56,30 @@ object Bar {
         step("window") { addWindow() }
         step("receivers") { receivers() }
         step("register") { register(0) }
+        step("title") { pollTitle() }
+    }
+
+    /** The label of the app on screen: the Belle status bar names what you are looking at. */
+    private fun pollTitle() {
+        try {
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            @Suppress("DEPRECATION")
+            val top = am.getRunningTasks(1).firstOrNull()?.topActivity
+            val label = if (top == null) "" else {
+                val pm = ctx.packageManager
+                try {
+                    pm.getActivityInfo(top, 0).loadLabel(pm).toString().ifBlank { pm.getApplicationLabel(pm.getApplicationInfo(top.packageName, 0)).toString() }
+                } catch (_: Throwable) {
+                    top.packageName
+                }
+            }
+            if (label != title) {
+                title = label
+                view?.invalidate()
+            }
+        } catch (_: Throwable) {
+        }
+        main.postDelayed({ pollTitle() }, 1500)
     }
 
     private fun step(what: String, block: () -> Unit) {

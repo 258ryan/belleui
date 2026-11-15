@@ -438,6 +438,7 @@ class QueryDialog(
     private val message: String,
     private val yes: String = "OK",
     private val no: String? = "Cancel",
+    private val title: String? = null,
     private val onYes: () -> Unit,
 ) : Overlay() {
     private var sel = 0
@@ -445,24 +446,38 @@ class QueryDialog(
     private val yesR = RectF()
     private val noR = RectF()
 
+    /** The Belle dialog: dimmed screen, a box in the middle with its heading bar, the message and the buttons inside it. */
     override fun draw(c: Canvas, ui: Ui, w: Float, h: Float, cTop: Float, cBot: Float) {
+        val sc = ui.sc
+        ui.rf.set(0f, cTop, w, cBot)
+        ui.fill(c, ui.rf, ui.al(Color.BLACK, 140))
         val lines = message.split("\n")
-        val bw = min(504f * ui.sc, w - 16f * ui.sc)
-        val bh = 24f * ui.sc + lines.size * 30f * ui.sc + 20f * ui.sc + 50f * ui.sc + 8f * ui.sc
+        val bw = min(504f * sc, w - 24f * sc)
+        val head = 46f * sc
+        val bh = head + 18f * sc + lines.size * 28f * sc + 18f * sc + 46f * sc + 14f * sc
         val x = (w - bw) / 2f
-        val y = cTop + 40f * ui.sc
+        val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
         box.set(x, y, x + bw, y + bh)
-        dialogFrame(c, ui, box, null)
+        ui.nine(c, "qtg_fr_popup", box, 40, 20f)
+        ui.rf.set(box.left, box.top, box.right, box.top + head)
+        ui.nine(c, "qtg_fr_popup_heading", ui.rf, 40, 20f)
+        ui.text(c, title ?: (if (no == null) "Information" else "Confirm"), box.left + 14f * sc, ui.baselineFor(box.top + head / 2f, 22f * sc), 22f * sc, maxW = bw - 70f * sc, face = ui.medium)
+        // the round "?" of a query, "i" of an information box
+        ui.p.style = Paint.Style.FILL
+        ui.p.color = Color.WHITE
+        c.drawCircle(box.right - 26f * sc, box.top + head / 2f, 11f * sc, ui.p)
+        ui.text(c, if (no == null) "i" else "?", box.right - 26f * sc, ui.baselineFor(box.top + head / 2f, 17f * sc), 17f * sc, Color.BLACK, Paint.Align.CENTER, face = ui.medium)
         for ((i, l) in lines.withIndex()) {
-            ui.text(c, l, box.left + 16f * ui.sc, ui.baselineFor(box.top + 30f * ui.sc + i * 30f * ui.sc, 20f * ui.sc), 20f * ui.sc, maxW = bw - 32f * ui.sc)
+            ui.text(c, l, box.left + 16f * sc, ui.baselineFor(box.top + head + 22f * sc + i * 28f * sc, 20f * sc), 20f * sc, maxW = bw - 32f * sc)
         }
-        val by = box.bottom - 8f * ui.sc - 50f * ui.sc
+        val by = box.bottom - 14f * sc - 46f * sc
         if (no == null) {
-            yesR.set(box.left + 8f * ui.sc, by, box.right - 8f * ui.sc, by + 50f * ui.sc)
+            val bwid = 150f * sc
+            yesR.set(box.centerX() - bwid / 2f, by, box.centerX() + bwid / 2f, by + 46f * sc)
         } else {
-            val half = (bw - 24f * ui.sc) / 2f
-            yesR.set(box.left + 8f * ui.sc, by, box.left + 8f * ui.sc + half, by + 50f * ui.sc)
-            noR.set(box.right - 8f * ui.sc - half, by, box.right - 8f * ui.sc, by + 50f * ui.sc)
+            val half = (bw - 40f * sc) / 2f
+            yesR.set(box.left + 14f * sc, by, box.left + 14f * sc + half, by + 46f * sc)
+            noR.set(box.right - 14f * sc - half, by, box.right - 14f * sc, by + 46f * sc)
             ui.pushButton(c, noR, no, sel == 1)
         }
         ui.pushButton(c, yesR, yes, sel == 0)

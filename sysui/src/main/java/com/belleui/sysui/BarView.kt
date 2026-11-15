@@ -32,13 +32,19 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawRect(r, p)
             p.shader = null
         }
-        val size = h * 0.56f
-        val pad = h * 0.45f
+        val size = h * 0.62f
+        val pad = h * 0.4f
 
-        // right: battery meter, then the clock
+        // left: the title of what is on screen, as on every Belle screen
+        ui.text(c, Bar.title, pad, ui.baselineFor(h / 2f, size), size, Color.WHITE, maxW = w * 0.45f)
+
+        // right, from the edge in: clock, battery, notification mark, wifi
         var x = w - pad
+        val clock = DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString()
+        ui.text(c, clock, x, ui.baselineFor(h / 2f, size), size, Color.WHITE, Paint.Align.RIGHT)
+        x -= ui.measure(clock, size) + pad * 0.6f
         val bw = h * 1.15f
-        val bh = h * 0.62f
+        val bh = h * 0.6f
         val bt = (h - bh) / 2f
         r.set(x - bw, bt, x, bt + bh)
         val bg = ui.gfx.get("qtg_graf_battery_level_bg")
@@ -50,31 +56,29 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawBitmap(full, null, r, null)
             c.restore()
         }
-        x -= bw + h * 0.25f
-        val pct = Bar.batteryPct.toString() + "%" + if (Bar.charging) "+" else ""
-        ui.text(c, pct, x, ui.baselineFor(h / 2f, size * 0.85f), size * 0.85f, 0xFFD8D8D8.toInt(), Paint.Align.RIGHT)
-        x -= ui.measure(pct, size * 0.85f) + pad
-        val clock = DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString()
-        ui.text(c, clock, x, ui.baselineFor(h / 2f, size), size, Color.WHITE, Paint.Align.RIGHT)
-
-        // left: wifi, notifications
-        var lx = pad
-        if (Bar.wifi) {
-            val s = h * 0.78f
-            r.set(lx, (h - s) / 2f, lx + s, (h + s) / 2f)
-            ui.gfx.draw(c, "qtg_toolbar_wlan_on", r)
-            lx += s + pad * 0.6f
-        }
-        val n = Bar.notifications
-        if (n > 0) {
-            val label = if (n > 99) "99+" else n.toString()
+        x -= bw + pad * 0.6f
+        if (Bar.notifications > 0) {
+            // an envelope, with the count beside it
+            val label = if (Bar.notifications > 99) "99+" else Bar.notifications.toString()
             val tw = ui.measure(label, size * 0.8f)
-            val d = h * 0.62f
-            r.set(lx, (h - d) / 2f, lx + maxOf(d, tw + h * 0.34f), (h + d) / 2f)
+            ui.text(c, label, x, ui.baselineFor(h / 2f, size * 0.8f), size * 0.8f, Color.WHITE, Paint.Align.RIGHT)
+            x -= tw + 4f
+            val ew = h * 0.62f
+            val eh = h * 0.42f
+            r.set(x - ew, (h - eh) / 2f, x, (h + eh) / 2f)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.6f
+            p.color = Color.WHITE
+            c.drawRect(r, p)
+            c.drawLine(r.left, r.top, r.centerX(), r.centerY(), p)
+            c.drawLine(r.right, r.top, r.centerX(), r.centerY(), p)
             p.style = Paint.Style.FILL
-            p.color = 0xFF2F7BD8.toInt()
-            c.drawRoundRect(r, d / 2f, d / 2f, p)
-            ui.text(c, label, r.centerX(), ui.baselineFor(r.centerY(), size * 0.8f), size * 0.8f, Color.WHITE, Paint.Align.CENTER)
+            x -= ew + pad * 0.6f
+        }
+        if (Bar.wifi) {
+            val s = h * 0.8f
+            r.set(x - s, (h - s) / 2f, x, (h + s) / 2f)
+            ui.gfx.draw(c, "qtg_toolbar_wlan_on", r)
         }
     }
 
