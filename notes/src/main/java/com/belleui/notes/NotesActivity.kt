@@ -50,7 +50,13 @@ class NotesActivity : BelleActivity() {
         root.addView(shell, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         field = EditText(this)
         // a pale yellow sticky note, with dark writing
-        field.setBackgroundColor(0xFFFFF4B8.toInt())
+        // the Belle notes paper
+        try {
+            val bmp = android.graphics.BitmapFactory.decodeStream(assets.open("belle/qgn_graf_hs_notes_bg_8x6.png"))
+            field.background = android.graphics.drawable.BitmapDrawable(resources, bmp)
+        } catch (_: Exception) {
+            field.setBackgroundColor(0xFFFFF4B8.toInt())
+        }
         field.setTextColor(0xFF2B2B2B.toInt())
         field.setHintTextColor(0xFF9A936B.toInt())
         field.hint = "Write a note. Press back to save."

@@ -165,7 +165,39 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
         })
     }
 
+    /** The Belle analogue face and pointers from the theme; false if they are missing, so the drawn clock below is used. */
+    private fun drawThemeAnalog(c: Canvas, ui: Ui, cx: Float, cy: Float, rad: Float, cal: Calendar): Boolean {
+        val g = ui.gfx
+        val hand1 = g.get("qsn_cp_clock_analogue_pointer_hour") ?: return false
+        val hand2 = g.get("qsn_cp_clock_analogue_pointer_minute") ?: return false
+        if (!g.drawPart(c, "qsn_cp_clock_analogue_face_1", android.graphics.Rect(0, 5, 306, 309), RectF(cx - rad, cy - rad, cx + rad, cy + rad))) return false
+        val s = (2f * rad) / 306f
+        val sec = cal.get(Calendar.SECOND)
+        val min = cal.get(Calendar.MINUTE) + sec / 60f
+        val hour = (cal.get(Calendar.HOUR) % 12) + min / 60f
+        val half = 96f * s
+        val box = RectF(cx - half, cy - half, cx + half, cy + half)
+        c.save()
+        c.rotate(hour * 30f, cx, cy)
+        c.drawBitmap(hand1, null, box, ui.p)
+        c.restore()
+        c.save()
+        c.rotate(min * 6f, cx, cy)
+        c.drawBitmap(hand2, null, box, ui.p)
+        c.restore()
+        // the second hand has no theme graphic: a thin line in the accent colour
+        val a = sec * PI.toFloat() / 30f
+        ui.p.style = Paint.Style.STROKE
+        ui.p.strokeWidth = 2f * ui.sc
+        ui.p.color = Belle.BLUE_LIGHT
+        c.drawLine(cx - sin(a) * rad * 0.1f, cy + cos(a) * rad * 0.1f, cx + sin(a) * rad * 0.8f, cy - cos(a) * rad * 0.8f, ui.p)
+        ui.p.style = Paint.Style.FILL
+        c.drawCircle(cx, cy, 4f * ui.sc, ui.p)
+        return true
+    }
+
     private fun drawAnalog(c: Canvas, ui: Ui, cx: Float, cy: Float, rad: Float, cal: Calendar) {
+        if (drawThemeAnalog(c, ui, cx, cy, rad, cal)) return
         val p = ui.p
         p.shader = null
         p.style = Paint.Style.FILL
@@ -219,8 +251,12 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
         val w = r.right - x - 16f * ui.sc
         val time = DateFormat.format(if (is24) "HH:mm" else "h:mm", now).toString()
         val topY = r.top + 24f * ui.sc
-        ui.text(c, time, x, ui.baselineFor(topY + 36f * ui.sc, 72f * ui.sc, ui.light), 72f * ui.sc, face = ui.light)
-        if (!is24) ui.text(c, DateFormat.format("a", now).toString(), x + ui.measure(time, 72f * ui.sc, ui.light) + 8f * ui.sc, ui.baselineFor(topY + 56f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.BLUE_LIGHT)
+        // the Belle digital clock digits
+        val dh = 66f * ui.sc
+        val dw = ui.gfx.digitsWidth(time, dh)
+        if (dw > 0f) ui.gfx.digits(c, time, x, topY + 34f * ui.sc, dh)
+        else ui.text(c, time, x, ui.baselineFor(topY + 36f * ui.sc, 72f * ui.sc, ui.light), 72f * ui.sc, face = ui.light)
+        if (!is24) ui.text(c, DateFormat.format("a", now).toString(), x + (if (dw > 0f) dw else ui.measure(time, 72f * ui.sc, ui.light)) + 10f * ui.sc, ui.baselineFor(topY + 56f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.BLUE_LIGHT)
         ui.text(c, DateFormat.format("EEEE, d MMMM", now).toString(), x, ui.baselineFor(topY + 92f * ui.sc, 20f * ui.sc, ui.light), 20f * ui.sc, Belle.TEXT_MID, maxW = w, face = ui.light)
 
         var y = topY + 116f * ui.sc

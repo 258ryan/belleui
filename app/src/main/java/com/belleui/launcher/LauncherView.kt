@@ -175,6 +175,9 @@ class LauncherView(private val act: Activity) : View(act) {
     private val subRects = Array(3) { RectF() }
     private val media = MediaWidget(act) { postInvalidate() }
     private val calendar = CalendarWidget(act) { postInvalidate() }
+    private var notesList: List<Pair<String, String>> = emptyList()
+    private var noteIdx = 0
+    private var notesLoadedAt = 0L
     private var dateShort = ""
     private var dateShortFor = ""
     private var storageFree = 0L
@@ -282,6 +285,7 @@ class LauncherView(private val act: Activity) : View(act) {
         media.stop()
         if (repo.widgetLarge == 2) media.start()
         if (repo.widgetLarge == 1) calendar.refresh()
+        if (repo.widgetLarge == 5) loadNotes()
         readStorage()
         refreshClock()
         readWifi()
@@ -343,6 +347,7 @@ class LauncherView(private val act: Activity) : View(act) {
         media.stop()
         if (repo.widgetLarge == 2) media.start()
         if (repo.widgetLarge == 1) calendar.refresh()
+        if (repo.widgetLarge == 5) loadNotes()
         invalidate()
     }
 
@@ -517,7 +522,7 @@ class LauncherView(private val act: Activity) : View(act) {
             0 -> when (a) {
                 Act.UP -> if (homeSel >= 0) {
                     homeSel = -1
-                    widgetSub = if (repo.widgetLarge == 2 || repo.widgetLarge == 4) 1 else 0
+                    widgetSub = if (repo.widgetLarge == 2 || repo.widgetLarge == 4 || repo.widgetLarge == 5) 1 else 0
                 }
                 Act.DOWN -> if (homeSel < 0) homeSel = 0
                 Act.LEFT -> if (homeSel < 0) widgetStep(-1) else if (homeSel > 0) homeSel-- else homeEdge(-1)
@@ -1211,12 +1216,12 @@ class LauncherView(private val act: Activity) : View(act) {
         val top = cTop + 14f * sc
         // the highlight sits behind a widget so it shows as a border and never covers it; a button inside a widget
         // gets a ring drawn on top instead
-        val subFocus = homeSel < 0 && (repo.widgetLarge == 2 || repo.widgetLarge == 4) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty
+        val subFocus = homeSel < 0 && (repo.widgetLarge == 2 || repo.widgetLarge == 4 || repo.widgetLarge == 5) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty
         if (!subFocus) drawFocus(c, homeFocus.cur, 12f * sc)
         val wh = 92f * sc
         if (repo.widgetLarge >= 0) {
             val avail = homeTileRect(0, tmp).top - 10f * sc - top
-            val want = when (repo.widgetLarge) { 0 -> 150f; 1 -> 140f; 2 -> 156f; 3 -> 214f; else -> 96f } * sc
+            val want = when (repo.widgetLarge) { 0 -> 150f; 1 -> 140f; 2 -> 156f; 3 -> 214f; 5 -> 220f; else -> 96f } * sc
             homeWidgetRects[0].set(m, top, w - m, top + min(avail, want))
             homeWidgetRects[1].setEmpty()
             drawLarge(c, repo.widgetLarge, homeWidgetRects[0])
@@ -1371,7 +1376,7 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    private val largeNames = arrayOf("Two small widgets", "Flip clock", "Today", "Music player", "Notifications", "Quick switches")
+    private val largeNames = arrayOf("Two small widgets", "Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes")
 
     /** Home widgets: one large Belle widget, or two small ones whose contents are chosen here. */
     private fun openWidgetEditor(sel: Int) {
@@ -1418,7 +1423,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun widgetFocusRect(out: RectF): RectF {
         if (repo.widgetLarge >= 0) {
-            if ((repo.widgetLarge == 2 || repo.widgetLarge == 4) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty) {
+            if ((repo.widgetLarge == 2 || repo.widgetLarge == 4 || repo.widgetLarge == 5) && widgetSub in 0..2 && !subRects[widgetSub].isEmpty) {
                 out.set(subRects[widgetSub])
                 out.inset(-5f * sc, -5f * sc)
             } else {
@@ -1434,7 +1439,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun widgetStep(d: Int) {
         val large = repo.widgetLarge
-        if (large == 2 || large == 4) {
+        if (large == 2 || large == 4 || large == 5) {
             val n = widgetSub + d
             if (n < 0) homeEdge(-1) else if (n > 2) homeEdge(1) else widgetSub = n
         } else if (large < 0) {
@@ -1460,6 +1465,11 @@ class LauncherView(private val act: Activity) : View(act) {
                 else -> media.toggle()
             }
             3 -> setPage(-1)
+            5 -> when (widgetSub) {
+                0 -> if (noteIdx > 0) noteIdx--
+                2 -> if (noteIdx < notesList.size - 1) noteIdx++
+                else -> openOther("com.belleui.notes")
+            }
             4 -> when (widgetSub) {
                 0 -> tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
                 1 -> try {
@@ -1480,8 +1490,88 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> drawToday(c, r)
             2 -> drawMusic(c, r)
             3 -> drawInbox(c, r)
+            5 -> drawNotes(c, r)
             else -> drawSwitches(c, r)
         }
+    }
+
+    /** The latest notes, from the Notes app's read-only provider, off the main thread. */
+    private fun loadNotes() {
+        val now = System.currentTimeMillis()
+        if (now - notesLoadedAt < 5000) return
+        notesLoadedAt = now
+        Thread {
+            val out = ArrayList<Pair<String, String>>()
+            try {
+                act.contentResolver.query(android.net.Uri.parse("content://com.belleui.notes.provider/latest"), null, null, null, null)?.use { cur ->
+                    while (cur.moveToNext() && out.size < 6) out.add(cur.getString(0) to (cur.getString(1) ?: ""))
+                }
+            } catch (_: Exception) {
+            }
+            notesList = out
+            noteIdx = noteIdx.coerceIn(0, max(0, out.size - 1))
+            postInvalidate()
+        }.start()
+    }
+
+    /** The Belle notes widget: a yellow note with the latest note on it, a pen, and arrows to leaf through. */
+    private fun drawNotes(c: Canvas, r: RectF) {
+        loadNotes()
+        val aspect = 624f / 524f
+        val nh = r.height()
+        val nw = min(nh * aspect, r.width() - 90f * sc)
+        val box = RectF(r.centerX() - nw / 2f, r.top, r.centerX() + nw / 2f, r.top + nh)
+        if (!gfx.draw(c, "qgn_graf_hs_notes_bg_8x6", box)) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFFFFF4B8.toInt()
+            c.drawRoundRect(box, 8f * sc, 8f * sc, p)
+        }
+        val ink = 0xFF3A3520.toInt()
+        val n = notesList.getOrNull(noteIdx)
+        val tx = box.left + 18f * sc
+        val tw = box.width() - 36f * sc
+        if (n == null) {
+            text(c, "No notes yet", tx, box.top + 50f * sc, 20f * sc, ink, maxW = tw, face = medium)
+            text(c, "Press A to write one", tx, box.top + 78f * sc, 16f * sc, al(ink, 170), maxW = tw, face = light)
+        } else {
+            text(c, n.first, tx, box.top + 46f * sc, 21f * sc, ink, maxW = tw, face = medium)
+            var y = box.top + 76f * sc
+            for (line in wrapText(n.second, 17f * sc, tw, 4)) {
+                text(c, line, tx, y, 17f * sc, ink, maxW = tw, face = light)
+                y += 24f * sc
+            }
+        }
+        // pen
+        gfx.draw(c, "qgn_graf_hs_notes_pen", RectF(box.right - 52f * sc, box.bottom - 78f * sc, box.right - 14f * sc, box.bottom - 40f * sc))
+        // arrows and the note itself are the three buttons
+        val cy = box.centerY()
+        val prevOn = noteIdx > 0
+        val nextOn = noteIdx < notesList.size - 1
+        val pr = RectF(box.left - 44f * sc, cy - 22f * sc, box.left - 4f * sc, cy + 22f * sc)
+        val nx = RectF(box.right + 4f * sc, cy - 22f * sc, box.right + 44f * sc, cy + 22f * sc)
+        gfx.draw(c, if (prevOn) "qgn_indi_hs_notes_prev" else "qgn_indi_hs_notes_prev_disabled", pr)
+        gfx.draw(c, if (nextOn) "qgn_indi_hs_notes_next" else "qgn_indi_hs_notes_next_disabled", nx)
+        subRects[0].set(pr)
+        subRects[1].set(box)
+        subRects[2].set(nx)
+    }
+
+    private fun wrapText(text: String, size: Float, maxW: Float, maxLines: Int): List<String> {
+        val out = ArrayList<String>()
+        for (para in text.split('\n')) {
+            var line = ""
+            for (w in para.split(' ')) {
+                val t = if (line.isEmpty()) w else "$line $w"
+                if (measure(t, size, light) <= maxW) line = t else {
+                    if (line.isNotEmpty()) out.add(line)
+                    line = w
+                    if (out.size >= maxLines) return out
+                }
+            }
+            if (line.isNotEmpty()) out.add(line)
+            if (out.size >= maxLines) return out.take(maxLines)
+        }
+        return out.take(maxLines)
     }
 
     private fun darkCard(c: Canvas, r: RectF, radius: Float) {
@@ -1508,51 +1598,43 @@ class LauncherView(private val act: Activity) : View(act) {
         p.style = Paint.Style.FILL
     }
 
-    /** Two flip cards: hours and minutes, with the AM/PM mark and the date. */
+    /** Two flip cards: the Belle digital clock widget background and clock digits, with the AM/PM mark and the date. */
     private fun drawFlip(c: Canvas, r: RectF) {
-        val gap = 10f * sc
-        val cw = (r.width() - gap) / 2f
         val hh = clockStr.substringBefore(':')
         val mm = clockStr.substringAfter(':', "00")
         if (dateShortFor != clockStr) {
             dateShortFor = clockStr
             dateShort = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date())
         }
-        for (i in 0..1) {
-            val card = RectF(r.left + i * (cw + gap), r.top, r.left + i * (cw + gap) + cw, r.bottom)
-            darkCard(c, card, 14f * sc)
-            val size = card.height() * 0.80f
-            text(c, if (i == 0) hh else mm, card.centerX(), baselineFor(card.centerY(), size), size, Color.WHITE, Paint.Align.CENTER, face = light)
-            // the seam of a flip card
-            p.color = al(Color.BLACK, 230)
-            c.drawRect(card.left + 2f * sc, card.centerY() - 1.5f * sc, card.right - 2f * sc, card.centerY() + 1.5f * sc, p)
-            p.color = al(Color.WHITE, 50)
-            c.drawRect(card.left + 2f * sc, card.centerY() + 1.5f * sc, card.right - 2f * sc, card.centerY() + 2.5f * sc, p)
-            if (i == 1) {
-                if (ampmStr.isNotEmpty()) text(c, ampmStr, card.right - 14f * sc, card.top + 26f * sc, 17f * sc, al(Color.WHITE, 220), Paint.Align.RIGHT, face = light)
-                text(c, dateShort, card.right - 14f * sc, card.bottom - 12f * sc, 16f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
-            }
+        // the widget picture keeps its own proportions, centred
+        val bgAspect = 624f / 254f
+        val bw = min(r.width(), r.height() * bgAspect)
+        val box = RectF(r.centerX() - bw / 2f, r.top, r.centerX() + bw / 2f, r.top + bw / bgAspect)
+        if (!gfx.draw(c, "qgn_graf_hs_digital_bg_8x3", box)) {
+            darkCard(c, RectF(box.left, box.top, box.centerX() - 4f * sc, box.bottom), 14f * sc)
+            darkCard(c, RectF(box.centerX() + 4f * sc, box.top, box.right, box.bottom), 14f * sc)
         }
+        val dh = box.height() * 0.5f
+        val cy = box.centerY() - 3f * sc
+        val lx = box.left + box.width() * 0.25f
+        val rx = box.left + box.width() * 0.75f
+        if (gfx.digitsWidth(hh, dh) > 0f) {
+            gfx.digits(c, hh, lx, cy, dh, Paint.Align.CENTER)
+            gfx.digits(c, mm, rx, cy, dh, Paint.Align.CENTER)
+        } else {
+            val size = box.height() * 0.62f
+            text(c, hh, lx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+            text(c, mm, rx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+        }
+        if (ampmStr.isNotEmpty()) text(c, ampmStr, box.right - 22f * sc, box.top + 30f * sc, 16f * sc, al(Color.WHITE, 220), Paint.Align.RIGHT, face = light)
+        text(c, dateShort, box.right - 22f * sc, box.bottom - 16f * sc, 15f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
     }
 
-    /** A paper calendar: "Today" and what is coming in the next week. */
+    /** A paper calendar: the Belle calendar widget paper, "Today" and what is coming in the next week. */
     private fun drawToday(c: Canvas, r: RectF) {
-        paperCard(c, r)
-        // the binder rings
-        for (fx in floatArrayOf(0.16f, 0.84f)) {
-            val x = r.left + r.width() * fx
-            p.style = Paint.Style.FILL
-            p.color = 0xFF55575C.toInt()
-            rf.set(x - 7f * sc, r.top - 5f * sc, x + 7f * sc, r.top + 17f * sc)
-            c.drawRoundRect(rf, 7f * sc, 7f * sc, p)
-            p.color = 0xFFDEDEDA.toInt()
-            rf.set(x - 3.5f * sc, r.top + 1f * sc, x + 3.5f * sc, r.top + 11f * sc)
-            c.drawRoundRect(rf, 3.5f * sc, 3.5f * sc, p)
-        }
+        if (!gfx.draw(c, "qgn_graf_hs_cal_bg_8x2", r)) paperCard(c, r)
         val ink = 0xFF2B2B2B.toInt()
-        text(c, "Today", r.centerX(), r.top + 36f * sc, 22f * sc, ink, Paint.Align.CENTER, face = medium)
-        p.color = al(Color.BLACK, 50)
-        c.drawRect(r.left + 14f * sc, r.top + 46f * sc, r.right - 14f * sc, r.top + 47.5f * sc, p)
+        text(c, "Today", r.centerX(), r.top + 40f * sc, 22f * sc, ink, Paint.Align.CENTER, face = medium)
         val ev = calendar.events
         val grey = 0xFF6A6A6A.toInt()
         when {

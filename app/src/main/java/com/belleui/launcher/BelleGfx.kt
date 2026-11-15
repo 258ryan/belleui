@@ -65,4 +65,45 @@ class BelleGfx(private val ctx: Context) {
         paint.alpha = 255
         return true
     }
+
+    private val digitNames = mapOf(
+        '0' to "zero", '1' to "one", '2' to "two", '3' to "three", '4' to "four", '5' to "five", '6' to "six", '7' to "seven", '8' to "eight", '9' to "nine",
+        ':' to "colon", '.' to "stop",
+    )
+
+    /** Width of [text] set in the Belle digital-clock digits at height [h]. */
+    fun digitsWidth(text: String, h: Float): Float {
+        val s = h / 200f
+        var w = 0f
+        for (ch in text) {
+            val b = digitNames[ch]?.let { get("qsn_cp_clock_digital_new_$it") } ?: continue
+            w += b.width * s + 2f * s
+        }
+        return w
+    }
+
+    /** Draws [text] (digits, colon, point) in the Belle clock digits, [h] tall, with its vertical middle at [cy]. Returns the width used. */
+    fun digits(c: Canvas, text: String, x: Float, cy: Float, h: Float, align: Paint.Align = Paint.Align.LEFT, alpha: Int = 255): Float {
+        val s = h / 200f
+        val total = digitsWidth(text, h)
+        var px = when (align) { Paint.Align.CENTER -> x - total / 2f; Paint.Align.RIGHT -> x - total; else -> x }
+        paint.alpha = alpha
+        for (ch in text) {
+            val b = digitNames[ch]?.let { get("qsn_cp_clock_digital_new_$it") } ?: continue
+            dst.set(px, cy - b.height * s / 2f, px + b.width * s, cy + b.height * s / 2f)
+            c.drawBitmap(b, null, dst, paint)
+            px += b.width * s + 2f * s
+        }
+        paint.alpha = 255
+        return total
+    }
+
+    /** Draws a graphic at its natural 1x size scaled by [scale], top-left at (x, y). */
+    fun draw(c: Canvas, name: String, to: RectF, alpha: Int = 255): Boolean {
+        val bmp = get(name) ?: return false
+        paint.alpha = alpha
+        c.drawBitmap(bmp, null, to, paint)
+        paint.alpha = 255
+        return true
+    }
 }

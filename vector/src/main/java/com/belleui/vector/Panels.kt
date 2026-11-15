@@ -70,7 +70,16 @@ object Hud {
             }
             u.text(c, label, 20f * sc, 28f * sc, 18f * sc, Color.WHITE, face = u.light)
             u.glyph(c, if (frac <= 0f) Ic.AUDIO_OFF else Ic.AUDIO_ON, 40f * sc, h - 26f * sc, 34f * sc)
-            u.progressBar(c, RectF(68f * sc, h - 36f * sc, w - 22f * sc, h - 16f * sc), frac)
+            // the Belle volume ramp: the grey ramp, with the blue one drawn over it up to the current level
+            val ramp = RectF(68f * sc, 34f * sc, w - 22f * sc, h - 10f * sc)
+            if (u.gfx.draw(c, "qgn_graf_volume_set_off", ramp)) {
+                c.save()
+                c.clipRect(ramp.left, ramp.top, ramp.left + ramp.width() * frac, ramp.bottom)
+                u.gfx.draw(c, "qgn_graf_volume_set_on", ramp)
+                c.restore()
+            } else {
+                u.progressBar(c, RectF(68f * sc, h - 36f * sc, w - 22f * sc, h - 16f * sc), frac)
+            }
         }
     }
 

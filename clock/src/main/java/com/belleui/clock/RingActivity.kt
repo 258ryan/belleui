@@ -69,7 +69,8 @@ class RingScreen(private val act: RingActivity, private val label: String) : Scr
         val time = DateFormat.format(fmt, System.currentTimeMillis()).toString()
         val art = RectF(r.left + 40f * ui.sc, r.centerY() - 68f * ui.sc, r.left + 40f * ui.sc + 102f * ui.sc, r.centerY() + 68f * ui.sc)
         ui.gfx.draw(c, "qgn_note_alarm_clock", art)
-        ui.text(c, time, r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() - 40f * ui.sc, 88f * ui.sc, ui.light), 88f * ui.sc, align = Paint.Align.CENTER, face = ui.light)
+        if (ui.gfx.digitsWidth(time, 84f * ui.sc) > 0f) ui.gfx.digits(c, time, r.centerX() + 60f * ui.sc, r.centerY() - 58f * ui.sc, 84f * ui.sc, Paint.Align.CENTER)
+        else ui.text(c, time, r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() - 40f * ui.sc, 88f * ui.sc, ui.light), 88f * ui.sc, align = Paint.Align.CENTER, face = ui.light)
         ui.text(c, label, r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() + 30f * ui.sc, 26f * ui.sc), 26f * ui.sc, Belle.BLUE_LIGHT, Paint.Align.CENTER, maxW = r.width() - 40f * ui.sc)
         ui.text(c, "Y  Snooze 10 min        A  Stop", r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() + 90f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
     }
