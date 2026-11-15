@@ -79,18 +79,12 @@ object BelleHook {
         }
     }
 
-    /** The recents key: the Belle launcher's Recent list instead of the stock overview, which needs the stock launcher. */
+    /** The recents key: the Belle list of the device's real open apps (read inside System UI, no launcher or usage access needed). */
     @JvmStatic
     fun recents(ctx: Context): Boolean {
         return try {
             if (locked(ctx)) return false
-            val i = android.content.Intent("com.belleui.launcher.RECENTS")
-                .setClassName("com.belleui.launcher", "com.belleui.launcher.MainActivity")
-                .putExtra("belle_recents", true)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            if (ctx.packageManager.resolveActivity(i, 0) == null) return false
-            ctx.startActivity(i)
-            true
+            Hud.showRecents(ctx, ctx)
         } catch (_: Throwable) {
             false
         }

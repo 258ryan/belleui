@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Shader
@@ -28,6 +29,7 @@ import com.belleui.kit.Ic
 import com.belleui.kit.Profiles
 import com.belleui.kit.Row
 import com.belleui.kit.Ui
+import kotlin.math.max
 import kotlin.math.min
 
 /** Everything here runs inside the system UI process, drawn with the Belle kit from this module's own context. */
@@ -224,10 +226,14 @@ object Hud {
     // a Belle list dialog (the power menu)
     // ------------------------------------------------------------------------------------------
 
-    class Entry(val title: String, val subtitle: String? = null, val action: () -> Unit)
+    class Entry(val title: String, val subtitle: String? = null, val icon: android.graphics.Bitmap? = null, val onClose: (() -> Unit)? = null, val action: () -> Unit)
 
-    private class ListView(val sys: Context, val mod: Context, val title: String, val entries: List<Entry>, val close: () -> Unit) : View(sys) {
+    private class ListView(val sys: Context, val mod: Context, val title: String, entries0: List<Entry>, val close: () -> Unit) : View(sys) {
+        val entries = entries0.toMutableList()
         var sel = 0
+        private var top = 0
+        private var vis = 1
+        private var rowH = 0f
         private var ui: Ui? = null
         private val box = RectF()
         private val row = RectF()
@@ -235,24 +241,57 @@ object Hud {
         override fun onDraw(c: Canvas) {
             val u = ui ?: ui(mod, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).also { ui = it }
             val sc = u.sc
-            val rows = entries.size
-            val rowH = Belle.MENU_ITEM_H * sc
-            val w = min(width * 0.8f, 420f * sc)
-            val h = 54f * sc + rows * rowH + 10f * sc
+            val rich = entries.any { it.icon != null }
+            rowH = (if (rich) Belle.ROW_H else Belle.MENU_ITEM_H + 10f) * sc
+            val head = 54f * sc
+            vis = max(1, min(entries.size, ((height * 0.9f - head - 16f * sc) / rowH).toInt()))
+            if (sel < top) top = sel else if (sel >= top + vis) top = sel - vis + 1
+            top = top.coerceIn(0, max(0, entries.size - vis))
+            val w = min(width * 0.9f, (if (rich) 540f else 440f) * sc)
+            val h = head + vis * rowH + 12f * sc + (if (rich) 28f * sc else 0f)
             box.set((width - w) / 2f, (height - h) / 2f, (width + w) / 2f, (height + h) / 2f)
-            u.nine(c, "qtg_fr_popup", box, 40, 20f)
-            u.text(c, title, box.left + 20f * sc, box.top + 36f * sc, 22f * sc, Belle.BLUE_LIGHT, face = u.medium)
-            for ((i, e) in entries.withIndex()) {
-                row.set(box.left + 8f * sc, box.top + 48f * sc + i * rowH, box.right - 8f * sc, box.top + 48f * sc + (i + 1) * rowH)
-                u.listRow(c, row, i == sel, Row(e.title, e.subtitle))
+            u.popupPlate(c, box)
+            u.text(c, title, box.left + 18f * sc, u.baselineFor(box.top + head / 2f + 2f * sc, 24f * sc), 24f * sc, 0xFF4A90D9.toInt(), face = u.medium)
+            u.p.style = Paint.Style.FILL
+            u.p.shader = null
+            u.p.color = 0xFF4A90D9.toInt()
+            c.drawRect(box.left + 8f * sc, box.top + head, box.right - 8f * sc, box.top + head + 2f * sc, u.p)
+            for (j in 0 until vis) {
+                val i = top + j
+                val e = entries[i]
+                row.set(box.left + 6f * sc, box.top + head + 4f * sc + j * rowH, box.right - 6f * sc, box.top + head + 4f * sc + (j + 1) * rowH)
+                u.listRow(c, row, i == sel, Row(e.title, e.subtitle, icon = e.icon, rightReserve = if (e.onClose != null) 44f else 0f))
+                if (e.onClose != null) u.glyph(c, Ic.CLOSE, row.right - 30f * sc, row.centerY(), 28f * sc)
             }
+            if (rich) {
+                u.text(c, "A  Open     Y  Close app", box.centerX(), u.baselineFor(box.bottom - 16f * sc, 17f * sc, u.light), 17f * sc, Belle.TEXT_MID, Paint.Align.CENTER, face = u.light)
+            }
+            if (entries.size > vis) u.scrollbar(c, box.right - 4f * sc, box.top + head + 4f * sc, box.top + head + 4f * sc + vis * rowH, top / (entries.size - vis).toFloat(), vis.toFloat() / entries.size)
+        }
+
+        private fun closeSel() {
+            val e = entries.getOrNull(sel) ?: return
+            val oc = e.onClose ?: return
+            try { oc() } catch (_: Throwable) { }
+            entries.removeAt(sel)
+            if (entries.isEmpty()) close() else sel = sel.coerceIn(0, entries.size - 1)
+            invalidate()
         }
 
         fun key(code: Int, ev: KeyEvent): Boolean {
             if (ev.action != KeyEvent.ACTION_DOWN) return true
+            if (entries.isEmpty()) {
+                close()
+                return true
+            }
             when (code) {
                 KeyEvent.KEYCODE_DPAD_UP -> sel = (sel - 1 + entries.size) % entries.size
                 KeyEvent.KEYCODE_DPAD_DOWN -> sel = (sel + 1) % entries.size
+                KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (entries[sel].onClose == null) return code != KeyEvent.KEYCODE_DPAD_RIGHT && false
+                    closeSel()
+                    return true
+                }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> {
                     close()
                     entries[sel].action()
@@ -274,10 +313,16 @@ object Hud {
                 close()
                 return true
             }
-            val i = ((e.y - box.top - 48f * (ui?.sc ?: 1f)) / (Belle.MENU_ITEM_H * (ui?.sc ?: 1f))).toInt()
-            if (i in entries.indices) {
-                close()
-                entries[i].action()
+            val sc = ui?.sc ?: 1f
+            val i = top + ((e.y - box.top - 58f * sc) / rowH).toInt()
+            if (e.y > box.top + 58f * sc && i in entries.indices) {
+                sel = i
+                if (entries[i].onClose != null && e.x > box.right - 64f * sc) {
+                    closeSel()
+                } else {
+                    close()
+                    entries[i].action()
+                }
             }
             return true
         }
@@ -310,6 +355,54 @@ object Hud {
         dialog = d
         d.show()
         v.requestFocus()
+    }
+
+    /** The Belle recents: the device's real task list (the same one the ROM's own app switcher uses), open or close each app. */
+    fun showRecents(sys: Context, mod: Context): Boolean {
+        return try {
+            val atmCls = Class.forName("android.app.ActivityTaskManager")
+            val atm = atmCls.getMethod("getService").invoke(null)!!
+            val iface = Class.forName("android.app.IActivityTaskManager")
+            val uid = android.os.Process.myUserHandle().hashCode()
+            val cu = Class.forName("android.app.ActivityManager").getMethod("getCurrentUser").invoke(null) as Int
+            // the newest tasks, including those that keep themselves out of recents (games started from a frontend)
+            val slice = iface.getMethod("getRecentTasks", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(atm, 30, 1 or 2, cu)!!
+            @Suppress("UNCHECKED_CAST")
+            val tasks = slice.javaClass.getMethod("getList").invoke(slice) as List<Any>
+            val running = iface.getMethod("getTasks", Int::class.javaPrimitiveType).invoke(atm, 1) as List<*>
+            val topId = running.firstOrNull()?.let { it.javaClass.getField("taskId").getInt(it) } ?: -1
+            val pm = sys.packageManager
+            val remove = iface.getMethod("removeTask", Int::class.javaPrimitiveType)
+            val start = iface.getMethod("startActivityFromRecents", Int::class.javaPrimitiveType, android.os.Bundle::class.java)
+            val seen = HashSet<String>()
+            val entries = ArrayList<Entry>()
+            for (t in tasks) {
+                val id = t.javaClass.getField("taskId").getInt(t)
+                val base = t.javaClass.getField("baseIntent").get(t) as? Intent
+                val orig = t.javaClass.getField("origActivity").get(t) as? android.content.ComponentName
+                val comp = orig ?: base?.component ?: continue
+                val pkg = comp.packageName
+                if (id == topId || pkg == "com.android.systemui" || pkg == "com.belleui.launcher" || pkg == "android" || !seen.add(pkg)) continue
+                val info = try { pm.getActivityInfo(comp, 0) } catch (_: Throwable) { continue }
+                val label = info.loadLabel(pm).toString()
+                val d = info.loadIcon(pm)
+                val bmp = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+                d.setBounds(0, 0, 96, 96)
+                d.draw(Canvas(bmp))
+                entries.add(Entry(label, null, bmp, { try { remove.invoke(atm, id) } catch (_: Throwable) { } }) {
+                    try { start.invoke(atm, id, null) } catch (_: Throwable) { }
+                })
+            }
+            if (entries.isEmpty()) {
+                showList(sys, mod, "Recent", listOf(Entry("No other apps open") { }))
+            } else {
+                showList(sys, mod, "Recent apps", entries)
+            }
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     /** The Belle power menu. */
@@ -751,7 +844,7 @@ object Hud {
             }
             // activities that always apply: the profile, and the brightness (a list item with a bar)
             run {
-                val h = 62f * sc
+                val h = 94f * sc
                 val focus = sel == 1
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
@@ -762,16 +855,16 @@ object Hud {
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
                 val pi = Profiles.current(sys)
-                rf.set(14f * sc, y + 11f * sc, 14f * sc + 40f * sc, y + 11f * sc + 40f * sc)
+                rf.set(18f * sc, y + 19f * sc, 18f * sc + 56f * sc, y + 19f * sc + 56f * sc)
                 u.gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", rf)
-                u.text(c, "Profile", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
-                u.text(c, Profiles.names[pi], 66f * sc, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
-                u.text(c, "A: change", w - 14f * sc, y + 38f * sc, 15f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
+                u.text(c, "Profile", 90f * sc, y + 38f * sc, 25f * sc, Color.WHITE, face = u.medium)
+                u.text(c, Profiles.names[pi], 90f * sc, y + 70f * sc, 20f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
+                u.text(c, "A: change", w - 18f * sc, y + 56f * sc, 18f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
                 mark(1, y, y + h)
                 y += h
             }
             run {
-                val h = 62f * sc
+                val h = 94f * sc
                 val focus = sel == 4
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
@@ -781,8 +874,8 @@ object Hud {
                     u.p.color = 0xFF3A3A3A.toInt()
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
-                u.text(c, "Brightness", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
-                u.progressBar(c, RectF(66f * sc, y + 38f * sc, w - 20f * sc, y + 54f * sc), brightness() / 255f)
+                u.text(c, "Brightness", 90f * sc, y + 38f * sc, 25f * sc, Color.WHITE, face = u.medium)
+                u.progressBar(c, RectF(90f * sc, y + 54f * sc, w - 24f * sc, y + 74f * sc), brightness() / 255f)
                 mark(4, y, y + h)
                 y += h
             }
@@ -790,12 +883,12 @@ object Hud {
             val normal = normal()
             header("Notifications", if (normal.isNotEmpty()) "Clear" else null, 5)
             if (normal.isEmpty()) {
-                u.text(c, noteProblem ?: "No notifications", 66f * sc, y + 30f * sc, 18f * sc, if (noteProblem != null) 0xFFE8A33D.toInt() else Belle.TEXT_MID, maxW = w - 80f * sc, face = u.light)
-                y += 44f * sc
+                u.text(c, noteProblem ?: "No notifications", 90f * sc, y + 40f * sc, 22f * sc, if (noteProblem != null) 0xFFE8A33D.toInt() else Belle.TEXT_MID, maxW = w - 80f * sc, face = u.light)
+                y += 62f * sc
             }
             var idx = 6
             fun noteRow(n: Notes.Item, index: Int) {
-                val h = 66f * sc
+                val h = 94f * sc
                 val focus = sel == index
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
@@ -806,18 +899,21 @@ object Hud {
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
                 val ic = icon(n.pkg)
-                rf.set(14f * sc, y + 13f * sc, 14f * sc + 40f * sc, y + 13f * sc + 40f * sc)
+                rf.set(18f * sc, y + 19f * sc, 18f * sc + 56f * sc, y + 19f * sc + 56f * sc)
                 if (ic != null) c.drawBitmap(ic, null, rf, null)
-                if (!n.ongoing && android.os.SystemClock.uptimeMillis() > 0 && System.currentTimeMillis() - n.postTime < 10 * 60_000L) {
+                if (!n.ongoing && System.currentTimeMillis() - n.postTime < 10 * 60_000L) {
                     u.p.color = 0xFFE23B3B.toInt()
-                    c.drawCircle(52f * sc, y + 15f * sc, 5f * sc, u.p)
+                    c.drawCircle(70f * sc, y + 21f * sc, 6f * sc, u.p)
                 }
-                val tx = 66f * sc
-                u.text(c, n.title, tx, y + 28f * sc, 20f * sc, Color.WHITE, maxW = w - tx - 14f * sc, face = u.medium)
+                val tx = 90f * sc
+                // the time, top right, as in the E6 notification list
+                val time = android.text.format.DateFormat.format("HH:mm", n.postTime).toString()
+                u.text(c, time, w - 18f * sc, y + 36f * sc, 19f * sc, if (focus) Color.WHITE else Belle.BLUE_LIGHT, Paint.Align.RIGHT, face = u.light)
+                u.text(c, n.title, tx, y + 38f * sc, 25f * sc, Color.WHITE, maxW = w - tx - 90f * sc, face = u.medium)
                 if (n.progress != null) {
-                    u.progressBar(c, RectF(tx, y + 38f * sc, w - 16f * sc, y + 54f * sc), n.progress)
+                    u.progressBar(c, RectF(tx, y + 54f * sc, w - 24f * sc, y + 74f * sc), n.progress)
                 } else if (!n.text.isNullOrBlank()) {
-                    u.text(c, n.text, tx, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 14f * sc, face = u.light)
+                    u.text(c, n.text, tx, y + 70f * sc, 20f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 18f * sc, face = u.light)
                 }
                 mark(index, y, y + h)
                 y += h
@@ -830,15 +926,15 @@ object Hud {
             }
             if (stockShade != null) {
                 // the full Android panel: every quick settings tile and the rest of the stock shade
-                val h = 62f * sc
+                val h = 94f * sc
                 val focus = sel == idx
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
                     c.drawRect(0f, y, w, y + h, u.p)
                     u.p.shader = null
                 }
-                u.text(c, "All quick settings", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
-                u.text(c, "Every tile of the Android panel", 66f * sc, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
+                u.text(c, "All quick settings", 90f * sc, y + 38f * sc, 25f * sc, Color.WHITE, face = u.medium)
+                u.text(c, "Every tile of the Android panel", 90f * sc, y + 70f * sc, 20f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
                 mark(idx, y, y + h)
                 y += h
             }
