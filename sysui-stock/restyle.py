@@ -40,6 +40,8 @@ BELLE = {
     "GM2_blue_300": "#ff5cb4f8",
     "GM2_blue_500": "#ff1080dd",
     "GM2_blue_600": "#ff1080dd",
+    "accent_material_dark": "#ff1080dd",
+    "accent_material_light": "#ff1080dd",
 }
 
 
@@ -77,6 +79,23 @@ def patch_integers(path):
         n += k
     open(path, "w", encoding="utf-8").write(s)
     return n
+
+
+def patch_theme(d):
+    """The System UI's own theme carries the Belle blue as its accent: lit quick-settings tiles, switches, sliders."""
+    sp = os.path.join(d, "res/values/styles.xml")
+    s = open(sp, encoding="utf-8").read()
+    m = re.search(r'(<style name="Theme.SystemUI" [^>]*>)(.*?)(</style>)', s, re.S)
+    if not m or "belle_accent" in m.group(2):
+        return 0
+    extra = (
+        '\n        <item name="android:colorAccent">#ff1080dd</item>'
+        '\n        <item name="android:colorControlActivated">#ff1080dd</item>'
+        '\n        <!-- belle_accent -->'
+    )
+    s = s[: m.end(2)] + extra + s[m.end(2):]
+    open(sp, "w", encoding="utf-8").write(s)
+    return 1
 
 
 def patch_notification_shade(d):
@@ -171,6 +190,9 @@ if __name__ == "__main__":
     total += k
     k = patch_integers("%s/res/values/integers.xml" % d)
     print("integers", k, "changed")
+    total += k
+    k = patch_theme(d)
+    print("theme accent", k, "edits")
     total += k
     k = patch_notification_shade(d)
     print("notification shade", k, "edits")
