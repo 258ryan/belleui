@@ -66,6 +66,8 @@ INTEGERS = {
     "quick_qs_panel_max_columns": "4",
     "quick_settings_min_num_tiles": "4",
 }
+# the ROM sets its own counts for landscape, wide and portrait screens; they all become four
+INTEGER_FILES = ["values", "values-land", "values-port", "values-w550dp-land", "values-sw600dp-land", "values-sw600dp", "values-sw600dp-port"]
 
 
 def patch_integers(path):
@@ -89,6 +91,7 @@ def patch_theme(d):
     if not m or "belle_accent" in m.group(2):
         return 0
     extra = (
+        '\n        <item name="android:colorPrimary">#ff1080dd</item>'
         '\n        <item name="android:colorAccent">#ff1080dd</item>'
         '\n        <item name="android:colorControlActivated">#ff1080dd</item>'
         '\n        <!-- belle_accent -->'
@@ -188,7 +191,9 @@ if __name__ == "__main__":
     k = patch_dimens("%s/res/values/dimens.xml" % d)
     print("dimens", k, "sizes changed")
     total += k
-    k = patch_integers("%s/res/values/integers.xml" % d)
+    k = 0
+    for q in INTEGER_FILES:
+        k += patch_integers("%s/res/%s/integers.xml" % (d, q))
     print("integers", k, "changed")
     total += k
     k = patch_theme(d)
