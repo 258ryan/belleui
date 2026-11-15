@@ -560,8 +560,8 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
         when (a) {
-            Act.PREV -> if (page == 0) homeEdge(-1) else setPage(page - 1)
-            Act.NEXT -> if (page == 0) homeEdge(1) else setPage(page + 1)
+            Act.PREV -> setPage(page - 1) // L1 on Home opens the Hub
+            Act.NEXT -> setPage(page + 1)
             Act.MENU -> setPage(if (page != 0) 0 else 1)
             Act.SETTINGS -> if (page == 1) openSearch() else openQuick(0)
             Act.OPTIONS -> openOptions()
@@ -1496,7 +1496,9 @@ class LauncherView(private val act: Activity) : View(act) {
         if (best >= 0) {
             homeIdx = best
             val n = homeItems[best]
-            widgetSub = if (n.widget && (n.type == 2 || n.type == 4 || n.type == 5)) (if (a == Act.LEFT) 2 else 0).let { if (a == Act.UP || a == Act.DOWN) 1 else it } else 0
+            widgetSub = if (n.widget && (n.type == 2 || n.type == 4 || n.type == 5)) (if (a == Act.LEFT) 2 else 0).let { if (a == Act.UP || a == Act.DOWN) 1 else it } else 0        } else if (!homeEdit) {
+            // nothing further that way: the Hub is to the left, the Menu to the right
+            if (a == Act.LEFT) setPage(-1) else if (a == Act.RIGHT) setPage(1)
         }
     }
 
@@ -1722,6 +1724,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun openHomeMenu() {
         val cur = homeItems.getOrNull(homeIdx)
         val items = ArrayList<PopupItem>()
+        items += PopupItem("Hub") { setPage(-1) }
         if (homeEdit) {
             items += PopupItem("Done") {
                 homeEdit = false
