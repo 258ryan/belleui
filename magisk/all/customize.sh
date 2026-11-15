@@ -12,7 +12,7 @@ ui_print "    every build is signed with one shared key, but older builds were n
 ui_print "    and Android refuses a system app whose key differs from an installed copy."
 ui_print "- This also replaces the stock System UI with the Belle one (no lock screen)."
 ui_print "    Keep adb working: pair new computers BEFORE installing; pairing needs the stock System UI."
-ui_print "    Choose it in /data/adb/belleui/config: system_ui=belle (default), restyled (the ROM's own, Belle colours) or none."
+ui_print "    Choose it in /data/adb/belleui/config: system_ui=restyled (default: the ROM's own, Belle colours), belle or none."
 ui_print "    If a boot fails twice the stock System UI is used on the next one."
 mkdir -p /data/adb/belleui
 echo 0 > /data/adb/belleui/sysui_boots
