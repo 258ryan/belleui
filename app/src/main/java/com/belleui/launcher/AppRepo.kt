@@ -32,6 +32,8 @@ class AppEntry(
     val icon: Bitmap,
     /** ApplicationInfo.category (API 26+), -1 if unknown. */
     val category: Int = -1,
+    /** Extra intent data, for Symbian apps run by EKA21 (app uid, name, device). */
+    val extras: android.os.Bundle? = null,
 )
 
 /** Installed apps plus the user's layout (order, hidden, favourites, recents). */
@@ -60,8 +62,42 @@ class AppRepo(private val ctx: Context) {
                 } catch (_: Throwable) {
                     null // one bad app must never take the whole list down
                 }
-            }
+            } + symbianApps()
     }
+
+    /** Symbian apps installed in EKA21, listed like normal apps; each one opens straight into the app. */
+    private fun symbianApps(): List<AppEntry> {
+        val out = ArrayList<AppEntry>()
+        val base = android.net.Uri.parse("content://$EKA_AUTH")
+        try {
+            ctx.contentResolver.query(base.buildUpon().appendPath("apps").build(), null, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    try {
+                        val uid = c.getLong(0)
+                        val name = c.getString(1) ?: continue
+                        val device = c.getString(2) ?: ""
+                        val raw = try {
+                            ctx.contentResolver.openInputStream(base.buildUpon().appendPath("icon").appendPath(uid.toString()).build())?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                        } catch (_: Throwable) { null }
+                        val icon = withShadow(loadCustomIcon("eka:$uid") ?: frameTile(raw?.let { android.graphics.drawable.BitmapDrawable(ctx.resources, it) } ?: ctx.packageManager.getApplicationIcon(EKA_PKG), name))
+                        val ex = android.os.Bundle().apply {
+                            putLong("appUid", uid)
+                            putString("appName", name)
+                            putString("appDeviceCode", device)
+                            putBoolean("appIsShortcut", true)
+                        }
+                        out.add(AppEntry("eka:$uid", name, ComponentName(EKA_PKG, "$EKA_ACT"), icon, -1, ex))
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // EKA21 not installed
+        }
+        return out
+    }
+
+
 
     /**
      * Optional icon pack: drop `<package.name>.png` into
@@ -466,6 +502,9 @@ class AppRepo(private val ctx: Context) {
     }
 
     companion object {
+        private const val EKA_AUTH = "com.github.eka2l1.dualstick.belle"
+        private const val EKA_PKG = "com.github.eka2l1.dualstick"
+        private const val EKA_ACT = "com.github.eka2l1.emu.EmulatorActivity"
         const val MAX_FAVS = 4
         const val HOME_PAGES = 1
         const val MAX_RECENTS = 12

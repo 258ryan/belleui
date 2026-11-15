@@ -771,6 +771,7 @@ class LauncherView(private val act: Activity) : View(act) {
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(app.component)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        app.extras?.let { i.putExtras(it).setAction("emu.launch").removeCategory(Intent.CATEGORY_LAUNCHER) }
         try {
             act.startActivity(i)
             repo.pushRecent(app.key)

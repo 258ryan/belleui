@@ -14,6 +14,7 @@
 
     <queries>
         <package android:name="com.belleui.notes" />
+        <package android:name="com.github.eka2l1.dualstick" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
