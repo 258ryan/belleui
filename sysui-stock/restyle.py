@@ -65,6 +65,8 @@ DIMENS = {
 
 DIMENS.update({
     "notification_section_header_height": "40.0dip",
+    "heads_up_pinned_elevation": "6.0dip",
+    "notification_divider_height": "1.0dip",
 })
 
 # four switches across, like the Belle Status menu
