@@ -404,9 +404,37 @@ class AppRepo(private val ctx: Context) {
 
     // ---- recents ---------------------------------------------------------------
 
+    /**
+     * What you used lately: the system's own usage record (apps opened from anywhere, not only from here), newest
+     * first, then the ones opened from this launcher. Needs "usage access", which the module grants; without it only
+     * the launcher's own list is used.
+     */
     fun recentEntries(): List<AppEntry> {
         val byKey = apps.associateBy { it.key }
-        return getList("recents").mapNotNull { byKey[it] }
+        val own = getList("recents").mapNotNull { byKey[it] }
+        return (usageRecents() + own).distinctBy { it.component.packageName }.take(MAX_RECENTS)
+    }
+
+    private fun usageRecents(): List<AppEntry> {
+        try {
+            val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val end = System.currentTimeMillis()
+            val events = usm.queryEvents(end - 12L * 3600_000L, end) ?: return emptyList()
+            val last = HashMap<String, Long>()
+            val e = android.app.usage.UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                if (e.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) last[e.packageName] = e.timeStamp
+            }
+            val byPkg = apps.groupBy { it.component.packageName }
+            return last.entries
+                .filter { it.value > prefs.getLong("dismissed_" + it.key, 0L) }
+                .sortedByDescending { it.value }
+                .mapNotNull { byPkg[it.key]?.firstOrNull() }
+                .filter { it.component.packageName != ctx.packageName }
+        } catch (_: Throwable) {
+            return emptyList()
+        }
     }
 
     fun pushRecent(key: String) {
@@ -420,9 +448,16 @@ class AppRepo(private val ctx: Context) {
         val l = getList("recents")
         l.remove(key)
         putList("recents", l)
+        apps.firstOrNull { it.key == key }?.let { prefs.edit().putLong("dismissed_" + it.component.packageName, System.currentTimeMillis()).apply() }
     }
 
-    fun clearRecents() = putList("recents", emptyList())
+    fun clearRecents() {
+        putList("recents", emptyList())
+        val now = System.currentTimeMillis()
+        val ed = prefs.edit()
+        for (a in usageRecents()) ed.putLong("dismissed_" + a.component.packageName, now)
+        ed.apply()
+    }
 
     companion object {
         const val MAX_FAVS = 4

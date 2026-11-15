@@ -486,6 +486,11 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun handleKeyEvent(e: KeyEvent): Boolean {
+        if (e.keyCode == KeyEvent.KEYCODE_APP_SWITCH && !searching()) {
+            // the recents key, when the system lets it through to the launcher
+            if (e.action == KeyEvent.ACTION_UP) openRecents()
+            return true
+        }
         if (searching()) {
             if (e.keyCode == KeyEvent.KEYCODE_BACK || e.keyCode == KeyEvent.KEYCODE_ESCAPE || (e.keyCode == KeyEvent.KEYCODE_BUTTON_B && !searchEditing)) {
                 if (e.action == KeyEvent.ACTION_UP) closeSearch()
