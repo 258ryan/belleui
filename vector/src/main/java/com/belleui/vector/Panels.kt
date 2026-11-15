@@ -280,7 +280,7 @@ object Hud {
             try {
                 val nm = service() ?: return
                 nm.javaClass.getMethod("cancelNotificationWithTag", String::class.java, String::class.java, String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                    .invoke(nm, n.packageName, n.opPkg, n.tag, n.id, n.user.identifier)
+                    .invoke(nm, n.packageName, n.opPkg, n.tag, n.id, n.userId)
             } catch (_: Throwable) {
             }
         }
