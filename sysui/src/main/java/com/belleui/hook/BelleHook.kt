@@ -105,4 +105,16 @@ object BelleHook {
             false
         }
     }
+
+    /** An incoming notification: the Belle banner instead of the stock heads-up (not over the lock screen or for calls). */
+    @JvmStatic
+    fun banner(sbn: android.service.notification.StatusBarNotification): Boolean {
+        return try {
+            val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Context
+            if (locked(app)) return false
+            Hud.showBanner(app, app, sbn)
+        } catch (_: Throwable) {
+            false
+        }
+    }
 }

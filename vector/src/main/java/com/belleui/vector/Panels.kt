@@ -123,6 +123,102 @@ object Hud {
     }
 
     // ------------------------------------------------------------------------------------------
+    // incoming-notification banner (replaces the stock heads-up)
+    // ------------------------------------------------------------------------------------------
+
+    private var bannerView: BannerView? = null
+    private val hideBanner = Runnable { removeBanner(true) }
+
+    private class BannerView(val sys: Context, val mod: Context, val title: String, val text: String, val icon: android.graphics.drawable.Drawable?, val open: (() -> Unit)?) : View(sys) {
+        private var ui: Ui? = null
+        private val box = RectF()
+
+        override fun onDraw(c: Canvas) {
+            val u = ui ?: ui(mod, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).also { ui = it }
+            val sc = u.sc
+            val w = width.toFloat()
+            val h = height.toFloat()
+            u.p.style = Paint.Style.FILL
+            u.p.shader = LinearGradient(0f, 0f, 0f, h, 0xF2404040.toInt(), 0xF2181818.toInt(), Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, w, h, u.p)
+            u.p.shader = null
+            u.p.color = 0x33FFFFFF
+            c.drawRect(0f, 0f, w, 1f, u.p)
+            u.p.color = Belle.BLUE
+            c.drawRect(0f, h - 3f * sc, w, h, u.p)
+            val isz = 36f * sc
+            var x = 14f * sc
+            if (icon != null) {
+                icon.setBounds((x).toInt(), ((h - isz) / 2f).toInt(), (x + isz).toInt(), ((h + isz) / 2f).toInt())
+                icon.draw(c)
+                x += isz + 14f * sc
+            }
+            val maxW = w - x - 14f * sc
+            val ts = 19f * sc
+            val bs = 16f * sc
+            if (text.isBlank()) {
+                u.text(c, title, x, u.baselineFor(h / 2f, ts, u.medium), ts, Color.WHITE, maxW = maxW, face = u.medium)
+            } else {
+                u.text(c, title, x, u.baselineFor(h * 0.34f, ts, u.medium), ts, Color.WHITE, maxW = maxW, face = u.medium)
+                u.text(c, text, x, u.baselineFor(h * 0.70f, bs, u.light), bs, 0xFFC8C8C8.toInt(), maxW = maxW, face = u.light)
+            }
+        }
+
+        override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+            if (e.action == android.view.MotionEvent.ACTION_UP) {
+                try { open?.invoke() } catch (_: Throwable) { }
+                removeBanner(true)
+            }
+            return true
+        }
+    }
+
+    /** Shows [sbn] as a Belle banner under the status bar; false lets the stock heads-up run. */
+    fun showBanner(sys: Context, mod: Context, sbn: android.service.notification.StatusBarNotification): Boolean {
+        val n = sbn.notification
+        if (n.fullScreenIntent != null) return false
+        val ex = n.extras
+        val title = (ex.getCharSequence(android.app.Notification.EXTRA_TITLE) ?: "").toString()
+        val body = (ex.getCharSequence(android.app.Notification.EXTRA_TEXT) ?: ex.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT) ?: "").toString()
+        if (title.isBlank() && body.isBlank()) return false
+        val icon = try {
+            val pctx = sys.createPackageContext(sbn.packageName, 0)
+            n.smallIcon?.loadDrawable(pctx)?.mutate()?.also { it.setTint(Color.WHITE) }
+        } catch (_: Throwable) { null }
+        val pi = n.contentIntent
+        main.post {
+            try {
+                removeBanner(false)
+                val wm = sys.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val dm = sys.resources.displayMetrics
+                val sc = min(dm.widthPixels / 640f, dm.heightPixels / 480f)
+                val v = BannerView(sys, mod, title.ifBlank { sbn.packageName }, body, icon, if (pi == null) null else ({ pi.send() }))
+                val lp = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT, (64 * sc).toInt(), 2020,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT,
+                )
+                lp.gravity = Gravity.TOP
+                lp.title = "BelleBanner"
+                wm.addView(v, lp)
+                bannerView = v
+                v.translationY = -64f * sc
+                v.animate().translationY(0f).setDuration(220).start()
+                main.postDelayed(hideBanner, 4500)
+            } catch (_: Throwable) { }
+        }
+        return true
+    }
+
+    private fun removeBanner(animate: Boolean) {
+        main.removeCallbacks(hideBanner)
+        val v = bannerView ?: return
+        bannerView = null
+        val kill = Runnable { try { (v.sys.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v) } catch (_: Throwable) { } }
+        if (animate) v.animate().translationY(-v.height.toFloat()).setDuration(180).withEndAction(kill).start() else kill.run()
+    }
+
+    // ------------------------------------------------------------------------------------------
     // a Belle list dialog (the power menu)
     // ------------------------------------------------------------------------------------------
 

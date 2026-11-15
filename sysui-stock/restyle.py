@@ -260,7 +260,20 @@ def hooks(d):
         "    return-void\n\n"
         "    :belle_c\n\n"
     )
+    banner = (
+        "\n    :belle_a\n"
+        "    invoke-virtual {p1}, Lcom/android/systemui/statusbar/notification/collection/NotificationEntry;->getSbn()Landroid/service/notification/StatusBarNotification;\n\n"
+        "    move-result-object v0\n\n"
+        "    invoke-static {v0}, Lcom/belleui/hook/BelleHook;->banner(Landroid/service/notification/StatusBarNotification;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    return-void\n\n"
+        "    :belle_c\n\n"
+    )
     n = 0
+    n += _hook(os.path.join(base, "statusbar/AlertingNotificationManager.smali"), ".method public showNotification(Lcom/android/systemui/statusbar/notification/collection/NotificationEntry;)V", banner, 2)
     rc = os.path.join(base, "recents/Recents.smali")
     n += _hook(rc, ".method public toggleRecentApps()V", recents, 2)
     n += _hook(rc, ".method public showRecentApps(Z)V", recents, 2)
