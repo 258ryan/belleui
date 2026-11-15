@@ -19,6 +19,16 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew --no-daemon assembleDebug
+      - name: Restyle the stock System UI
+        run: |
+          curl -sSL -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
+          java -jar apktool.jar d -f -o sysui-dec sysui-stock/SystemUI-stock.apk
+          python3 sysui-stock/restyle.py sysui-dec
+          java -jar apktool.jar b -o sysui-unsigned.apk sysui-dec
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          $BT/zipalign -f -p 4 sysui-unsigned.apk sysui-aligned.apk
+          $BT/apksigner sign --ks keystore/aosp-platform.jks --ks-pass pass:android --ks-key-alias platform --key-pass pass:android --out SystemUI-restyled.apk sysui-aligned.apk
+          $BT/apksigner verify --print-certs SystemUI-restyled.apk | grep -E "SHA-1" || true
       - name: Pack the module
         run: |
           rm -rf module && cp -r magisk/all module
@@ -37,10 +47,10 @@ jobs:
             put "${pair%%:*}" "BelleUI${pair##*:}" app
           done
           cp vector/build/outputs/apk/debug/vector-debug.apk module/extra/BelleUI-Chooser-Vector.apk
-          # the System UI replacement, with its permission whitelist; post-fs-data.sh removes this folder if it does not boot
-          d=module/system/system_ext/priv-app/SystemUI; mkdir -p $d module/system/system_ext/etc/permissions
-          cp sysui/build/outputs/apk/debug/sysui-debug.apk $d/SystemUI.apk
-          touch $d/.replace
+          # both System UIs ride along in extra/; post-fs-data.sh puts the chosen one in place at boot
+          cp sysui/build/outputs/apk/debug/sysui-debug.apk module/extra/SystemUI-belle.apk
+          cp SystemUI-restyled.apk module/extra/SystemUI-restyled.apk
+          mkdir -p module/system/system_ext/etc/permissions
           cp magisk/sysui/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml module/system/system_ext/etc/permissions/
           rm -f module/README.md
           (cd module && zip -qr ../BelleUI-Complete-Magisk.zip .)

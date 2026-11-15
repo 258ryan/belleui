@@ -11,7 +11,9 @@ if [ ! -f $CONF ]; then
 set_default_home=1
 # make the Belle keyboard the input method
 set_default_keyboard=0
-# use the Belle System UI (status bar, pull-down, power menu, volume); 0 puts the stock one back
+# which System UI: belle (written from scratch), restyled (the ROM's own with Belle colours), none (stock)
+system_ui=belle
+# 0 puts the stock System UI back whatever system_ui says
 install_system_ui=1
 # install the Belle Chooser (Vector) module APK once
 install_vector_module=1
@@ -73,17 +75,22 @@ if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f 
   pm install -r $MODDIR/extra/BelleUI-Chooser-Vector.apk >/dev/null 2>&1 && touch $DIR/vector_installed
 fi
 
-# System UI boot guard: once the Belle System UI has registered as the status bar (it writes the boot number into a
-# setting), the "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
-if [ -d $MODDIR/system/system_ext ]; then
+# System UI boot guard: once the chosen System UI is up, the "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
+variant=${system_ui:-belle}
+[ "$install_system_ui" = "0" ] && variant=none
+if [ "$variant" != "none" ]; then
   sleep 30
-  ok=$(settings get global belle_sysui_ok)
-  boot=$(settings get global boot_count)
-  {
-    echo "$(date): System UI check boot=$boot ok=$ok"
-    logcat -d -s BelleSysUi:V 2>&1 | tail -40
-  } >> $DIR/sysui.log
-  if [ -n "$ok" ] && [ "$ok" = "$boot" ]; then
-    echo 0 > $DIR/sysui_boots
+  ok=0
+  if [ "$variant" = "belle" ]; then
+    # the Belle System UI writes the boot number into a setting once it is the registered status bar
+    [ "$(settings get global belle_sysui_ok)" = "$(settings get global boot_count)" ] && ok=1
+  else
+    # the stock one: its process is running and the status bar window exists
+    if [ -n "$(pidof com.android.systemui)" ] && dumpsys window windows 2>/dev/null | grep -q "StatusBar"; then ok=1; fi
   fi
+  {
+    echo "$(date): System UI check variant=$variant ok=$ok"
+    logcat -d -s BelleSysUi:V 2>&1 | tail -20
+  } >> $DIR/sysui.log
+  [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
 fi
