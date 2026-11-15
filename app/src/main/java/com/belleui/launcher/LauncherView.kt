@@ -61,7 +61,9 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private class PopupItem(val label: String, val action: () -> Unit)
     /** menu = S60 options menu popping up from the bottom-left; otherwise a titled dialog. */
-    private class Popup(val title: String, val items: List<PopupItem>, var sel: Int = 0, val menu: Boolean = false)
+    private class Popup(val title: String, val items: List<PopupItem>, var sel: Int = 0, val menu: Boolean = false) {
+        var top = 0 // first visible row when the list is taller than the screen
+    }
 
     private class AnimRect {
         val cur = RectF()
@@ -644,7 +646,7 @@ class LauncherView(private val act: Activity) : View(act) {
             if (!tmp.contains(x, y)) {
                 popup = null
             } else {
-                val row = ((y - tmp.top - popupTitleH(pu) - (if (pu.menu) 4f * sc else 0f)) / popupItemH(pu)).toInt()
+                val row = ((y - tmp.top - popupTitleH(pu) - (if (pu.menu) 4f * sc else 0f)) / popupItemH(pu)).toInt() + pu.top
                 if (row in pu.items.indices || (pu.menu && row >= pu.items.size)) {
                     pu.sel = min(row, pu.items.size)
                     perform(Act.OK)
@@ -1058,18 +1060,25 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun popupItemH(pu: Popup): Float {
         val full = POPUP_ROW * sc
-        if (!pu.menu) return full
-        return min(full, (height - statusH - 90f * sc) / pu.items.size)
+        return full
+    }
+
+    /** How many rows fit: a long menu scrolls instead of running off a small screen. */
+    private fun popupVis(pu: Popup): Int {
+        val ih = popupItemH(pu)
+        val avail = if (pu.menu) height - statusH - (4f + 6f + 50f + 8f) * sc else (cBot - cTop) - popupTitleH(pu) - 10f * sc
+        return max(1, min(pu.items.size, (avail / ih).toInt()))
     }
 
     private fun popupRect(pu: Popup, out: RectF): RectF {
         val ih = popupItemH(pu)
+        val vis = popupVis(pu)
         if (pu.menu) {
-            val bh = ih * pu.items.size + 4f * sc + 6f * sc + 50f * sc + 8f * sc
+            val bh = ih * vis + 4f * sc + 6f * sc + 50f * sc + 8f * sc
             out.set(0f, height - bh, width.toFloat(), height.toFloat())
         } else {
             val bw = min(504f * sc, width - 16f * sc) // sizeDialogMax
-            val bh = popupTitleH(pu) + ih * pu.items.size + 6f * sc
+            val bh = popupTitleH(pu) + ih * vis + 6f * sc
             val x = (width - bw) / 2f
             val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
             out.set(x, y, x + bw, y + bh)
@@ -1260,12 +1269,12 @@ class LauncherView(private val act: Activity) : View(act) {
     private var homeLoaded = false
     private var curWidget = -1
     private val HC = 4
-    private val HR = 4
+    private val HR = 3
     private var appMap: Map<String, AppEntry> = emptyMap()
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3, 5 -> 4 to 3; 0, 1, 2 -> 4 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2, 5 -> 4 to 2; else -> 4 to 1 }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1297,10 +1306,10 @@ class LauncherView(private val act: Activity) : View(act) {
         val raw = repo.homeLayout
         if (raw == null) {
             // first run: a flip clock on top and the old four shortcuts underneath
-            homeItems.add(HomeItem(true, "0", 0, 0, 4, 2))
+            homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
             var i = 0
             for (app in repo.favoriteEntries()) {
-                homeItems.add(HomeItem(false, app.key, i % HC, 2 + i / HC))
+                homeItems.add(HomeItem(false, app.key, i % HC, 1 + i / HC))
                 i++
                 if (i >= HC * 2) break
             }
@@ -1316,6 +1325,21 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             // shortcuts whose app is gone disappear
             homeItems.removeAll { !it.widget && repo.apps.none { a -> a.key == it.id } }
+            // a layout saved for a taller grid is packed again into this one
+            val keep = ArrayList<HomeItem>()
+            val again = ArrayList<HomeItem>()
+            for (it in homeItems) {
+                if (it.col + it.w <= HC && it.row + it.h <= HR && keep.none { o -> it.col < o.col + o.w && it.col + it.w > o.col && it.row < o.row + o.h && it.row + it.h > o.row }) keep.add(it) else again.add(it)
+            }
+            homeItems.clear()
+            homeItems.addAll(keep)
+            for (it in again) {
+                val at = findFree(it.w, min(it.h, HR)) ?: continue
+                it.col = at.first
+                it.row = at.second
+                it.h = min(it.h, HR)
+                homeItems.add(it)
+            }
         }
         homeIdx = homeIdx.coerceIn(0, max(0, homeItems.size - 1))
         homeStart()
@@ -1555,10 +1579,10 @@ class LauncherView(private val act: Activity) : View(act) {
                 val app = appFor(it)
                 if (app != null) {
                     val r = it.rect
-                    val isz = min(r.height() * 0.64f, 62f * sc)
+                    val isz = min(r.height() * 0.62f, 76f * sc) // the same icon size as the Menu
                     val top = r.top + 3f * sc
                     drawIcon(c, app.icon, r.centerX(), top + isz / 2f, isz)
-                    val tsz = 14f * sc
+                    val tsz = 15f * sc
                     val tw = min(measure(app.label, tsz) + 14f * sc, r.width() - 4f * sc)
                     rf.set(r.centerX() - tw / 2f, top + isz + 3f * sc, r.centerX() + tw / 2f, top + isz + 23f * sc)
                     p.color = al(Color.BLACK, 150)
@@ -2650,13 +2674,17 @@ class LauncherView(private val act: Activity) : View(act) {
         }
 
         val top0 = box.top + titleH + (if (pu.menu) 4f * sc else 0f)
-        for (i in pu.items.indices) {
-            val top = top0 + itemH * i
+        val vis = popupVis(pu)
+        val focus = min(pu.sel, pu.items.size - 1)
+        if (focus < pu.top) pu.top = focus else if (focus >= pu.top + vis) pu.top = focus - vis + 1
+        pu.top = pu.top.coerceIn(0, max(0, pu.items.size - vis))
+        for (i in pu.top until min(pu.items.size, pu.top + vis)) {
+            val top = top0 + itemH * (i - pu.top)
             val sel = i == pu.sel
             if (sel) {
                 tmp.set(box.left + 4f * sc, top + 1f * sc, box.right - 4f * sc, top + itemH - 1f * sc)
                 nine(c, "qtg_fr_list_pressed", tmp, 40, 14f)
-            } else if (i > 0) {
+            } else if (i > pu.top) {
                 p.style = Paint.Style.FILL
                 p.shader = null
                 p.color = al(Color.WHITE, 30)
@@ -2664,8 +2692,20 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             text(c, pu.items[i].label, box.left + 16f * sc, baselineFor(top + itemH / 2f, 22f * sc), 22f * sc, Color.WHITE, maxW = box.width() - 40f * sc)
         }
+        if (pu.items.size > vis) {
+            // a thin scroll bar on the right, since the list is longer than what fits
+            val trackT = top0 + 2f * sc
+            val trackH = itemH * vis - 4f * sc
+            val thumbH = trackH * vis / pu.items.size
+            val thumbT = trackT + (trackH - thumbH) * (pu.top.toFloat() / (pu.items.size - vis))
+            p.style = Paint.Style.FILL
+            p.shader = null
+            p.color = al(Color.WHITE, 120)
+            rf.set(box.right - 6f * sc, thumbT, box.right - 3f * sc, thumbT + thumbH)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+        }
         if (pu.menu) {
-            val cy0 = top0 + itemH * pu.items.size + 6f * sc
+            val cy0 = top0 + itemH * vis + 6f * sc
             tmp.set(box.left + 8f * sc, cy0, box.right - 8f * sc, cy0 + 50f * sc)
             pushButton(c, tmp, "Cancel", pu.sel == pu.items.size)
         }

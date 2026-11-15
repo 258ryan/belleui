@@ -53,6 +53,11 @@ object Bar {
         ctx = c
         step("hidden api") { unseal() }
         step("listener") { enableListener() }
+        step("notes") {
+            // the Status menu reads and clears notifications through the listener (the system's own list needs a permission we may not hold)
+            Hud.noteSource = { NotifListener.instance?.activeNotifications }
+            Hud.noteCancel = { n -> NotifListener.instance?.cancelNotification(n.key) }
+        }
         step("window") { addWindow() }
         step("receivers") { receivers() }
         step("register") { register(0) }

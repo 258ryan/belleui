@@ -79,6 +79,16 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Performance", "CPU speed and temperature (root)", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
             Row("Styles", "Wallpaper, tones and sounds", icon = g.get("qgn_menu_theme"), drill = true),
             Row("About", "${Build.MODEL} - Android ${Build.VERSION.RELEASE} - ${Sys.fmtSize(ram)} RAM", icon = g.get("qgn_prop_cp_dev_about"), drill = true),
+            Row("Date & time", "Automatic time, clock format", icon = g.get("qgn_prop_set_datim_sub"), drill = true),
+            Row("Language & input", "Language, keyboard, rotation", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
+            Row("Location", Cfg.read(act, "secure", "location_mode").let { if (it == null || it == "0") "Off" else "On" }, icon = g.get("qgn_prop_set_apps_loc"), drill = true),
+            Row("Security", "Screen lock, unknown apps, SELinux", icon = g.get("qgn_prop_set_device_sub"), drill = true),
+            Row("Notifications & sounds", "Access, do not disturb, touch sounds", icon = g.get("qgn_prop_set_tones_sub"), drill = true),
+            Row("Accessibility", "Font size, colour, animations", icon = g.get("qgn_prop_set_gene_sensor"), drill = true),
+            Row("Default apps", "Home app and more", icon = g.get("qgn_prop_set_default_sub"), drill = true),
+            Row("Accounts & sync", "Sync and accounts", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
+            Row("Developer options", "USB debugging, animations, touches", icon = g.get("qgn_prop_set_apps_usb"), drill = true),
+            Row("Power & restart", "Restart, recovery, quick reboot (root)", icon = g.get("qgn_indi_battery_strength"), drill = true),
             Row("Android settings", "Everything else", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
         )
     }
@@ -97,6 +107,16 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
                 if (i == null || !act.tryStart(i)) shell.toast("Styles isn't installed")
             }
             8 -> shell.push(AboutScreen(act))
+            9 -> shell.push(DateTimeScreen(act))
+            10 -> shell.push(InputScreen(act))
+            11 -> shell.push(LocationScreen(act))
+            12 -> shell.push(SecurityScreen(act))
+            13 -> shell.push(NotificationsScreen(act))
+            14 -> shell.push(AccessibilityScreen(act))
+            15 -> shell.push(DefaultAppsScreen(act))
+            16 -> shell.push(AccountsScreen(act))
+            17 -> shell.push(DeveloperScreen(act))
+            18 -> shell.push(PowerScreen(act))
             else -> if (!act.tryStart(Intent(Settings.ACTION_SETTINGS))) shell.toast("Not available")
         }
     }
@@ -342,7 +362,7 @@ class ConnectivityScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Mobile network", if (Sys.cellularConnected(act)) "Connected" else "Not connected", icon = g.get("qgn_prop_set_conn_data"), drill = true),
             Row("NFC", onOff(Sys.nfc(act)), icon = g.get("qgn_prop_set_apps_usb"), drill = true, dim = Sys.nfc(act) == null),
             Row("IP address", ip ?: "No network", icon = g.get("qgn_prop_set_conn_vpn")),
-            Row("More in Android settings", "Hotspot, VPN, data usage", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
+            Row("More network options", "Private DNS, hotspot, VPN, saved networks", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
         )
     }
 
@@ -371,7 +391,10 @@ class ConnectivityScreen(act: SettingsActivity) : RowsScreen(act) {
             3 -> act.systemPanel(PANEL_INTERNET, Settings.ACTION_WIRELESS_SETTINGS)
             4 -> act.tryStart(Intent(Settings.ACTION_NFC_SETTINGS))
             5 -> return
-            else -> act.tryStart(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+            else -> {
+                shell.push(NetworkMoreScreen(act))
+                return
+            }
         }
         if (!ok) shell.toast("Not available on this device")
     }

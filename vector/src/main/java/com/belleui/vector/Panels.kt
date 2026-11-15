@@ -42,6 +42,10 @@ object Hud {
     // volume
     // ------------------------------------------------------------------------------------------
 
+    /** Hosts that have their own notification listener (the real System UI) supply the list and the dismissals here. */
+    var noteSource: (() -> Array<android.service.notification.StatusBarNotification>?)? = null
+    var noteCancel: ((android.service.notification.StatusBarNotification) -> Unit)? = null
+
     private var volumeView: VolumeView? = null
     private val hideVolume = Runnable { removeVolume() }
 
@@ -254,9 +258,10 @@ object Hud {
 
         @Suppress("UNCHECKED_CAST")
         fun active(sys: Context): List<Item> {
-            val nm = service() ?: return emptyList()
-            val arr = try {
-                nm.javaClass.getMethod("getActiveNotifications", String::class.java).invoke(nm, sys.packageName) as? Array<android.service.notification.StatusBarNotification>
+            val nm = service()
+            if (nm == null && noteSource == null) return emptyList()
+            val arr = (try { noteSource?.invoke() } catch (_: Throwable) { null }) ?: try {
+                nm?.javaClass?.getMethod("getActiveNotifications", String::class.java)?.invoke(nm, sys.packageName) as? Array<android.service.notification.StatusBarNotification>
             } catch (_: Throwable) {
                 null
             } ?: return emptyList()
@@ -286,6 +291,13 @@ object Hud {
         }
 
         fun cancel(sys: Context, n: android.service.notification.StatusBarNotification) {
+            noteCancel?.let {
+                try {
+                    it(n)
+                    return
+                } catch (_: Throwable) {
+                }
+            }
             try {
                 val nm = service() ?: return
                 nm.javaClass.getMethod("cancelNotificationWithTag", String::class.java, String::class.java, String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
@@ -313,7 +325,7 @@ object Hud {
         // focus order: 0 switches, 1 profile, 2 media, 3 ringtone, 4 brightness, 5 clear, 6.. notifications, then activities, then footer
         private fun normal() = notes.filter { !it.ongoing }
         private fun acts() = notes.filter { it.ongoing }
-        private fun focusCount() = 6 + normal().size + acts().size + 2
+        private fun focusCount() = 6 + normal().size + acts().size
 
         private val tick = object : Runnable {
             override fun run() {
@@ -507,11 +519,12 @@ object Hud {
             u.p.color = 0xFF0C0C0C.toInt()
             c.drawRect(0f, 28f * sc, w, barH, u.p)
             // the real Belle panel switches (Belle FP2 theme): lit in blue when on; Silence is lit when the phone is quiet
-            val on = booleanArrayOf(if (hasCell) dataOn() else airplane(), wifi(), bt(), !soundOn())
-            val names = arrayOf(if (hasCell) "Data" else "Airplane", "Wi-Fi", "Bluetooth", "Silence")
-            val art = arrayOf("signal", "wlan", "bt", "audio")
-            val cell = w / 4f
-            for (i in 0..3) {
+            val on = booleanArrayOf(if (hasCell) dataOn() else airplane(), wifi(), bt(), !soundOn(), false)
+            val names = arrayOf(if (hasCell) "Data" else "Airplane", "Wi-Fi", "Bluetooth", "Silence", "Settings")
+            val art = arrayOf("signal", "wlan", "bt", "audio", "signal")
+            val tiles = switchCount(u)
+            val cell = w / tiles
+            for (i in 0 until tiles) {
                 val cx = cell * i + cell / 2f
                 val focused = sel == 0 && sw == i
                 rf.set(cx - 29f * sc, 34f * sc, cx + 29f * sc, 34f * sc + 66f * sc)
@@ -519,6 +532,8 @@ object Hud {
                     u.p.color = if (on[i]) Belle.BLUE else 0xFF3A3A3A.toInt()
                     c.drawCircle(cx, 67f * sc, 27f * sc, u.p)
                 }
+                // the Settings tile has no art of its own: the Belle settings glyph on a dark tile
+                if (i == 4) u.gfx.glyph(c, "toolbar_settings", cx, rf.centerY(), 30f * sc, 255)
                 if (focused) {
                     u.p.style = Paint.Style.STROKE
                     u.p.strokeWidth = 3f * sc
@@ -647,25 +662,6 @@ object Hud {
                 header("Activities", null, -1)
                 for (n in acts) noteRow(n, idx++)
             }
-            // footer buttons
-            run {
-                val h = 54f * sc
-                val bw = (w - 36f * sc) / 2f
-                r.set(12f * sc, y + 8f * sc, 12f * sc + bw, y + h - 6f * sc)
-                u.pushButton(c, r, "Hub", sel == idx)
-                mark(idx, y, y + h)
-                val hubIdx = idx
-                idx++
-                r.set(24f * sc + bw, y + 8f * sc, 24f * sc + 2 * bw, y + h - 6f * sc)
-                u.pushButton(c, r, "Settings", sel == idx)
-                hits.add(idx to RectF(r))
-                if (sel == idx) {
-                    selTop = y + scroll
-                    selBottom = y + h + scroll
-                }
-                if (sel == hubIdx) hits.removeAll { false }
-                y += h
-            }
             c.restore()
             // keep the focused row on screen
             val view = panelH - barH - 24f * sc
@@ -686,13 +682,19 @@ object Hud {
 
         private val rf = RectF()
 
+        /** Four switches, and a fifth (Settings) when the Belle settings glyph is there to draw. */
+        private fun switchCount(u: Ui) = if (u.gfx.get("toolbar_settings") != null) 5 else 4
+
         // ---- input ----
 
         private fun activate() {
             val normal = normal()
             val acts = acts()
             when {
-                sel == 0 -> toggle(sw)
+                sel == 0 -> if (sw == 4) {
+                    close()
+                    launch("com.belleui.settings")
+                } else toggle(sw)
                 sel == 1 -> Profiles.apply(sys, (Profiles.current(sys) + 1) % Profiles.names.size)
                 sel == 5 -> {
                     for (n in normal) if (n.sbn.notification.flags and android.app.Notification.FLAG_NO_CLEAR == 0) Notes.cancel(sys, n.sbn)
@@ -707,14 +709,7 @@ object Hud {
                     if (n.sbn.notification.flags and android.app.Notification.FLAG_AUTO_CANCEL != 0) Notes.cancel(sys, n.sbn)
                     close()
                 }
-                sel == 6 + normal.size + acts.size -> {
-                    close()
-                    launch("com.belleui.launcher", "belle_hub")
-                }
-                else -> {
-                    close()
-                    launch("com.belleui.settings")
-                }
+                else -> {}
             }
         }
 
@@ -740,18 +735,18 @@ object Hud {
                     if (sel == 2 || sel == 3) sel = 4
                 }
                 KeyEvent.KEYCODE_DPAD_LEFT -> when (sel) {
-                    0 -> sw = (sw + 3) % 4
+                    0 -> sw = (sw + switchCount(ui!!) - 1) % switchCount(ui!!)
                     2 -> volume(AudioManager.STREAM_MUSIC, -1)
                     3 -> volume(AudioManager.STREAM_RING, -1)
                     4 -> setBrightness(brightness() - 16)
-                    else -> if (sel == last) sel = last - 1
+                    else -> {}
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> when (sel) {
-                    0 -> sw = (sw + 1) % 4
+                    0 -> sw = (sw + 1) % switchCount(ui!!)
                     2 -> volume(AudioManager.STREAM_MUSIC, 1)
                     3 -> volume(AudioManager.STREAM_RING, 1)
                     4 -> setBrightness(brightness() + 16)
-                    else -> if (sel == last - 1) sel = last
+                    else -> {}
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> activate()
                 KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DEL -> {
@@ -782,7 +777,7 @@ object Hud {
             }
             for ((i, rect) in hits.reversed()) if (rect.contains(e.x, e.y)) {
                 if (i == 0) {
-                    sw = (e.x / (width / 4f)).toInt().coerceIn(0, 3)
+                    sw = (e.x / (width / switchCount(ui!!).toFloat())).toInt().coerceIn(0, switchCount(ui!!) - 1)
                 }
                 sel = i
                 activate()

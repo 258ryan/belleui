@@ -5,6 +5,21 @@ import android.service.notification.StatusBarNotification
 
 /** Keeps the status bar's notification count current. */
 class NotifListener : NotificationListenerService() {
+    companion object {
+        @Volatile
+        var instance: NotifListener? = null
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     private fun count() {
         val n = try {
             activeNotifications.count { sbn ->
