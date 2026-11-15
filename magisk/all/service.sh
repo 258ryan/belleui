@@ -11,6 +11,8 @@ if [ ! -f $CONF ]; then
 set_default_home=1
 # make the Belle keyboard the input method
 set_default_keyboard=0
+# use the Belle System UI (status bar, pull-down, power menu, volume); 0 puts the stock one back
+install_system_ui=1
 # install the Belle Chooser (Vector) module APK once
 install_vector_module=1
 EOT
@@ -69,4 +71,19 @@ fi
 # the Belle Chooser Vector module is a normal app (Vector turns it on); install it once
 if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f $MODDIR/extra/BelleUI-Chooser-Vector.apk ]; then
   pm install -r $MODDIR/extra/BelleUI-Chooser-Vector.apk >/dev/null 2>&1 && touch $DIR/vector_installed
+fi
+
+# System UI boot guard: once the Belle System UI has registered as the status bar (it writes the boot number into a
+# setting), the "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
+if [ -d $MODDIR/system/system_ext ]; then
+  sleep 30
+  ok=$(settings get global belle_sysui_ok)
+  boot=$(settings get global boot_count)
+  {
+    echo "$(date): System UI check boot=$boot ok=$ok"
+    logcat -d -s BelleSysUi:V 2>&1 | tail -40
+  } >> $DIR/sysui.log
+  if [ -n "$ok" ] && [ "$ok" = "$boot" ]; then
+    echo 0 > $DIR/sysui_boots
+  fi
 fi

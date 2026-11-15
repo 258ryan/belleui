@@ -10,5 +10,10 @@ set_perm_recursive "$MODPATH/extra" 0 0 0755 0644
 ui_print "- If you installed any Belle app normally before, remove it first:"
 ui_print "    every build is signed with one shared key, but older builds were not,"
 ui_print "    and Android refuses a system app whose key differs from an installed copy."
+ui_print "- This also replaces the stock System UI with the Belle one (no lock screen)."
+ui_print "    Keep adb working: pair new computers BEFORE installing; pairing needs the stock System UI."
+ui_print "    If a boot fails twice the System UI part removes itself; to turn it off by hand set install_system_ui=0 in /data/adb/belleui/config."
+mkdir -p /data/adb/belleui
+echo 0 > /data/adb/belleui/sysui_boots
 ui_print "- Reboot. Settings live in /data/adb/belleui/config"
 ui_print "- To remove: remove the module in Magisk and reboot (the Vector module APK, if installed, stays: uninstall it like any app)."
