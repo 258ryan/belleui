@@ -53,10 +53,10 @@ object Belle {
     const val SEPARATOR = 0xFF444444.toInt()
     const val PANEL = 0xFF1B1B1B.toInt()
 
-    const val STATUS_H = 26f
+    const val STATUS_H = 36f   // measured on the E6 at 640x480
     const val TAB_H = 50f      // landscape; 60 in portrait
-    const val TOOL_H = 60f
-    const val ROW_H = 70f
+    const val TOOL_H = 67f
+    const val ROW_H = 94f
     const val MENU_ITEM_H = 64f
     const val PADDING = 12f
 }
@@ -559,14 +559,14 @@ class Ui(val ctx: Context) {
         fill(c, rf, Color.BLACK)
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
         val cy = h / 2f
-        text(c, title, 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, maxW = w * 0.5f)
-        val tw = measure(st.clock, 18f * sc)
-        text(c, st.clock, w - 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, align = Paint.Align.RIGHT)
-        val bw = 24f * sc
-        val bh = 18f * sc
-        val bLeft = w - 8f * sc - tw - 10f * sc - bw
+        text(c, title, 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, maxW = w * 0.5f)
+        val tw = measure(st.clock, 22f * sc)
+        text(c, st.clock, w - 8f * sc, baselineFor(cy, 22f * sc), 22f * sc, align = Paint.Align.RIGHT)
+        val bw = 34f * sc
+        val bh = 20f * sc
+        val bLeft = w - 8f * sc - tw - 12f * sc - bw
         battery(c, bLeft, cy - bh / 2f, bw, bh, st.batteryPct)
-        if (st.wifi) wifi(c, bLeft - 18f * sc, h * 0.76f, 10f * sc)
+        if (st.wifi) wifi(c, bLeft - 26f * sc, h * 0.78f, 13f * sc)
     }
 
     fun battery(c: Canvas, left: Float, top: Float, bw: Float, bh: Float, pct: Int) {
@@ -597,7 +597,7 @@ class Ui(val ctx: Context) {
 
     /** Centres of [n] evenly spread toolbar buttons: first at the left edge, last at the right edge. */
     fun toolCenters(w: Float, n: Int): FloatArray {
-        val m = 32f * sc
+        val m = 58f * sc
         if (n <= 1) return floatArrayOf(w / 2f)
         val step = (w - 2 * m) / (n - 1)
         return FloatArray(n) { m + it * step }
@@ -673,7 +673,7 @@ class Ui(val ctx: Context) {
     }
 
     private fun listRow0(c: Canvas, r: RectF, selected: Boolean, row: Row) {
-        val pad = Belle.PADDING * sc
+        val pad = 20f * sc
         val inv = if (lightOn) "_inverse" else ""
         val dim = if (row.dim) 120 else 255
         if (selected) {
@@ -685,7 +685,7 @@ class Ui(val ctx: Context) {
             c.drawRect(r.left, r.bottom - 1f, r.right, r.bottom, p)
         }
         var tx = r.left + pad
-        val iconSize = 50f * sc
+        val iconSize = 64f * sc
         if (row.icon != null || row.iconKind >= 0) {
             tmp.set(tx, r.centerY() - iconSize / 2f, tx + iconSize, r.centerY() + iconSize / 2f)
             if (row.icon != null) {
@@ -707,17 +707,17 @@ class Ui(val ctx: Context) {
             rightEdge -= cs + pad
         }
         if (row.right != null) {
-            val tw = measure(row.right, 18f * sc, light)
-            text(c, row.right, rightEdge, baselineFor(r.centerY(), 18f * sc, light), 18f * sc, if (selected) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = light)
+            val tw = measure(row.right, 21f * sc, light)
+            text(c, row.right, rightEdge, baselineFor(r.centerY(), 21f * sc, light), 21f * sc, if (selected) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = light)
             rightEdge -= tw + pad
         }
         val maxW = rightEdge - tx
         val white = al(Color.WHITE, dim)
         if (row.subtitle != null) {
-            text(c, row.title, tx, baselineFor(r.centerY() - 14f * sc, 22f * sc), 22f * sc, white, maxW = maxW)
-            text(c, row.subtitle, tx, baselineFor(r.centerY() + 15f * sc, 18f * sc, light), 18f * sc, if (selected) Color.WHITE else al(Belle.TEXT_MID, dim), maxW = maxW, face = light)
+            text(c, row.title, tx, baselineFor(r.centerY() - 17f * sc, 26f * sc), 26f * sc, white, maxW = maxW)
+            text(c, row.subtitle, tx, baselineFor(r.centerY() + 20f * sc, 21f * sc, light), 21f * sc, if (selected) Color.WHITE else al(Belle.TEXT_MID, dim), maxW = maxW, face = light)
         } else {
-            text(c, row.title, tx, baselineFor(r.centerY(), 22f * sc), 22f * sc, white, maxW = maxW)
+            text(c, row.title, tx, baselineFor(r.centerY(), 26f * sc), 26f * sc, white, maxW = maxW)
         }
     }
 

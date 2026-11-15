@@ -57,14 +57,14 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
             val rr = list.rowRect(ui, r, i, rowRect)
             if (rr.bottom < r.top || rr.top > r.bottom) continue
             val sc = ui.sc
-            val pad = Belle.PADDING * sc
-            val tx = rr.left + pad + (if (row.icon != null || row.iconKind >= 0) 62f * sc else 0f)
+            val pad = 20f * sc
+            val tx = rr.left + pad + (if (row.icon != null || row.iconKind >= 0) 84f * sc else 0f)
             val white = if (row.dim) ui.al(Color.WHITE, 120) else Color.WHITE
             val value = row.right ?: row.subtitle
-            ui.text(c, row.title, tx, rr.top + 28f * sc, 22f * sc, white, maxW = rr.right - tx - pad - 170f * sc)
-            if (value != null) ui.text(c, value, rr.right - pad - 8f * sc, rr.top + 27f * sc, 18f * sc, if (i == list.sel) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = ui.light)
+            ui.text(c, row.title, tx, rr.top + 40f * sc, 26f * sc, white, maxW = rr.right - tx - pad - 170f * sc)
+            if (value != null) ui.text(c, value, rr.right - pad - 8f * sc, rr.top + 39f * sc, 21f * sc, if (i == list.sel) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = ui.light)
             // the Belle progress bar is 20px tall; drawn at that size it keeps its rounded ends
-            ui.tmp.set(tx, rr.top + 38f * sc, rr.right - pad - 8f * sc, rr.top + 58f * sc)
+            ui.tmp.set(tx, rr.top + 58f * sc, rr.right - pad - 8f * sc, rr.top + 78f * sc)
             ui.progressBar(c, ui.tmp, f)
         }
     }
