@@ -54,7 +54,7 @@ import kotlin.math.sin
  */
 class LauncherView(private val act: Activity) : View(act) {
     /** The Belle application grid is six icons across in landscape (ApplicationGrid.xml of the Belle FP2 theme). */
-    private val COLS = 6
+    private val COLS = 4
 
 
     private enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, SETTINGS, MENU, PREV, NEXT }
@@ -358,8 +358,69 @@ class LauncherView(private val act: Activity) : View(act) {
         else setPage(if (dir < 0) -1 else 1)
     }
 
+    // ---- search (the Menu's toolbar magnifier) ----------------------------------------------------
+    private var searchQuery = ""
+    private var searchBox: android.widget.EditText? = null
+    private var searchEditing = false
+
+    private fun searching() = searchBox?.visibility == View.VISIBLE
+
+    private fun openSearch() {
+        popup = null
+        val box = searchBox ?: android.widget.EditText(act).also { b ->
+            b.setBackgroundColor(0xE6101010.toInt())
+            b.setTextColor(Color.WHITE)
+            b.setHintTextColor(0xFF8A8A8A.toInt())
+            b.hint = "Search"
+            b.setSingleLine()
+            b.textSize = 18f
+            b.setPadding((16f * sc).toInt(), 0, (16f * sc).toInt(), 0)
+            b.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            b.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchQuery = s?.toString()?.trim() ?: ""
+                    menuSel = 0
+                    menuTop = 0
+                    refreshLists()
+                    invalidate()
+                }
+            })
+            b.setOnEditorActionListener { _, _, _ ->
+                // keep the results, hand the keys back to the grid
+                searchEditing = false
+                (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(b.windowToken, 0)
+                b.clearFocus()
+                invalidate()
+                true
+            }
+            val lp = android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, (SEARCH_H * sc).toInt())
+            lp.topMargin = statusH.toInt()
+            act.addContentView(b, lp)
+            searchBox = b
+        }
+        box.setText("")
+        box.visibility = View.VISIBLE
+        searchEditing = true
+        box.requestFocus()
+        box.post { (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(box, 0) }
+        invalidate()
+    }
+
+    private fun closeSearch() {
+        val b = searchBox ?: return
+        (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(b.windowToken, 0)
+        b.visibility = View.GONE
+        b.clearFocus()
+        searchEditing = false
+        searchQuery = ""
+        refreshLists()
+        invalidate()
+    }
+
     private fun refreshLists() {
-        menuApps = repo.menuApps(repo.showHidden)
+        menuApps = repo.menuApps(repo.showHidden).let { l -> if (searchQuery.isEmpty()) l else l.filter { it.label.contains(searchQuery, true) } }
         // hidden apps disappear everywhere (menu, home shortcuts, recents) unless "show hidden" is on
         favs = repo.favoriteEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
         recents = repo.recentEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
@@ -425,6 +486,13 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun handleKeyEvent(e: KeyEvent): Boolean {
+        if (searching()) {
+            if (e.keyCode == KeyEvent.KEYCODE_BACK || e.keyCode == KeyEvent.KEYCODE_ESCAPE || (e.keyCode == KeyEvent.KEYCODE_BUTTON_B && !searchEditing)) {
+                if (e.action == KeyEvent.ACTION_UP) closeSearch()
+                return true
+            }
+            if (searchEditing) return false // the text box gets the keys
+        }
         val a = actionFor(e.keyCode) ?: return false
         if (e.action == KeyEvent.ACTION_DOWN) {
             val directional = a == Act.UP || a == Act.DOWN || a == Act.LEFT || a == Act.RIGHT
@@ -490,7 +558,7 @@ class LauncherView(private val act: Activity) : View(act) {
             Act.PREV -> if (page == 0) homeEdge(-1) else setPage(page - 1)
             Act.NEXT -> if (page == 0) homeEdge(1) else setPage(page + 1)
             Act.MENU -> setPage(if (page != 0) 0 else 1)
-            Act.SETTINGS -> openQuick(0)
+            Act.SETTINGS -> if (page == 1) openSearch() else openQuick(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
             else -> navigate(a)
@@ -541,13 +609,13 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> {
                 val n = menuApps.size
                 if (n == 0) {
-                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP) tabFocus = true
+                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP && page == 2) tabFocus = true
                     return
                 }
                 when (a) {
                     Act.LEFT -> if (menuSel % COLS == 0) setPage(0) else menuSel--
                     Act.RIGHT -> if (menuSel % COLS == COLS - 1 || menuSel == n - 1) setPage(2) else menuSel++
-                    Act.UP -> if (menuSel >= COLS) menuSel -= COLS else tabFocus = true
+                    Act.UP -> if (menuSel >= COLS) menuSel -= COLS
                     Act.DOWN -> if (menuSel + COLS < n) menuSel += COLS else if (menuSel / COLS < (n - 1) / COLS) menuSel = n - 1
                     Act.OK -> launch(menuApps[menuSel])
                     else -> {}
@@ -602,11 +670,14 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         if (abs(pageAnim - pagePos()) > 0.05f) return false
         if (y > cBot) { // soft-key bar
-            if (!selectOnly) perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
+            if (!selectOnly) {
+                if (page == 1) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) Act.SETTINGS else Act.OPTIONS)
+                else perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
+            }
             return true
         }
         if (y < cTop) return false
-        if ((page == 1 || page == 2) && y < cTop + TAB * sc) {
+        if (page == 2 && y < cTop + TAB * sc) {
             setPage(if (x < width / 2f) 1 else 2)
             invalidate()
             return true
@@ -728,7 +799,7 @@ class LauncherView(private val act: Activity) : View(act) {
             }
         }
         if (page == 0) items += PopupItem("Edit widgets") { openWidgetEditor(0) }
-        if (page == 1) items += PopupItem("Move") {
+        if (page == 1 && searchQuery.isEmpty()) items += PopupItem("Move") {
             reorder = true
             showToast("D-pad moves, ${okLetter()} drops")
         }
@@ -991,11 +1062,11 @@ class LauncherView(private val act: Activity) : View(act) {
         return out
     }
 
-    private fun menuAreaTop() = cTop + TAB * sc
+    private fun menuAreaTop() = cTop + (if (searching()) SEARCH_H * sc else 0f)
 
     private fun menuAreaBottom() = cBot
 
-    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
+    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3.15f
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
         val cw = width / COLS.toFloat()
@@ -2016,24 +2087,26 @@ class LauncherView(private val act: Activity) : View(act) {
         val area = menuAreaTop()
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = Color.BLACK
+        // the wallpaper shows through, darkened, like the Belle Menu
+        p.color = al(Color.BLACK, 170)
         c.drawRect(0f, cTop, w, cBot, p)
         if (menuApps.isEmpty()) {
-            text(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
+            val msg = if (!loaded) "Loading..." else if (searchQuery.isNotEmpty()) "No match" else "No apps"
+            text(c, msg, w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
-            drawFocus(c, menuFocus.cur, 12f * sc)
+            drawFocus(c, menuFocus.cur, 14f * sc)
             val cw = w / COLS
             val ch = menuCellH()
-            val isz = 70f * sc // graphicSizeLarge
+            val isz = 76f * sc
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + (ch - (isz + 26f * sc)) / 2f
+                val iconTop = tmp.top + 8f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 8f * sc)
+                text(c, app.label, tmp.centerX(), iconTop + isz + 26f * sc, 21f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
             }
             val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
@@ -2046,7 +2119,6 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
-        drawTabBar(c, 0)
     }
 
     /** Belle tab bar: right under the status bar, full width, theme tab frames. */
@@ -2147,7 +2219,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun pageTitle() = when (page) {
         -1 -> "Hub"
         0 -> "Home"
-        1 -> "Applications"
+        1 -> if (searchQuery.isNotEmpty()) "Search" else "Menu"
         else -> "Recent"
     }
 
@@ -2202,6 +2274,17 @@ class LauncherView(private val act: Activity) : View(act) {
         val cy = cBot + softH / 2f
         val s = 30f * sc
         val inModal = popup != null || reorder
+        if (page == 1 && !inModal) {
+            // the Belle Menu toolbar: back, search, menu
+            val mm = 56f * sc
+            toolIcon(c, ICON_BACK, mm, cy, s)
+            hintLetter(c, backLetter(), mm + 26f * sc, cy)
+            gfx.glyph(c, "toolbar_search", w / 2f, cy, s, 255)
+            hintLetter(c, settingsLetter(), w / 2f + 26f * sc, cy)
+            toolIcon(c, ICON_MENU, w - mm, cy, s)
+            hintLetter(c, optLetter(), w - mm - 26f * sc, cy)
+            return
+        }
         val leftKind = if (page == 0 && !inModal) ICON_GRID else ICON_BACK
         val m = 32f * sc
         val step = (w - 2 * m) / 3f
@@ -2394,6 +2477,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private companion object {
+        const val SEARCH_H = 44f
         const val TAB = 50f      // tab bar (landscape; 60 in portrait)
         const val HEADER = 50f   // list starts under the tab bar
         const val ROW = 70f      // heightListItem
