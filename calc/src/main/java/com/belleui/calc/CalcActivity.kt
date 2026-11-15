@@ -140,15 +140,17 @@ class CalcScreen(private val act: CalcActivity) : Screen() {
         val sc = ui.sc
         // display
         val disp = RectF(area.left + 12f * sc, area.top + 8f * sc, area.right - 12f * sc, area.top + 100f * sc)
+        // the Belle calculator shows its sums on a sheet of paper
         ui.p.style = Paint.Style.FILL
         ui.p.shader = null
-        ui.p.color = Belle.PANEL
+        ui.p.color = 0xFFE9E9E5.toInt()
         cv.drawRoundRect(disp, 8f * sc, 8f * sc, ui.p)
+        ui.gfx.draw(cv, "qgn_graf_calc_results_line", RectF(disp.left + 10f * sc, disp.top + 44f * sc, disp.right - 10f * sc, disp.top + 46f * sc))
         val live = if (result == null && expr.isNotEmpty()) Eval.value(autoClose(expr))?.takeIf { !it.isNaN() && !it.isInfinite() }?.let { Eval.format(it) } else null
         val big = result ?: live ?: if (expr.isEmpty()) "0" else ""
-        ui.text(cv, expr.ifEmpty { " " }, disp.right - 14f * sc, disp.top + 32f * sc, 22f * sc, if (result != null) Belle.TEXT_MID else Color.WHITE, Paint.Align.RIGHT, maxW = disp.width() - 28f * sc, face = ui.light)
-        if (big.isNotEmpty() && big != expr) ui.text(cv, big, disp.right - 14f * sc, disp.top + 80f * sc, 40f * sc, Color.WHITE, Paint.Align.RIGHT, maxW = disp.width() - 28f * sc)
-        else if (result != null) ui.text(cv, big, disp.right - 14f * sc, disp.top + 80f * sc, 40f * sc, Color.WHITE, Paint.Align.RIGHT, maxW = disp.width() - 28f * sc)
+        ui.text(cv, expr.ifEmpty { " " }, disp.right - 14f * sc, disp.top + 32f * sc, 22f * sc, if (result != null) 0xFF777777.toInt() else 0xFF1B1B1B.toInt(), Paint.Align.RIGHT, maxW = disp.width() - 28f * sc, face = ui.light)
+        if (big.isNotEmpty() && big != expr) ui.text(cv, big, disp.right - 14f * sc, disp.top + 80f * sc, 40f * sc, 0xFF1B1B1B.toInt(), Paint.Align.RIGHT, maxW = disp.width() - 28f * sc)
+        else if (result != null) ui.text(cv, big, disp.right - 14f * sc, disp.top + 80f * sc, 40f * sc, 0xFF1B1B1B.toInt(), Paint.Align.RIGHT, maxW = disp.width() - 28f * sc)
 
         // keypad
         val top = disp.bottom + 10f * sc
@@ -161,7 +163,33 @@ class CalcScreen(private val act: CalcActivity) : Screen() {
             val rect = rects[ri][ci]
             rect.set(x, y, x + kw, y + kh)
             val k = keys[ri][ci]
-            ui.pushButton(cv, rect, k, ri == r && ci == c)
+            drawKey(cv, ui, rect, k, ri == r && ci == c)
+        }
+    }
+
+    private val glyphs = mapOf(
+        "0" to "zero", "1" to "one", "2" to "two", "3" to "three", "4" to "four", "5" to "five", "6" to "six", "7" to "seven", "8" to "eight", "9" to "nine",
+        "." to "separator", "%" to "percent", "C" to "clear", "÷" to "divide", "×" to "multiply", "−" to "subtract", "+" to "add", "=" to "equals",
+    )
+
+    /** A key in the Belle keypad style: the theme's key frame with its calculator glyph on it. */
+    private fun drawKey(cv: Canvas, ui: Ui, rect: RectF, k: String, selected: Boolean) {
+        val sc = ui.sc
+        val framed = ui.gfx.nine(cv, if (selected) "qsn_fr_keypad_button_pressed" else "qsn_fr_keypad_button_normal", rect, 24, 10f * sc)
+        if (!framed) {
+            ui.pushButton(cv, rect, k, selected)
+            return
+        }
+        val g = glyphs[k]
+        if (g == null || !ui.gfx.glyph(cv, "qgn_indi_calc_$g", rect.centerX(), rect.centerY(), minOf(rect.height() * 0.62f, 40f * sc))) {
+            ui.text(cv, k, rect.centerX(), ui.baselineFor(rect.centerY(), 26f * sc), 26f * sc, Color.WHITE, Paint.Align.CENTER)
+        }
+        if (selected) {
+            ui.p.style = Paint.Style.STROKE
+            ui.p.strokeWidth = 3f * sc
+            ui.p.color = Belle.BLUE_LIGHT
+            cv.drawRoundRect(rect.left - 1f * sc, rect.top - 1f * sc, rect.right + 1f * sc, rect.bottom + 1f * sc, 11f * sc, 11f * sc, ui.p)
+            ui.p.style = Paint.Style.FILL
         }
     }
 

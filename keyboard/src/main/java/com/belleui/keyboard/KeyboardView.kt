@@ -41,6 +41,7 @@ class KeyboardView(ctx: Context) : View(ctx) {
 
     fun selectedSuggestion(): String? = if (selRow < 0) suggestions.getOrNull(selCol) else null
 
+    private val gfx = com.belleui.kit.BelleGfx(ctx)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.NORMAL); textAlign = Paint.Align.CENTER }
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif-light", Typeface.NORMAL); textAlign = Paint.Align.CENTER; color = 0xFF8A8A8A.toInt() }
@@ -126,6 +127,9 @@ class KeyboardView(ctx: Context) : View(ctx) {
         val w = width.toFloat()
         val h = height.toFloat()
         c.drawColor(0xFF1B1B1B.toInt())
+        // the input panel background of the Belle theme
+        rect.set(0f, 0f, w, h)
+        gfx.draw(c, "qgn_graf_input_bg", rect)
         p.shader = null
         p.style = Paint.Style.FILL
         p.color = 0xFF3A3A3A.toInt()
@@ -186,19 +190,41 @@ class KeyboardView(ctx: Context) : View(ctx) {
             else -> { topCol = 0xFF4A4A4A.toInt(); botCol = 0xFF2C2C2C.toInt() }
         }
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, topCol, botCol, Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, 7f * sc, 7f * sc, p)
-        p.shader = null
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1f * sc
-        p.color = if (sel) Belle.BLUE_LIGHT else 0xFF5A5A5A.toInt()
-        c.drawRoundRect(r, 7f * sc, 7f * sc, p)
-        p.style = Paint.Style.FILL
+        // keys that are not highlighted wear the theme's real key frame; the highlighted one is drawn in the accent colour
+        val framed = !sel && !down && gfx.nine(c, if (special) "qsn_fr_keypad_button2_normal" else "qsn_fr_keypad_button_normal", r, 24, 9f * sc)
+        if (!framed) {
+            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, topCol, botCol, Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, 7f * sc, 7f * sc, p)
+            p.shader = null
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = if (sel) Belle.BLUE_LIGHT else 0xFF5A5A5A.toInt()
+            c.drawRoundRect(r, 7f * sc, 7f * sc, p)
+            p.style = Paint.Style.FILL
+        }
         p.color = Color.WHITE
         val cx = r.centerX()
         val cy = r.centerY()
         val s = r.height() * 0.3f
-        when (k.kind) {
+        // the theme's own input glyphs where it has them (backspace, shift, enter, the 123 / ABC switches, the space bracket)
+        fun gl(name: String, size: Float) = gfx.glyphTinted(c, name, cx, cy, size, Color.WHITE)
+        val glyph = when (k.kind) {
+            K_BACKSPACE -> gl("qgn_indi_input_backspace", 34f * sc)
+            K_ENTER -> gl("qgn_indi_input_enter", 28f * sc)
+            K_SHIFT -> gl("qgn_indi_input_shift", 28f * sc).also { if (it && shift == 2) c.drawRect(cx - s, cy + s + 3f * sc, cx + s, cy + s + 6f * sc, p) }
+            K_PAGE -> gl(when (k.text) { "1" -> "qgn_indi_input_case_numeric"; "2" -> "qgn_indi_input_case_special"; else -> "qgn_indi_input_case_capital" }, 30f * sc)
+            K_SPACE -> {
+                // the bracket: left end, stretched middle, right end
+                val hh = 22f * sc
+                val half = r.width() * 0.22f
+                val ok = gfx.draw(c, "qgn_indi_input_space_l", RectF(cx - half - 8.5f * sc, cy - hh / 2f, cx - half + 8.5f * sc, cy + hh / 2f), 255) &&
+                    gfx.draw(c, "qgn_indi_input_space_middle", RectF(cx - half + 8.5f * sc, cy - hh / 2f, cx + half - 8.5f * sc, cy + hh / 2f), 255) &&
+                    gfx.draw(c, "qgn_indi_input_space_r", RectF(cx + half - 8.5f * sc, cy - hh / 2f, cx + half + 8.5f * sc, cy + hh / 2f), 255)
+                ok
+            }
+            else -> false
+        }
+        if (!glyph) when (k.kind) {
             K_CHAR, K_PAGE -> {
                 text.color = Color.WHITE
                 text.textSize = (if (k.kind == K_PAGE) 17f else 25f) * sc

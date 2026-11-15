@@ -51,3 +51,5 @@ artwork with no licence granted for redistribution; check before making the repo
 
 ## Belle FP1 / FP2 theme packs
 `vector/src/main/assets/belle/qtg_graf_panel_*`, `qgn_indi_home_profile_*` and similar graphics are rendered from the Nokia Belle FP2 theme pack (the quick switches, panel handle and profile indicators of the Belle status menu). Nokia artwork, not licensed for redistribution: private use only, like the E6 pack.
+
+Also rendered from the Belle FP2 pack into the kit: the calculator glyphs and paper (`qgn_indi_calc_*`, `qgn_graf_calc_*`), the input glyphs (`qgn_indi_input_*`), the keypad key frames (`qsn_fr_keypad_button*`) and the input panel background. Same note: Nokia artwork, private use.

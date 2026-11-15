@@ -103,6 +103,18 @@ class BelleGfx(private val ctx: Context) {
         return true
     }
 
+    private val tintPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    /** Like [glyph], but recoloured: the dark input glyphs of the theme become white on a dark key. */
+    fun glyphTinted(c: Canvas, name: String, cx: Float, cy: Float, size: Float, color: Int): Boolean {
+        val bmp = get(name) ?: return false
+        dst.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        tintPaint.colorFilter = android.graphics.PorterDuffColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN)
+        c.drawBitmap(bmp, null, dst, tintPaint)
+        tintPaint.colorFilter = null
+        return true
+    }
+
     /** Draws a graphic at its natural 1x size scaled by [scale], top-left at (x, y). */
     fun draw(c: Canvas, name: String, to: RectF, alpha: Int = 255): Boolean {
         val bmp = get(name) ?: return false
