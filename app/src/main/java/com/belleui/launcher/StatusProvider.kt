@@ -20,7 +20,8 @@ class StatusProvider : ContentProvider() {
 
     private fun allowed(): Boolean {
         val uid = Binder.getCallingUid()
-        if (uid == 1000 || uid == Process.myUid()) return true
+        // the system, the launcher itself, root and the adb shell (for testing: root can read notifications anyway)
+        if (uid == 1000 || uid == 0 || uid == 2000 || uid == Process.myUid()) return true
         return context?.packageManager?.getPackagesForUid(uid)?.contains("com.android.systemui") == true
     }
 
@@ -49,6 +50,15 @@ class StatusProvider : ContentProvider() {
 
     /** "cancel" dismisses one; "clear" dismisses all that can be; "open" returns the notification's own action to send. */
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == "status") {
+            // always answers, so the Status menu can say why the list is empty
+            return Bundle().apply {
+                putBoolean("allowed", allowed())
+                putInt("uid", Binder.getCallingUid())
+                putBoolean("connected", HubListenerService.instance != null)
+                putInt("count", try { HubListenerService.instance?.activeNotifications?.size ?: -1 } catch (_: Throwable) { -2 })
+            }
+        }
         if (!allowed()) return null
         val svc = HubListenerService.instance ?: return null
         val out = Bundle()

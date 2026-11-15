@@ -265,6 +265,18 @@ object Hud {
             return out.sortedByDescending { it.postTime }
         }
 
+        /** Why the list might be empty: null when everything works. */
+        fun problem(sys: Context): String? {
+            val b = try {
+                sys.contentResolver.call(android.net.Uri.parse("content://com.belleui.launcher.status"), "status", null, null)
+            } catch (_: Throwable) {
+                null
+            } ?: return "The Belle launcher is missing or too old"
+            if (!b.getBoolean("allowed")) return "Not allowed to read them (uid ${b.getInt("uid")})"
+            if (!b.getBoolean("connected")) return "Allow notification access for the Belle launcher"
+            return null
+        }
+
         fun appName(sys: Context, pkg: String): String = try {
             sys.packageManager.getApplicationLabel(sys.packageManager.getApplicationInfo(pkg, 0)).toString()
         } catch (_: Throwable) {
@@ -303,6 +315,7 @@ object Hud {
         private val handler = Handler(Looper.getMainLooper())
         private val hasCell = sys.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEPHONY)
         private var notes: List<Notes.Item> = emptyList()
+        private var noteProblem: String? = null
         private var notesAt = 0L
         private val icons = HashMap<String, android.graphics.Bitmap?>()
         private var slide = 0f
@@ -348,6 +361,7 @@ object Hud {
             if (now - notesAt < 700) return
             notesAt = now
             notes = Notes.active(sys)
+            noteProblem = if (notes.isEmpty()) Notes.problem(sys) else null
             sel = sel.coerceIn(0, focusCount() - 1)
         }
 
@@ -619,7 +633,7 @@ object Hud {
             val normal = normal()
             header("Notifications", if (normal.isNotEmpty()) "Clear" else null, 5)
             if (normal.isEmpty()) {
-                u.text(c, "No notifications", 66f * sc, y + 30f * sc, 18f * sc, Belle.TEXT_MID, face = u.light)
+                u.text(c, noteProblem ?: "No notifications", 66f * sc, y + 30f * sc, 18f * sc, if (noteProblem != null) 0xFFE8A33D.toInt() else Belle.TEXT_MID, maxW = w - 80f * sc, face = u.light)
                 y += 44f * sc
             }
             var idx = 6
