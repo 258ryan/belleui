@@ -18,6 +18,7 @@ import android.util.DisplayMetrics
 import android.util.LruCache
 import android.view.WindowManager
 import com.belleui.kit.Act
+import com.belleui.kit.AlphaIndex
 import com.belleui.kit.Belle
 import com.belleui.kit.ListDialog
 import com.belleui.kit.ListState
@@ -217,6 +218,14 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
     private var user: List<App> = emptyList()
     private var system: List<App> = emptyList()
     private val lists = arrayOf(ListState(), ListState())
+    private val alpha = AlphaIndex()
+    private fun letter(a: App): String = a.label.firstOrNull()?.uppercaseChar()?.takeIf { it.isLetter() }?.toString() ?: "#"
+    private fun bindSections() {
+        for (t in 0..1) {
+            val l = if (t == 0) user else system
+            lists[t].sectionOf = { i -> if (i == 0 || letter(l[i]) != letter(l[i - 1])) letter(l[i]) else null }
+        }
+    }
     private val icons = LruCache<String, Bitmap>(80)
     private val versions = HashMap<String, String>()
     private val subtitles = HashMap<String, String>()
@@ -229,6 +238,7 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
                 val (sys, usr) = all.partition { it.info.flags and ApplicationInfo.FLAG_SYSTEM != 0 && it.info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0 }
                 user = usr
                 system = sys
+                bindSections()
                 shell.postInvalidate()
             }.start()
         } else shell.postInvalidate()
@@ -264,6 +274,8 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
             val a = apps[i]
             Row(a.label, subtitles.getOrPut(a.info.packageName) { version(a) + " - " + Sys.fmtSize(File(a.info.sourceDir).length()) }, icon = icon(a), drill = true)
         }
+        alpha.set(apps.indices.mapNotNull { i -> lists[tab].sectionOf?.invoke(i) })
+        alpha.draw(c, ui, r, apps.getOrNull(lists[tab].sel)?.let { letter(it) })
     }
 
     private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
@@ -280,6 +292,11 @@ class AppsScreen(private val act: SettingsActivity) : Screen() {
 
     override fun onTap(x: Float, y: Float): Boolean {
         val apps = cur()
+        val letterHit = alpha.hit(shell.ui, rect(), x, y)
+        if (letterHit != null) {
+            lists[tab].jumpTo(letterHit, apps.size)
+            return true
+        }
         val i = lists[tab].hit(shell.ui, rect(), y, apps.size)
         if (i < 0) return false
         lists[tab].sel = i

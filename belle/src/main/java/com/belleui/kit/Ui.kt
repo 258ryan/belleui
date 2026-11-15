@@ -721,6 +721,19 @@ class Ui(val ctx: Context) {
         }
     }
 
+    /** A Belle list section bar: the group's letter on a heading strip. */
+    fun sectionHeader(c: Canvas, r: RectF, label: String) {
+        val inv = if (lightOn) "_inverse" else ""
+        if (!nine(c, "qtg_fr_list_heading_normal$inv", r, 20, 4f)) {
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF4A4A4A.toInt(), 0xFF383838.toInt(), Shader.TileMode.CLAMP)
+            c.drawRect(r, p)
+            p.shader = null
+        }
+        val size = 16f * sc
+        text(c, label, r.left + 14f * sc, baselineFor(r.centerY(), size, medium), size, Color.WHITE, face = medium)
+    }
+
     fun scrollbar(c: Canvas, w: Float, top: Float, bottom: Float, frac: Float, thumbFrac: Float) {
         val trackH = bottom - top - 8f * sc
         val thumbH = max(24f * sc, trackH * thumbFrac)

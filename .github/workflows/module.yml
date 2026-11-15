@@ -48,7 +48,6 @@ jobs:
           for pair in music:Music clock:Clock gallery:Gallery browser:Browser games:Games styles:Styles keyboard:Keyboard video:Video notes:Notes calc:Calculator recorder:Recorder; do
             put "${pair%%:*}" "BelleUI${pair##*:}" app
           done
-          cp vector/build/outputs/apk/debug/vector-debug.apk module/extra/BelleUI-Chooser-Vector.apk
           # both System UIs ride along in extra/; post-fs-data.sh puts the chosen one in place at boot
           cp sysui/build/outputs/apk/debug/sysui-debug.apk module/extra/SystemUI-belle.apk
           cp SystemUI-restyled.apk module/extra/SystemUI-restyled.apk

@@ -2007,24 +2007,41 @@ class LauncherView(private val act: Activity) : View(act) {
 
     /** A paper calendar: the Belle calendar widget paper, "Today" and what is coming in the next week. */
     private fun drawToday(c: Canvas, r: RectF) {
-        if (!gfx.draw(c, "qgn_graf_hs_cal_bg_8x2", r)) paperCard(c, r)
-        val ink = 0xFF2B2B2B.toInt()
-        text(c, "Today", r.centerX(), r.top + 40f * sc, 22f * sc, ink, Paint.Align.CENTER, face = medium)
+        darkCard(c, r, 16f * sc)
+        val grey = 0xFFB5B5B5.toInt()
+        // left block: weekday and big day number, like the Belle calendar widget
+        val now = java.util.Date()
+        val bw = min(96f * sc, r.width() * 0.3f)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, al(theme.accentLight, 255), al(theme.accent, 255), Shader.TileMode.CLAMP)
+        rf.set(r.left + 8f * sc, r.top + 8f * sc, r.left + 8f * sc + bw, r.bottom - 8f * sc)
+        c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
+        p.shader = null
+        val cx = rf.centerX()
+        text(c, java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault()).format(now).uppercase(), cx, baselineFor(rf.top + 24f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
+        text(c, java.text.SimpleDateFormat("d", java.util.Locale.getDefault()).format(now), cx, baselineFor(rf.centerY() + 6f * sc, 50f * sc, light), 50f * sc, Color.WHITE, Paint.Align.CENTER, face = light)
+        text(c, java.text.SimpleDateFormat("MMM", java.util.Locale.getDefault()).format(now), cx, baselineFor(rf.bottom - 20f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
+        val x = rf.right + 14f * sc
+        val maxW = r.right - x - 12f * sc
         val ev = calendar.events
-        val grey = 0xFF6A6A6A.toInt()
         when {
-            !calendar.hasPermission() -> text(c, "Press A to show your calendar", r.centerX(), baselineFor(r.top + 92f * sc, 19f * sc), 19f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
-            ev.isEmpty() -> text(c, "No events for 7 days", r.centerX(), baselineFor(r.top + 92f * sc, 20f * sc), 20f * sc, ink, Paint.Align.CENTER)
+            !calendar.hasPermission() -> text(c, "Press A to show your calendar", x, baselineFor(r.centerY(), 17f * sc), 17f * sc, grey, maxW = maxW)
+            ev.isEmpty() -> text(c, "No events for 7 days", x, baselineFor(r.centerY(), 18f * sc), 18f * sc, Color.WHITE, maxW = maxW)
             else -> {
-                var y = r.top + 72f * sc
+                val rowH = 42f * sc
+                val n = max(1, min(3, ((r.height() - 12f * sc) / rowH).toInt()))
+                var y = r.top + (r.height() - rowH * min(n, ev.size)) / 2f
                 val fmt = DateFormat.getTimeFormat(act)
                 val day = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
-                for (e in ev.take(3)) {
-                    if (y + 20f * sc > r.bottom) break
+                for ((i, e) in ev.take(n).withIndex()) {
+                    if (i > 0) {
+                        p.color = al(Color.WHITE, 30)
+                        c.drawRect(x, y, r.right - 12f * sc, y + 1f, p)
+                    }
                     val whenText = (if (isToday(e.begin) && e.begin < System.currentTimeMillis() + 24 * 3600_000L) "" else day.format(java.util.Date(e.begin)) + " ") + if (e.allDay) "all day" else fmt.format(java.util.Date(e.begin))
-                    text(c, whenText, r.left + 18f * sc, y, 16f * sc, theme.accent, face = medium)
-                    text(c, e.title, r.left + 18f * sc + 108f * sc, y, 18f * sc, ink, maxW = r.right - r.left - 144f * sc)
-                    y += 28f * sc
+                    text(c, e.title, x, y + 19f * sc, 18f * sc, Color.WHITE, maxW = maxW, face = medium)
+                    text(c, whenText, x, y + 38f * sc, 15f * sc, theme.accentLight, maxW = maxW, face = light)
+                    y += rowH
                 }
             }
         }
@@ -2110,6 +2127,8 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
         p.shader = null
         text(c, "Notifications", r.left + 16f * sc, baselineFor(r.top + 19f * sc, 19f * sc, medium), 19f * sc, Color.WHITE, face = medium)
+        val total = HubStore.notes.count { it.title.isNotBlank() || it.text.isNotBlank() }
+        if (total > 0) text(c, total.toString(), r.right - 16f * sc, baselineFor(r.top + 19f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.RIGHT, face = medium)
         val fit = max(1, ((r.height() - 46f * sc) / (50f * sc)).toInt())
         val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(min(3, fit))
         if (!HubStore.hasAccess(act)) {

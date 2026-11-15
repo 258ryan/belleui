@@ -148,11 +148,19 @@ abstract class Screen {
     open val transparentContent: Boolean get() = false
 }
 
-/** Scrolling list of [Row]s. */
+/**
+ * Scrolling list of [Row]s. With [sectionOf] set, the first row of each group gets a Belle section bar (a letter) above
+ * it, and [AlphaIndex] can jump between groups.
+ */
 class ListState(val rowH: Float = Belle.ROW_H) {
     var sel = 0
     var top = 0
     private var topAnim = 0f
+
+    /** The label of the group a row starts, or null when it continues the previous group. */
+    var sectionOf: ((Int) -> String?)? = null
+    private var off = FloatArray(1)
+    private val headH = 26f
 
     fun visible(ui: Ui, h: Float) = max(1, (h / (rowH * ui.sc)).toInt())
 
@@ -182,34 +190,141 @@ class ListState(val rowH: Float = Belle.ROW_H) {
         top = (top + rows).coerceIn(0, max(0, count - vis))
     }
 
+    /** Where each row starts, in design pixels (a row with a section bar is taller). */
+    private fun layout(count: Int, scale: Float) {
+        if (off.size != count + 1) off = FloatArray(count + 1)
+        val so = sectionOf
+        var y = 0f
+        for (i in 0 until count) {
+            off[i] = y
+            y += rowH * scale + (if (so != null && so(i) != null) headH * scale else 0f)
+        }
+        off[count] = y
+    }
+
+    private fun offAt(t: Float, count: Int): Float {
+        val i = t.toInt().coerceIn(0, max(0, count - 1))
+        val next = if (i + 1 <= count) off[i + 1] else off[i]
+        return off[i] + (t - i) * (next - off[i])
+    }
+
     fun rowRect(ui: Ui, r: RectF, i: Int, out: RectF): RectF {
-        val h = rowH * ui.sc
-        out.set(r.left, r.top + (i - topAnim) * h, r.right, r.top + (i - topAnim + 1) * h)
+        if (sectionOf == null || off.size < 2 || i + 1 >= off.size) {
+            val h = rowH * ui.sc
+            out.set(r.left, r.top + (i - topAnim) * h, r.right, r.top + (i - topAnim + 1) * h)
+            return out
+        }
+        val base = offAt(topAnim, off.size - 1)
+        val head = if (sectionOf!!(i) != null) headH * ui.sc else 0f
+        out.set(r.left, r.top + off[i] - base + head, r.right, r.top + off[i + 1] - base)
         return out
     }
 
     /** Row index under [y], or -1. */
     fun hit(ui: Ui, r: RectF, y: Float, count: Int): Int {
-        val i = ((y - r.top) / (rowH * ui.sc) + topAnim).toInt()
-        return if (y >= r.top && i in 0 until count) i else -1
+        if (sectionOf == null || off.size != count + 1) {
+            val i = ((y - r.top) / (rowH * ui.sc) + topAnim).toInt()
+            return if (y >= r.top && i in 0 until count) i else -1
+        }
+        val rel = y - r.top + offAt(topAnim, count)
+        for (i in 0 until count) if (rel >= off[i] && rel < off[i + 1]) return if (rel < off[i + 1] - rowH * ui.sc) -1 else i
+        return -1
+    }
+
+    /** Moves the selection to the first row of the group [label]; true if there is one. */
+    fun jumpTo(label: String, count: Int): Boolean {
+        val so = sectionOf ?: return false
+        for (i in 0 until count) if (so(i) == label) {
+            sel = i
+            top = i
+            return true
+        }
+        return false
     }
 
     fun draw(c: Canvas, ui: Ui, r: RectF, count: Int, showSel: Boolean = true, rowAt: (Int) -> Row) {
         val vis = visible(ui, r.height())
-        ensure(count, vis)
+        val so = sectionOf
+        if (so == null) ensure(count, vis) else {
+            layout(count, ui.sc)
+            sel = sel.coerceIn(0, max(0, count - 1))
+            // keep the selected row (with its bar) fully on screen
+            if (sel < top) top = sel
+            while (top < sel && off[sel + 1] - off[top] > r.height()) top++
+            top = top.coerceIn(0, max(0, count - 1))
+        }
         topAnim += (top - topAnim) * ui.k
         if (abs(top - topAnim) < 0.004f) topAnim = top.toFloat() else ui.busy = true
         c.save()
         c.clipRect(r)
         val h = rowH * ui.sc
-        for (i in 0 until count) {
-            val y = r.top + (i - topAnim) * h
-            if (y + h < r.top || y > r.bottom) continue
-            ui.rf.set(r.left, y, r.right, y + h)
-            ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
+        if (so == null) {
+            for (i in 0 until count) {
+                val y = r.top + (i - topAnim) * h
+                if (y + h < r.top || y > r.bottom) continue
+                ui.rf.set(r.left, y, r.right, y + h)
+                ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
+            }
+        } else {
+            val base = offAt(topAnim, count)
+            for (i in 0 until count) {
+                val y0 = r.top + off[i] - base
+                val y1 = r.top + off[i + 1] - base
+                if (y1 < r.top || y0 > r.bottom) continue
+                val label = so(i)
+                if (label != null) {
+                    ui.rf.set(r.left, y0, r.right, y0 + headH * ui.sc)
+                    ui.sectionHeader(c, ui.rf, label)
+                }
+                ui.rf.set(r.left, y1 - h, r.right, y1)
+                ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
+            }
         }
         c.restore()
-        if (count > vis) ui.scrollbar(c, r.right, r.top, r.bottom, topAnim / (count - vis).toFloat(), vis.toFloat() / count)
+        if (so == null) {
+            if (count > vis) ui.scrollbar(c, r.right, r.top, r.bottom, topAnim / (count - vis).toFloat(), vis.toFloat() / count)
+        } else if (off[count] > r.height()) {
+            ui.scrollbar(c, r.right, r.top, r.bottom, (offAt(topAnim, count) / (off[count] - r.height())).coerceIn(0f, 1f), r.height() / off[count])
+        }
+    }
+}
+
+/** The letter strip at the right edge of a long list: shows where you are and jumps to a letter. */
+class AlphaIndex {
+    private val letters = ArrayList<String>()
+    private val box = RectF()
+
+    fun set(l: List<String>) {
+        letters.clear()
+        letters.addAll(l)
+    }
+
+    fun draw(c: Canvas, ui: Ui, r: RectF, active: String?) {
+        if (letters.size < 3) return
+        val w = 24f * ui.sc
+        box.set(r.right - w, r.top + 6f * ui.sc, r.right, r.bottom - 6f * ui.sc)
+        val step = min(box.height() / letters.size, 22f * ui.sc)
+        val top = box.centerY() - step * letters.size / 2f
+        for ((i, l) in letters.withIndex()) {
+            val on = l == active
+            val cy = top + step * (i + 0.5f)
+            if (on) {
+                ui.p.style = Paint.Style.FILL
+                ui.p.color = Belle.BLUE
+                c.drawCircle(box.centerX(), cy, step * 0.5f, ui.p)
+            }
+            ui.onDark { }
+            ui.text(c, l, box.centerX(), ui.baselineFor(cy, min(step * 0.7f, 14f * ui.sc), ui.medium), min(step * 0.7f, 14f * ui.sc), if (on) Color.WHITE else ui.al(Color.WHITE, 170), Paint.Align.CENTER, face = ui.medium)
+        }
+    }
+
+    /** The letter under a touch at [x], [y], or null if it is not on the strip. */
+    fun hit(ui: Ui, r: RectF, x: Float, y: Float): String? {
+        if (letters.size < 3 || x < r.right - 30f * ui.sc) return null
+        val step = min((r.height() - 12f * ui.sc) / letters.size, 22f * ui.sc)
+        val top = r.centerY() - step * letters.size / 2f
+        val i = ((y - top) / step).toInt()
+        return letters.getOrNull(i)
     }
 }
 
