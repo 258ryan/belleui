@@ -1,16 +1,6 @@
 name: Build Notes
-# Runs only when this app (or the shared kit / build notes) changes, so one app never rebuilds the others.
+# Manual only: run it from the Actions tab when you want this app's own release. Day-to-day checking is ci.yml.
 on:
-  push:
-    branches: [belle/all]
-    paths:
-      - 'notes/**'
-      - 'belle/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
-      - 'gradle/**'
-      - '.github/workflows/notes.yml'
   workflow_dispatch:
 
 permissions:

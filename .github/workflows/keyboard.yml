@@ -1,16 +1,6 @@
 name: Build Keyboard
-# Runs only when this app (or the shared kit / build keyboard) changes, so one app never rebuilds the others.
+# Manual only: run it from the Actions tab when you want this app's own release. Day-to-day checking is ci.yml.
 on:
-  push:
-    branches: [belle/all]
-    paths:
-      - 'keyboard/**'
-      - 'belle/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'gradle.properties'
-      - 'gradle/**'
-      - '.github/workflows/keyboard.yml'
   workflow_dispatch:
 
 permissions:
