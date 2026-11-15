@@ -32,6 +32,8 @@ class AppEntry(
     val icon: Bitmap,
     /** ApplicationInfo.category (API 26+), -1 if unknown. */
     val category: Int = -1,
+    /** Extra intent data, for Symbian apps run by EKA21 (app uid, name, device). */
+    val extras: android.os.Bundle? = null,
 )
 
 /** Installed apps plus the user's layout (order, hidden, favourites, recents). */
@@ -52,14 +54,50 @@ class AppRepo(private val ctx: Context) {
                 try {
                     val cn = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                     val label = ri.loadLabel(pm).toString()
-                    val custom = loadCustomIcon(cn.packageName) ?: loadPackIcon(cn.packageName, label)
+                    // Belle apps show their own icon; the bundled pack only dresses other apps
+                    val own = cn.packageName.startsWith("com.belleui.")
+                    val custom = loadCustomIcon(cn.packageName) ?: if (own) loadOwnIcon(cn.packageName) else loadPackIcon(cn.packageName, label)
                     val icon = withShadow(custom ?: frameTile(ri.loadIcon(pm), label))
                     AppEntry(cn.flattenToString(), label, cn, icon, if (Build.VERSION.SDK_INT >= 26) ri.activityInfo.applicationInfo.category else -1)
                 } catch (_: Throwable) {
                     null // one bad app must never take the whole list down
                 }
-            }
+            } + symbianApps()
     }
+
+    /** Symbian apps installed in EKA21, listed like normal apps; each one opens straight into the app. */
+    private fun symbianApps(): List<AppEntry> {
+        val out = ArrayList<AppEntry>()
+        val base = android.net.Uri.parse("content://$EKA_AUTH")
+        try {
+            ctx.contentResolver.query(base.buildUpon().appendPath("apps").build(), null, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    try {
+                        val uid = c.getLong(0)
+                        val name = c.getString(1) ?: continue
+                        val device = c.getString(2) ?: ""
+                        val raw = try {
+                            ctx.contentResolver.openInputStream(base.buildUpon().appendPath("icon").appendPath(uid.toString()).build())?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                        } catch (_: Throwable) { null }
+                        val icon = withShadow(loadCustomIcon("eka:$uid") ?: frameTile(raw?.let { android.graphics.drawable.BitmapDrawable(ctx.resources, it) } ?: ctx.packageManager.getApplicationIcon(EKA_PKG), name))
+                        val ex = android.os.Bundle().apply {
+                            putLong("appUid", uid)
+                            putString("appName", name)
+                            putString("appDeviceCode", device)
+                            putBoolean("appIsShortcut", true)
+                        }
+                        out.add(AppEntry("eka:$uid", name, ComponentName(EKA_PKG, "$EKA_ACT"), icon, -1, ex))
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // EKA21 not installed
+        }
+        return out
+    }
+
+
 
     /**
      * Optional icon pack: drop `<package.name>.png` into
@@ -101,6 +139,12 @@ class AppRepo(private val ctx: Context) {
         ctx.assets.open(path).use { BitmapFactory.decodeStream(it) }
     } catch (_: Exception) {
         null
+    }
+
+    /** The Belle apps wear the real icons of their Nokia counterparts (assets/icons/apk/<package>.png), if there is one. */
+    private fun loadOwnIcon(pkg: String): Bitmap? {
+        val key = pkg.replace("_", "__").replace(".", "_") + ".png"
+        return if (key in packApk) loadAsset("icons/apk/$key") else null
     }
 
     private fun loadPackIcon(pkg: String, label: String): Bitmap? {
@@ -297,13 +341,23 @@ class AppRepo(private val ctx: Context) {
     }
 
     /** Home widget slots: 0 clock, 1 date, 2 battery, 3 storage, 4 notifications. */
+    /** Which of the home screens (0..2) the favourites and widgets below belong to. */
+    var homePage = 0
+
+    private fun pk(base: String) = if (homePage == 0) base else "$base$homePage"
+
     var widgetLeft: Int
-        get() = prefs.getInt("widgetLeft", 0).coerceIn(0, 4)
-        set(v) = prefs.edit().putInt("widgetLeft", v).apply()
+        get() = prefs.getInt(pk("widgetLeft"), if (homePage == 0) 0 else if (homePage == 1) 1 else 4).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt(pk("widgetLeft"), v).apply()
 
     var widgetRight: Int
-        get() = prefs.getInt("widgetRight", 2).coerceIn(0, 4)
-        set(v) = prefs.edit().putInt("widgetRight", v).apply()
+        get() = prefs.getInt(pk("widgetRight"), if (homePage == 0) 2 else if (homePage == 1) 3 else 2).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt(pk("widgetRight"), v).apply()
+
+    /** One large Belle widget instead of the two small ones: -1 none, 0 flip clock, 1 Today, 2 music, 3 inbox, 4 toggles. */
+    var widgetLarge: Int
+        get() = prefs.getInt(pk("widgetLarge"), -1).coerceIn(-1, 5)
+        set(v) = prefs.edit().putInt(pk("widgetLarge"), v).apply()
 
     var showHidden: Boolean
         get() = prefs.getBoolean("showHidden", false)
@@ -342,27 +396,35 @@ class AppRepo(private val ctx: Context) {
 
     // ---- favourites (home tiles, max 4) --------------------------------------
 
+    // each of the three home screens has its own four shortcuts; the first starts with the usual phone apps
     fun favoriteEntries(): List<AppEntry> {
-        if (!prefs.contains("favs") && apps.isNotEmpty()) putList("favs", defaultFavorites())
+        if (homePage == 0 && !prefs.contains("favs") && apps.isNotEmpty()) putList("favs", defaultFavorites())
         val byKey = apps.associateBy { it.key }
-        return getList("favs").mapNotNull { byKey[it] }.take(MAX_FAVS)
+        return getList(pk("favs")).mapNotNull { byKey[it] }.take(MAX_FAVS)
     }
 
-    fun isFavorite(key: String) = key in getList("favs")
+    /** The Belle home screen layout (shortcuts and widgets on a grid), saved as text by the launcher. */
+    var homeLayout: String?
+        get() = prefs.getString("homeLayout", null)
+        set(v) {
+            prefs.edit().putString("homeLayout", v).apply()
+        }
+
+    fun isFavorite(key: String) = key in getList(pk("favs"))
 
     fun addFavorite(key: String): Boolean {
-        val l = getList("favs")
+        val l = getList(pk("favs"))
         if (key in l) return true
         if (l.size >= MAX_FAVS) return false
         l.add(key)
-        putList("favs", l)
+        putList(pk("favs"), l)
         return true
     }
 
     fun removeFavorite(key: String) {
-        val l = getList("favs")
+        val l = getList(pk("favs"))
         l.remove(key)
-        putList("favs", l)
+        putList(pk("favs"), l)
     }
 
     private fun defaultFavorites(): List<String> {
@@ -384,9 +446,43 @@ class AppRepo(private val ctx: Context) {
 
     // ---- recents ---------------------------------------------------------------
 
+    /**
+     * What you used lately: the system's own usage record (apps opened from anywhere, not only from here), newest
+     * first, then the ones opened from this launcher. Needs "usage access", which the module grants; without it only
+     * the launcher's own list is used.
+     */
     fun recentEntries(): List<AppEntry> {
         val byKey = apps.associateBy { it.key }
-        return getList("recents").mapNotNull { byKey[it] }
+        val own = getList("recents").mapNotNull { byKey[it] }
+        return (usageRecents() + own).distinctBy { it.component.packageName }.take(MAX_RECENTS)
+    }
+
+    /** When each app was last in front, from the usage record (refreshed with the recents list). */
+    @Volatile
+    var lastUsed: Map<String, Long> = emptyMap()
+        private set
+
+    private fun usageRecents(): List<AppEntry> {
+        try {
+            val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val end = System.currentTimeMillis()
+            val events = usm.queryEvents(end - 12L * 3600_000L, end) ?: return emptyList()
+            val last = HashMap<String, Long>()
+            val e = android.app.usage.UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                if (e.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) last[e.packageName] = e.timeStamp
+            }
+            val byPkg = apps.groupBy { it.component.packageName }
+            lastUsed = last
+            return last.entries
+                .filter { it.value > prefs.getLong("dismissed_" + it.key, 0L) }
+                .sortedByDescending { it.value }
+                .mapNotNull { byPkg[it.key]?.firstOrNull() }
+                .filter { it.component.packageName != ctx.packageName }
+        } catch (_: Throwable) {
+            return emptyList()
+        }
     }
 
     fun pushRecent(key: String) {
@@ -396,8 +492,27 @@ class AppRepo(private val ctx: Context) {
         putList("recents", l.take(MAX_RECENTS))
     }
 
+    fun removeRecent(key: String) {
+        val l = getList("recents")
+        l.remove(key)
+        putList("recents", l)
+        apps.firstOrNull { it.key == key }?.let { prefs.edit().putLong("dismissed_" + it.component.packageName, System.currentTimeMillis()).apply() }
+    }
+
+    fun clearRecents() {
+        putList("recents", emptyList())
+        val now = System.currentTimeMillis()
+        val ed = prefs.edit()
+        for (a in usageRecents()) ed.putLong("dismissed_" + a.component.packageName, now)
+        ed.apply()
+    }
+
     companion object {
+        private const val EKA_AUTH = "com.github.eka2l1.dualstick.belle"
+        private const val EKA_PKG = "com.github.eka2l1.dualstick"
+        private const val EKA_ACT = "com.github.eka2l1.emu.EmulatorActivity"
         const val MAX_FAVS = 4
+        const val HOME_PAGES = 1
         const val MAX_RECENTS = 12
     }
 }
