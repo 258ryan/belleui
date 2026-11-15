@@ -53,6 +53,9 @@ import kotlin.math.sin
  *   2  Recent  – Asha-style list of recently opened apps
  */
 class LauncherView(private val act: Activity) : View(act) {
+    /** The Belle application grid is six icons across in landscape (ApplicationGrid.xml of the Belle FP2 theme). */
+    private val COLS = 6
+
 
     private enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, SETTINGS, MENU, PREV, NEXT }
 
@@ -103,6 +106,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private var tab = 1
     private var tabFocus = false
     private var homeSel = 0
+    private var homePage = 0 // which of the three home screens is showing
     private var menuSel = 0
     private var menuTop = 0
     private var menuTopAnim = 0f
@@ -220,7 +224,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 val d = if (scrollAccum > 0) 1 else -1
                 scrollAccum -= d * step
                 if (page == 1) {
-                    menuTop = (menuTop + d).coerceIn(0, max(0, (menuApps.size + 3) / 4 - 3))
+                    menuTop = (menuTop + d).coerceIn(0, max(0, (menuApps.size + COLS - 1) / COLS - 3))
                 } else if (page == 2) {
                     recentTop = (recentTop + d).coerceIn(0, max(0, recents.size - recentVisible()))
                 }
@@ -305,6 +309,11 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun goHome() {
+        if (homePage != 0) {
+            homePage = 0
+            repo.homePage = 0
+            refreshLists()
+        }
         popup = null
         reorder = false
         page = 0
@@ -322,6 +331,26 @@ class LauncherView(private val act: Activity) : View(act) {
                 invalidate()
             }
         }.start()
+    }
+
+    /** Moves to another home screen; its own shortcuts and widgets load with it. */
+    private fun switchHome(to: Int, tile: Int) {
+        homePage = to.coerceIn(0, AppRepo.HOME_PAGES - 1)
+        repo.homePage = homePage
+        homeSel = tile
+        widgetSub = 0
+        refreshLists()
+        media.stop()
+        if (repo.widgetLarge == 2) media.start()
+        if (repo.widgetLarge == 1) calendar.refresh()
+        invalidate()
+    }
+
+    /** Past the last tile or widget: the next home screen, then the apps (or the Hub on the left). */
+    private fun homeEdge(dir: Int) {
+        val to = homePage + dir
+        if (to in 0 until AppRepo.HOME_PAGES) switchHome(to, if (dir < 0) 3 else 0)
+        else setPage(if (dir < 0) -1 else 1)
     }
 
     private fun refreshLists() {
@@ -431,8 +460,8 @@ class LauncherView(private val act: Activity) : View(act) {
             when (a) {
                 Act.LEFT -> moveBy(-1)
                 Act.RIGHT -> moveBy(1)
-                Act.UP -> moveBy(-4)
-                Act.DOWN -> moveBy(4)
+                Act.UP -> moveBy(-COLS)
+                Act.DOWN -> moveBy(COLS)
                 Act.OK, Act.BACK, Act.OPTIONS -> {
                     reorder = false
                     showToast("Order saved")
@@ -453,8 +482,8 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
         when (a) {
-            Act.PREV -> setPage(page - 1)
-            Act.NEXT -> setPage(page + 1)
+            Act.PREV -> if (page == 0) homeEdge(-1) else setPage(page - 1)
+            Act.NEXT -> if (page == 0) homeEdge(1) else setPage(page + 1)
             Act.MENU -> setPage(if (page != 0) 0 else 1)
             Act.SETTINGS -> openQuick(0)
             Act.OPTIONS -> openOptions()
@@ -491,8 +520,8 @@ class LauncherView(private val act: Activity) : View(act) {
                     widgetSub = if (repo.widgetLarge == 2 || repo.widgetLarge == 4) 1 else 0
                 }
                 Act.DOWN -> if (homeSel < 0) homeSel = 0
-                Act.LEFT -> if (homeSel < 0) widgetStep(-1) else if (homeSel > 0) homeSel-- else setPage(-1)
-                Act.RIGHT -> if (homeSel < 0) widgetStep(1) else if (homeSel < 3) homeSel++ else setPage(1)
+                Act.LEFT -> if (homeSel < 0) widgetStep(-1) else if (homeSel > 0) homeSel-- else homeEdge(-1)
+                Act.RIGHT -> if (homeSel < 0) widgetStep(1) else if (homeSel < 3) homeSel++ else homeEdge(1)
                 Act.OK -> if (homeSel < 0) widgetActivate() else {
                     val app = favs.getOrNull(homeSel)
                     if (app != null) {
@@ -511,10 +540,10 @@ class LauncherView(private val act: Activity) : View(act) {
                     return
                 }
                 when (a) {
-                    Act.LEFT -> if (menuSel % 4 == 0) setPage(0) else menuSel--
-                    Act.RIGHT -> if (menuSel % 4 == 3 || menuSel == n - 1) setPage(2) else menuSel++
-                    Act.UP -> if (menuSel >= 4) menuSel -= 4 else tabFocus = true
-                    Act.DOWN -> if (menuSel + 4 < n) menuSel += 4 else if (menuSel / 4 < (n - 1) / 4) menuSel = n - 1
+                    Act.LEFT -> if (menuSel % COLS == 0) setPage(0) else menuSel--
+                    Act.RIGHT -> if (menuSel % COLS == COLS - 1 || menuSel == n - 1) setPage(2) else menuSel++
+                    Act.UP -> if (menuSel >= COLS) menuSel -= COLS else tabFocus = true
+                    Act.DOWN -> if (menuSel + COLS < n) menuSel += COLS else if (menuSel / COLS < (n - 1) / COLS) menuSel = n - 1
                     Act.OK -> launch(menuApps[menuSel])
                     else -> {}
                 }
@@ -541,9 +570,9 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun ensureVisible() {
-        val row = menuSel / 4
+        val row = menuSel / COLS
         if (row < menuTop) menuTop = row else if (row > menuTop + 2) menuTop = row - 2
-        menuTop = menuTop.coerceIn(0, max(0, (menuApps.size + 3) / 4 - 3))
+        menuTop = menuTop.coerceIn(0, max(0, (menuApps.size + COLS - 1) / COLS - 3))
         val vis = recentVisible()
         if (recentSel < recentTop) recentTop = recentSel else if (recentSel >= recentTop + vis) recentTop = recentSel - vis + 1
         recentTop = recentTop.coerceIn(0, max(0, recents.size - vis))
@@ -606,9 +635,9 @@ class LauncherView(private val act: Activity) : View(act) {
                 }
             }
             1 -> {
-                val cw = width / 4f
+                val cw = width / COLS.toFloat()
                 val ch = menuCellH()
-                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * 4 + (x / cw).toInt()
+                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * COLS + (x / cw).toInt()
                 if (y > menuAreaTop() && idx in menuApps.indices) {
                     menuSel = idx
                     hit = true
@@ -964,10 +993,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
-        val cw = width / 4f
+        val cw = width / COLS.toFloat()
         val ch = menuCellH()
-        val x = (idx % 4) * cw
-        val y = menuAreaTop() + ((idx / 4) - top) * ch
+        val x = (idx % COLS) * cw
+        val y = menuAreaTop() + ((idx / COLS) - top) * ch
         out.set(x, y, x + cw, y + ch)
         return out
     }
@@ -1206,6 +1235,17 @@ class LauncherView(private val act: Activity) : View(act) {
             p.style = Paint.Style.FILL
         }
 
+        // page dots: which of the three home screens this is
+        run {
+            val n = AppRepo.HOME_PAGES
+            val gap = 18f * sc
+            val cx0 = w / 2f - (n - 1) * gap / 2f
+            for (i in 0 until n) {
+                p.style = Paint.Style.FILL
+                p.color = if (i == homePage) Color.WHITE else al(Color.WHITE, 90)
+                c.drawCircle(cx0 + i * gap, cBot - 5f * sc, if (i == homePage) 4f * sc else 3.2f * sc, p)
+            }
+        }
         // shortcuts straight on the wallpaper
         for (i in 0..3) {
             homeTileRect(i, tmp)
@@ -1396,12 +1436,12 @@ class LauncherView(private val act: Activity) : View(act) {
         val large = repo.widgetLarge
         if (large == 2 || large == 4) {
             val n = widgetSub + d
-            if (n < 0) setPage(-1) else if (n > 2) setPage(1) else widgetSub = n
+            if (n < 0) homeEdge(-1) else if (n > 2) homeEdge(1) else widgetSub = n
         } else if (large < 0) {
             val n = widgetSub + d
-            if (n < 0) setPage(-1) else if (n > 1) setPage(1) else widgetSub = n
+            if (n < 0) homeEdge(-1) else if (n > 1) homeEdge(1) else widgetSub = n
         } else {
-            if (d < 0) setPage(-1) else setPage(1)
+            homeEdge(if (d < 0) -1 else 1)
         }
     }
 
@@ -1899,7 +1939,7 @@ class LauncherView(private val act: Activity) : View(act) {
             text(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
             drawFocus(c, menuFocus.cur, 12f * sc)
-            val cw = w / 4f
+            val cw = w / COLS
             val ch = menuCellH()
             val isz = 70f * sc // graphicSizeLarge
             for (idx in menuApps.indices) {
@@ -1912,7 +1952,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
                 text(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 8f * sc)
             }
-            val rows = (menuApps.size + 3) / 4
+            val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
                 val trackT = area + 6f * sc
                 val trackH = menuAreaBottom() - area - 12f * sc

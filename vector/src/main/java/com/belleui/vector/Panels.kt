@@ -581,7 +581,7 @@ object Hud {
             }
             var idx = 6
             fun noteRow(n: Notes.Item, index: Int) {
-                val h = 56f * sc
+                val h = 64f * sc
                 val focus = sel == index
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
@@ -592,18 +592,18 @@ object Hud {
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
                 val ic = icon(n.sbn.packageName)
-                rf.set(34f * sc, y + 9f * sc, 34f * sc + 38f * sc, y + 9f * sc + 38f * sc)
+                rf.set(34f * sc, y + 12f * sc, 34f * sc + 40f * sc, y + 12f * sc + 40f * sc)
                 if (ic != null) c.drawBitmap(ic, null, rf, null)
                 if (!n.ongoing && android.os.SystemClock.uptimeMillis() > 0 && System.currentTimeMillis() - n.sbn.postTime < 10 * 60_000L) {
                     u.p.color = if (focus) Color.WHITE else Color.WHITE
                     c.drawCircle(20f * sc, y + 28f * sc, 5f * sc, u.p)
                 }
                 val tx = 84f * sc
-                u.text(c, n.title, tx, y + 24f * sc, 18f * sc, Color.WHITE, maxW = w - tx - 14f * sc, face = u.medium)
+                u.text(c, n.title, tx, y + 27f * sc, 18f * sc, Color.WHITE, maxW = w - tx - 14f * sc, face = u.medium)
                 if (n.progress != null) {
-                    u.progressBar(c, RectF(tx, y + 32f * sc, w - 16f * sc, y + 48f * sc), n.progress)
+                    u.progressBar(c, RectF(tx, y + 38f * sc, w - 16f * sc, y + 54f * sc), n.progress)
                 } else if (!n.text.isNullOrBlank()) {
-                    u.text(c, n.text, tx, y + 46f * sc, 15f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 14f * sc, face = u.light)
+                    u.text(c, n.text, tx, y + 51f * sc, 15f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 14f * sc, face = u.light)
                 }
                 mark(index, y, y + h)
                 y += h

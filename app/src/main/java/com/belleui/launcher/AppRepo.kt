@@ -299,18 +299,23 @@ class AppRepo(private val ctx: Context) {
     }
 
     /** Home widget slots: 0 clock, 1 date, 2 battery, 3 storage, 4 notifications. */
+    /** Which of the home screens (0..2) the favourites and widgets below belong to. */
+    var homePage = 0
+
+    private fun pk(base: String) = if (homePage == 0) base else "$base$homePage"
+
     var widgetLeft: Int
-        get() = prefs.getInt("widgetLeft", 0).coerceIn(0, 4)
-        set(v) = prefs.edit().putInt("widgetLeft", v).apply()
+        get() = prefs.getInt(pk("widgetLeft"), if (homePage == 0) 0 else if (homePage == 1) 1 else 4).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt(pk("widgetLeft"), v).apply()
 
     var widgetRight: Int
-        get() = prefs.getInt("widgetRight", 2).coerceIn(0, 4)
-        set(v) = prefs.edit().putInt("widgetRight", v).apply()
+        get() = prefs.getInt(pk("widgetRight"), if (homePage == 0) 2 else if (homePage == 1) 3 else 2).coerceIn(0, 4)
+        set(v) = prefs.edit().putInt(pk("widgetRight"), v).apply()
 
     /** One large Belle widget instead of the two small ones: -1 none, 0 flip clock, 1 Today, 2 music, 3 inbox, 4 toggles. */
     var widgetLarge: Int
-        get() = prefs.getInt("widgetLarge", -1).coerceIn(-1, 4)
-        set(v) = prefs.edit().putInt("widgetLarge", v).apply()
+        get() = prefs.getInt(pk("widgetLarge"), -1).coerceIn(-1, 4)
+        set(v) = prefs.edit().putInt(pk("widgetLarge"), v).apply()
 
     var showHidden: Boolean
         get() = prefs.getBoolean("showHidden", false)
@@ -349,27 +354,28 @@ class AppRepo(private val ctx: Context) {
 
     // ---- favourites (home tiles, max 4) --------------------------------------
 
+    // each of the three home screens has its own four shortcuts; the first starts with the usual phone apps
     fun favoriteEntries(): List<AppEntry> {
-        if (!prefs.contains("favs") && apps.isNotEmpty()) putList("favs", defaultFavorites())
+        if (homePage == 0 && !prefs.contains("favs") && apps.isNotEmpty()) putList("favs", defaultFavorites())
         val byKey = apps.associateBy { it.key }
-        return getList("favs").mapNotNull { byKey[it] }.take(MAX_FAVS)
+        return getList(pk("favs")).mapNotNull { byKey[it] }.take(MAX_FAVS)
     }
 
-    fun isFavorite(key: String) = key in getList("favs")
+    fun isFavorite(key: String) = key in getList(pk("favs"))
 
     fun addFavorite(key: String): Boolean {
-        val l = getList("favs")
+        val l = getList(pk("favs"))
         if (key in l) return true
         if (l.size >= MAX_FAVS) return false
         l.add(key)
-        putList("favs", l)
+        putList(pk("favs"), l)
         return true
     }
 
     fun removeFavorite(key: String) {
-        val l = getList("favs")
+        val l = getList(pk("favs"))
         l.remove(key)
-        putList("favs", l)
+        putList(pk("favs"), l)
     }
 
     private fun defaultFavorites(): List<String> {
@@ -413,6 +419,7 @@ class AppRepo(private val ctx: Context) {
 
     companion object {
         const val MAX_FAVS = 4
+        const val HOME_PAGES = 3
         const val MAX_RECENTS = 12
     }
 }
