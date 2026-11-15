@@ -17,11 +17,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :sysui:assembleDebug
       - name: Restyle the stock System UI
         run: |
           curl -sSL -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
           java -jar apktool.jar d -f -o sysui-dec sysui-stock/SystemUI-stock.apk
-          python3 sysui-stock/restyle.py sysui-dec
+          # the Belle panels (from the from-scratch System UI) are merged into the stock one and called from it
+          java -jar apktool.jar d -f -o belle-dec sysui/build/outputs/apk/debug/sysui-debug.apk
+          python3 sysui-stock/restyle.py sysui-dec belle-dec
           java -jar apktool.jar b -o sysui-unsigned.apk sysui-dec
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
           $BT/zipalign -f -p 4 sysui-unsigned.apk sysui-aligned.apk
