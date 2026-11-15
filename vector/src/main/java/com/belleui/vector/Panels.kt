@@ -483,7 +483,7 @@ object Hud {
             val u = ui ?: ui(mod, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).also { ui = it }
             val sc = u.sc
             val w = width.toFloat()
-            val panelH = min(height * 0.94f, 456f * sc)
+            val panelH = height.toFloat()
             val off = -(1f - slide) * panelH
             hits.clear()
             c.save()
@@ -492,13 +492,20 @@ object Hud {
             // panel
             u.p.style = Paint.Style.FILL
             u.p.shader = null
-            u.p.color = 0xFF262626.toInt()
+            u.p.shader = android.graphics.LinearGradient(0f, 0f, 0f, panelH, 0xFF1E1E1E.toInt(), 0xFF080808.toInt(), android.graphics.Shader.TileMode.CLAMP)
             c.drawRect(0f, 0f, w, panelH, u.p)
+            u.p.shader = null
+
+            // the status line: title on the left, battery and clock on the right, as on every Belle screen
+            u.p.color = Color.BLACK
+            c.drawRect(0f, 0f, w, 28f * sc, u.p)
+            u.text(c, "Status", 10f * sc, 21f * sc, 19f * sc, Color.WHITE)
+            u.text(c, android.text.format.DateFormat.format(if (android.text.format.DateFormat.is24HourFormat(sys)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString() + "   " + batteryText().substringBefore(' '), w - 10f * sc, 21f * sc, 17f * sc, Color.WHITE, Paint.Align.RIGHT)
 
             // quick switches (fixed at the top)
-            val barH = 92f * sc
-            u.p.color = 0xFF111111.toInt()
-            c.drawRect(0f, 0f, w, barH, u.p)
+            val barH = 124f * sc
+            u.p.color = 0xFF0C0C0C.toInt()
+            c.drawRect(0f, 28f * sc, w, barH, u.p)
             // the real Belle panel switches (Belle FP2 theme): lit in blue when on; Silence is lit when the phone is quiet
             val on = booleanArrayOf(if (hasCell) dataOn() else airplane(), wifi(), bt(), !soundOn())
             val names = arrayOf(if (hasCell) "Data" else "Airplane", "Wi-Fi", "Bluetooth", "Silence")
@@ -507,10 +514,10 @@ object Hud {
             for (i in 0..3) {
                 val cx = cell * i + cell / 2f
                 val focused = sel == 0 && sw == i
-                rf.set(cx - 29f * sc, 5f * sc, cx + 29f * sc, 5f * sc + 66f * sc)
+                rf.set(cx - 29f * sc, 34f * sc, cx + 29f * sc, 34f * sc + 66f * sc)
                 if (!u.gfx.draw(c, "qtg_graf_panel_switch_${art[i]}_${if (on[i]) "on" else "off"}", rf)) {
                     u.p.color = if (on[i]) Belle.BLUE else 0xFF3A3A3A.toInt()
-                    c.drawCircle(cx, 36f * sc, 27f * sc, u.p)
+                    c.drawCircle(cx, 67f * sc, 27f * sc, u.p)
                 }
                 if (focused) {
                     u.p.style = Paint.Style.STROKE
@@ -519,9 +526,9 @@ object Hud {
                     c.drawRoundRect(rf.left - 3f * sc, rf.top - 3f * sc, rf.right + 3f * sc, rf.bottom + 3f * sc, 16f * sc, 16f * sc, u.p)
                     u.p.style = Paint.Style.FILL
                 }
-                u.text(c, names[i], cx, 86f * sc, 14f * sc, if (focused) Color.WHITE else Belle.TEXT_MID, Paint.Align.CENTER, face = u.light)
+                u.text(c, names[i], cx, 118f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, face = u.light)
             }
-            hits.add(0 to RectF(0f, 0f, w, barH))
+            hits.add(0 to RectF(0f, 28f * sc, w, barH))
 
             // everything below scrolls
             c.save()
@@ -537,11 +544,11 @@ object Hud {
                 }
             }
             fun header(title: String, button: String?, index: Int) {
-                val h = 38f * sc
-                u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, 0xFF454545.toInt(), 0xFF333333.toInt(), android.graphics.Shader.TileMode.CLAMP)
+                val h = 40f * sc
+                u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, 0xFF4A4A4A.toInt(), 0xFF383838.toInt(), android.graphics.Shader.TileMode.CLAMP)
                 c.drawRect(0f, y, w, y + h, u.p)
                 u.p.shader = null
-                u.text(c, title, 16f * sc, y + 26f * sc, 19f * sc, Color.WHITE, face = u.medium)
+                u.text(c, title, 14f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
                 if (button != null) {
                     r.set(w - 100f * sc, y + 5f * sc, w - 12f * sc, y + h - 5f * sc)
                     u.pushButton(c, r, button, sel == index)
@@ -561,58 +568,75 @@ object Hud {
                 mark(index, y, y + h)
                 y += h
             }
-            // profile row
+            // activities that always apply: the profile, and the brightness (a list item with a bar)
             run {
-                val h = 44f * sc
+                val h = 62f * sc
                 val focus = sel == 1
                 if (focus) {
-                    u.p.color = 0x33FFFFFF
+                    u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
                     c.drawRect(0f, y, w, y + h, u.p)
+                    u.p.shader = null
+                } else {
+                    u.p.color = 0xFF3A3A3A.toInt()
+                    c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
-                u.text(c, "Profile", 16f * sc, y + 28f * sc, 17f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
                 val pi = Profiles.current(sys)
-                rf.set(130f * sc, y + 8f * sc, 130f * sc + 28f * sc, y + 8f * sc + 28f * sc)
+                rf.set(14f * sc, y + 11f * sc, 14f * sc + 40f * sc, y + 11f * sc + 40f * sc)
                 u.gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", rf)
-                u.text(c, Profiles.names[pi], 166f * sc, y + 29f * sc, 21f * sc, Color.WHITE)
-                u.text(c, "A: change", w - 16f * sc, y + 28f * sc, 15f * sc, Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
+                u.text(c, "Profile", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
+                u.text(c, Profiles.names[pi], 66f * sc, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
+                u.text(c, "A: change", w - 14f * sc, y + 38f * sc, 15f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
                 mark(1, y, y + h)
                 y += h
             }
-            slider("Media", am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1), 2)
-            slider("Ringtone", am.getStreamVolume(AudioManager.STREAM_RING).toFloat() / am.getStreamMaxVolume(AudioManager.STREAM_RING).coerceAtLeast(1), 3)
-            slider("Brightness", brightness() / 255f, 4)
+            run {
+                val h = 62f * sc
+                val focus = sel == 4
+                if (focus) {
+                    u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
+                    c.drawRect(0f, y, w, y + h, u.p)
+                    u.p.shader = null
+                } else {
+                    u.p.color = 0xFF3A3A3A.toInt()
+                    c.drawRect(0f, y + h - 1f, w, y + h, u.p)
+                }
+                u.text(c, "Brightness", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
+                u.progressBar(c, RectF(66f * sc, y + 38f * sc, w - 20f * sc, y + 54f * sc), brightness() / 255f)
+                mark(4, y, y + h)
+                y += h
+            }
 
             val normal = normal()
             header("Notifications", if (normal.isNotEmpty()) "Clear" else null, 5)
             if (normal.isEmpty()) {
-                u.text(c, "No notifications", 16f * sc, y + 28f * sc, 17f * sc, Belle.TEXT_MID, face = u.light)
+                u.text(c, "No notifications", 66f * sc, y + 30f * sc, 18f * sc, Belle.TEXT_MID, face = u.light)
                 y += 44f * sc
             }
             var idx = 6
             fun noteRow(n: Notes.Item, index: Int) {
-                val h = 64f * sc
+                val h = 66f * sc
                 val focus = sel == index
                 if (focus) {
                     u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
                     c.drawRect(0f, y, w, y + h, u.p)
                     u.p.shader = null
                 } else {
-                    u.p.color = 0xFF444444.toInt()
+                    u.p.color = 0xFF3A3A3A.toInt()
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
                 val ic = icon(n.sbn.packageName)
-                rf.set(34f * sc, y + 12f * sc, 34f * sc + 40f * sc, y + 12f * sc + 40f * sc)
+                rf.set(14f * sc, y + 13f * sc, 14f * sc + 40f * sc, y + 13f * sc + 40f * sc)
                 if (ic != null) c.drawBitmap(ic, null, rf, null)
                 if (!n.ongoing && android.os.SystemClock.uptimeMillis() > 0 && System.currentTimeMillis() - n.sbn.postTime < 10 * 60_000L) {
-                    u.p.color = if (focus) Color.WHITE else Color.WHITE
-                    c.drawCircle(20f * sc, y + 28f * sc, 5f * sc, u.p)
+                    u.p.color = 0xFFE23B3B.toInt()
+                    c.drawCircle(52f * sc, y + 15f * sc, 5f * sc, u.p)
                 }
-                val tx = 84f * sc
-                u.text(c, n.title, tx, y + 27f * sc, 18f * sc, Color.WHITE, maxW = w - tx - 14f * sc, face = u.medium)
+                val tx = 66f * sc
+                u.text(c, n.title, tx, y + 28f * sc, 20f * sc, Color.WHITE, maxW = w - tx - 14f * sc, face = u.medium)
                 if (n.progress != null) {
                     u.progressBar(c, RectF(tx, y + 38f * sc, w - 16f * sc, y + 54f * sc), n.progress)
                 } else if (!n.text.isNullOrBlank()) {
-                    u.text(c, n.text, tx, y + 51f * sc, 15f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 14f * sc, face = u.light)
+                    u.text(c, n.text, tx, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 14f * sc, face = u.light)
                 }
                 mark(index, y, y + h)
                 y += h
@@ -707,8 +731,14 @@ object Hud {
             if (ev.action != KeyEvent.ACTION_DOWN) return true
             val last = focusCount() - 1
             when (code) {
-                KeyEvent.KEYCODE_DPAD_UP -> sel = (sel - 1).coerceAtLeast(0)
-                KeyEvent.KEYCODE_DPAD_DOWN -> sel = (sel + 1).coerceAtMost(last)
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    sel = (sel - 1).coerceAtLeast(0)
+                    if (sel == 3 || sel == 2) sel = 1
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    sel = (sel + 1).coerceAtMost(last)
+                    if (sel == 2 || sel == 3) sel = 4
+                }
                 KeyEvent.KEYCODE_DPAD_LEFT -> when (sel) {
                     0 -> sw = (sw + 3) % 4
                     2 -> volume(AudioManager.STREAM_MUSIC, -1)
@@ -745,7 +775,7 @@ object Hud {
 
         override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
             if (e.action != android.view.MotionEvent.ACTION_DOWN) return true
-            val panelH = min(height * 0.94f, 456f * (ui?.sc ?: 1f))
+            val panelH = height.toFloat()
             if (e.y > panelH) {
                 close()
                 return true
