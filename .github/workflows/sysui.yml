@@ -1,0 +1,46 @@
+name: Build the System UI module
+# Manual: builds the Belle System UI replacement and packs it as its own Magisk module (release sysui-latest).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: belle/all
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :sysui:assembleDebug :app:assembleDebug
+      - name: Pack the module
+        run: |
+          rm -rf module && cp -r magisk/sysui module
+          cp sysui/build/outputs/apk/debug/sysui-debug.apk module/system/system_ext/priv-app/SystemUI/SystemUI.apk
+          rm -f module/README.md
+          (cd module && zip -qr ../BelleUI-SystemUI-Magisk.zip .)
+          unzip -l BelleUI-SystemUI-Magisk.zip
+      - name: Show the signing certificate
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
+          $APKSIGNER verify --print-certs sysui/build/outputs/apk/debug/sysui-debug.apk | grep -E "SHA-1|SHA-256" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: belleui-sysui-module
+          path: BelleUI-SystemUI-Magisk.zip
+          if-no-files-found: error
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete sysui-latest --yes --cleanup-tag || true
+          gh release create sysui-latest BelleUI-SystemUI-Magisk.zip \
+            --title "BelleUI System UI (experimental Magisk module)" \
+            --notes "Replaces Android System UI. Experimental, no lock screen. Built from belle/all at ${GITHUB_SHA::7}. Read the module README before flashing." \
+            --prerelease --target "$GITHUB_SHA"
