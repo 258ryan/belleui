@@ -1243,6 +1243,7 @@ class LauncherView(private val act: Activity) : View(act) {
         // page dots: which of the three home screens this is
         run {
             val n = AppRepo.HOME_PAGES
+            if (n < 2) return@run
             val gap = 18f * sc
             val cx0 = w / 2f - (n - 1) * gap / 2f
             for (i in 0 until n) {

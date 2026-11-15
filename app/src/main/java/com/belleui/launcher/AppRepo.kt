@@ -419,7 +419,7 @@ class AppRepo(private val ctx: Context) {
 
     companion object {
         const val MAX_FAVS = 4
-        const val HOME_PAGES = 3
+        const val HOME_PAGES = 1
         const val MAX_RECENTS = 12
     }
 }
