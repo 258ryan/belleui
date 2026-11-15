@@ -16,11 +16,31 @@ object BelleHook {
         true
     }
 
+    @Volatile
+    private var bypass = false
+
+    /** Opens the stock quick settings panel: the next call from the System UI is let through. */
+    private fun openStock(ctx: Context) {
+        try {
+            bypass = true
+            val dep = Class.forName("com.android.systemui.Dependency")
+            val cq = dep.getMethod("get", Class::class.java).invoke(null, Class.forName("com.android.systemui.statusbar.CommandQueue"))
+            cq!!.javaClass.getMethod("animateExpandSettingsPanel", String::class.java).invoke(cq, null as String?)
+        } catch (_: Throwable) {
+            bypass = false
+        }
+    }
+
     /** The pull-down: the Status menu, never over the lock screen. */
     @JvmStatic
     fun status(ctx: Context): Boolean {
         return try {
+            if (bypass) {
+                bypass = false
+                return false
+            }
             if (locked(ctx)) return false
+            Hud.stockShade = { openStock(ctx) }
             Hud.toggleStatus(ctx, ctx)
             true
         } catch (_: Throwable) {

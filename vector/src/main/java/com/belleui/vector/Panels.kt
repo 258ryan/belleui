@@ -248,7 +248,43 @@ object Hud {
 
         private val uri = android.net.Uri.parse("content://com.belleui.launcher.status/active")
 
+        /** The real System UI's own notification listener: every notification, with no other app needed. */
+        private fun listener(): android.service.notification.NotificationListenerService? = try {
+            val dep = Class.forName("com.android.systemui.Dependency")
+            val cls = Class.forName("com.android.systemui.statusbar.NotificationListener")
+            dep.getMethod("get", Class::class.java).invoke(null, cls) as? android.service.notification.NotificationListenerService
+        } catch (_: Throwable) {
+            null
+        }
+
+        private fun direct(): Array<android.service.notification.StatusBarNotification>? = try {
+            listener()?.activeNotifications
+        } catch (_: Throwable) {
+            null
+        }
+
+        private fun fromSbns(sys: Context, list: Array<android.service.notification.StatusBarNotification>): List<Item> {
+            val out = ArrayList<Item>()
+            for (sbn in list) {
+                try {
+                    val n = sbn.notification ?: continue
+                    if (n.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0) continue
+                    val x = n.extras
+                    val title = x.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
+                    val text = x.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
+                    if (title.isBlank() && text.isBlank()) continue
+                    val max = x.getInt(android.app.Notification.EXTRA_PROGRESS_MAX, 0)
+                    val prog = if (max > 0) x.getInt(android.app.Notification.EXTRA_PROGRESS, 0).toFloat() / max else null
+                    val ongoing = n.flags and (android.app.Notification.FLAG_ONGOING_EVENT or android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0
+                    out.add(Item(sbn.key, sbn.packageName, title.ifBlank { appName(sys, sbn.packageName) }, text.ifBlank { null }, ongoing, prog, n.flags and android.app.Notification.FLAG_NO_CLEAR == 0, sbn.postTime))
+                } catch (_: Throwable) {
+                }
+            }
+            return out
+        }
+
         fun active(sys: Context): List<Item> {
+            direct()?.let { return fromSbns(sys, it).sortedByDescending { it.postTime } }
             val out = ArrayList<Item>()
             try {
                 sys.contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -267,6 +303,7 @@ object Hud {
 
         /** Why the list might be empty: null when everything works. */
         fun problem(sys: Context): String? {
+            if (direct() != null) return null
             val b = try {
                 sys.contentResolver.call(android.net.Uri.parse("content://com.belleui.launcher.status"), "status", null, null)
             } catch (_: Throwable) {
@@ -290,6 +327,14 @@ object Hud {
         }
 
         fun cancel(sys: Context, n: Item) {
+            val l = listener()
+            if (l != null) {
+                try {
+                    l.cancelNotification(n.key)
+                    return
+                } catch (_: Throwable) {
+                }
+            }
             call(sys, "cancel", n.key)
         }
 
@@ -300,11 +345,17 @@ object Hud {
         /** Runs the notification's own action from here (the System UI may start apps from the background). */
         fun open(sys: Context, n: Item) {
             try {
-                call(sys, "open", n.key)?.getParcelable<android.app.PendingIntent>("intent")?.send()
+                val own = direct()?.firstOrNull { it.key == n.key }
+                val pi = own?.notification?.contentIntent ?: call(sys, "open", n.key)?.getParcelable<android.app.PendingIntent>("intent")
+                pi?.send()
             } catch (_: Throwable) {
             }
         }
     }
+
+    /** Set by the real System UI: opens its own full quick settings and notification panel. */
+    @Volatile
+    var stockShade: (() -> Unit)? = null
 
     /** How many notifications are showing, for the status bar's mail mark. */
     fun activeCount(sys: Context): Int = Notes.active(sys).count { !it.ongoing }
@@ -328,7 +379,7 @@ object Hud {
         // focus order: 0 switches, 1 profile, 2 media, 3 ringtone, 4 brightness, 5 clear, 6.. notifications, then activities, then footer
         private fun normal() = notes.filter { !it.ongoing }
         private fun acts() = notes.filter { it.ongoing }
-        private fun focusCount() = 6 + normal().size + acts().size
+        private fun focusCount() = 6 + normal().size + acts().size + (if (stockShade != null) 1 else 0)
 
         private val tick = object : Runnable {
             override fun run() {
@@ -671,6 +722,20 @@ object Hud {
                 header("Activities", null, -1)
                 for (n in acts) noteRow(n, idx++)
             }
+            if (stockShade != null) {
+                // the full Android panel: every quick settings tile and the rest of the stock shade
+                val h = 62f * sc
+                val focus = sel == idx
+                if (focus) {
+                    u.p.shader = android.graphics.LinearGradient(0f, y, 0f, y + h, Belle.BLUE_LIGHT, Belle.BLUE, android.graphics.Shader.TileMode.CLAMP)
+                    c.drawRect(0f, y, w, y + h, u.p)
+                    u.p.shader = null
+                }
+                u.text(c, "All quick settings", 66f * sc, y + 28f * sc, 20f * sc, Color.WHITE, face = u.medium)
+                u.text(c, "Every tile of the Android panel", 66f * sc, y + 52f * sc, 16f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
+                mark(idx, y, y + h)
+                y += h
+            }
             c.restore()
             // keep the focused row on screen
             val view = panelH - barH - 24f * sc
@@ -713,6 +778,10 @@ object Hud {
                     val n = (normal + acts)[sel - 6]
                     Notes.open(sys, n)
                     close()
+                }
+                sel == 6 + normal.size + acts.size && stockShade != null -> {
+                    close()
+                    stockShade?.invoke()
                 }
                 else -> {}
             }
