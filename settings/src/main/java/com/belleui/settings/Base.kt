@@ -20,6 +20,7 @@ import com.belleui.kit.Ui
  * asks Android for app lists, drive sizes and battery state, which is what made this app laggy.
  */
 abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     protected val list = ListState()
     private val rowRect = RectF()
 

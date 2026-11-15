@@ -123,6 +123,9 @@ abstract class Screen {
     var tab = 0
 
     /** Up to two customisable toolbar buttons (Y / Start on a gamepad). */
+    /** Light list look allowed (the Styles "Light lists" switch). Screens with photos, video or games stay dark. */
+    open val lightOk: Boolean get() = false
+
     open fun tools(): List<Tool> = emptyList()
     open fun menu(): List<MenuItem> = emptyList()
     open fun onShow() {}
@@ -931,10 +934,12 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         val tabsH = if (s.tabs.isNotEmpty()) Belle.TAB_H * ui.sc else 0f
         val statusH = Belle.STATUS_H * ui.sc
 
+        val light = Belle.lightLists && s.lightOk
         if (!s.transparentContent) {
             ui.rf.set(0f, statusH, w, contentBottom)
-            ui.fill(c, ui.rf, Color.BLACK)
+            ui.fill(c, ui.rf, if (light) Belle.LIGHT_BG else Color.BLACK)
         }
+        ui.lightMode = light
         c.save()
         c.clipRect(content)
         s.draw(c, ui, content)
@@ -943,6 +948,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         c.clipRect(content)
         s.drawOver(c, ui, content)
         c.restore()
+        ui.lightMode = false
         if (s.tabs.isNotEmpty()) {
             ui.tabBar(c, w, statusH, s.tabs.map { it.label }, IntArray(s.tabs.size) { s.tabs[it].kind }, s.tab, tabFocus)
         }

@@ -31,6 +31,7 @@ private fun playPauseTool(onClick: () -> Unit) =
 
 /** Songs / Albums / Artists, as Belle tabs. */
 class RootScreen(private val act: MusicActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Music"
     override val tabs = listOf(TabDef("Songs", Ic.NOTE), TabDef("Albums", Ic.DISC), TabDef("Artists", Ic.PERSON))
 
@@ -177,6 +178,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
 
 /** The songs of one album or artist. */
 class TrackListScreen(private val act: MusicActivity, private val name: String, private val tracks: List<Track>) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = name
     private val list = ListState()
 
@@ -371,6 +373,7 @@ private fun limitText(sec: Int) = if (sec <= 0) "Off - show all songs" else "Sho
 
 /** Music settings, in Belle SelectionListItem style. */
 class SettingsScreen(private val act: MusicActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Settings"
     private val list = ListState()
 
@@ -430,6 +433,7 @@ class SettingsScreen(private val act: MusicActivity) : Screen() {
 
 /** The folders music is taken from; none chosen means everything on the device. */
 class FoldersScreen(private val act: MusicActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Music folders"
     private val list = ListState()
     private var folders = act.library.folders

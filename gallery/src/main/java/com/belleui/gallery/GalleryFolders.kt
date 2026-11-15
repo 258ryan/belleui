@@ -28,6 +28,7 @@ fun treeToPath(uri: Uri): String? {
 
 /** The folders the Gallery looks in; none chosen means everything on the device. */
 class FoldersScreen(private val act: GalleryActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Gallery folders"
     private val list = ListState()
     private var folders = act.library.folders

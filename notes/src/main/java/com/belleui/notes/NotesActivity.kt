@@ -134,6 +134,7 @@ class NotesActivity : BelleActivity() {
 }
 
 class ListScreen(private val act: NotesActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Notes"
     private val list = ListState()
 

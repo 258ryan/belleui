@@ -36,6 +36,7 @@ private fun rowFor(ui: Ui, f: File, count: Int?, check: Boolean?): Row {
 
 /** Drives and quick places, as on Symbian's File manager home. */
 class RootScreen(private val act: FilesActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "File manager"
     private val list = ListState()
     private var volumes: List<Volume> = emptyList()
@@ -141,6 +142,7 @@ private val pool = Executors.newFixedThreadPool(2)
 
 /** One folder. */
 class FolderScreen(private val act: FilesActivity, private val dir: File, private val label: String?) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = label ?: dir.name.ifEmpty { "/" }
     private val list = ListState()
     private var entries: List<File> = emptyList()

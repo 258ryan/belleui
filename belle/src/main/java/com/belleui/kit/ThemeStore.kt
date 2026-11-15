@@ -29,6 +29,7 @@ object ThemeStore {
             Belle.setAccent(shared!!)
         }
         Belle.soundsOn = p.getBoolean("sounds", true)
+        Belle.lightLists = p.getBoolean("light", false)
     }
 
     /** Asks Styles for the current values on a worker thread; [onChange] runs on the main thread if they differ. */
@@ -40,8 +41,11 @@ object ThemeStore {
                     if (c.moveToFirst()) {
                         val accent = c.getInt(0)
                         val sounds = c.getInt(1) != 0
-                        var changed = Belle.soundsOn != sounds
-                        val e = prefs(app).edit().putBoolean("sounds", sounds)
+                        val lightCol = c.getColumnIndex("light")
+                        val light = if (lightCol >= 0) c.getInt(lightCol) != 0 else Belle.lightLists
+                        var changed = Belle.soundsOn != sounds || Belle.lightLists != light
+                        Belle.lightLists = light
+                        val e = prefs(app).edit().putBoolean("sounds", sounds).putBoolean("light", light)
                         Belle.soundsOn = sounds
                         if (accent != 0) {
                             e.putInt("accent", accent)
@@ -62,8 +66,9 @@ object ThemeStore {
     }
 
     /** Used by Styles itself, so its own screens change at once. */
-    fun apply(ctx: Context, accent: Int, sounds: Boolean) {
-        prefs(ctx).edit().putInt("accent", accent).putBoolean("sounds", sounds).apply()
+    fun apply(ctx: Context, accent: Int, sounds: Boolean, light: Boolean = Belle.lightLists) {
+        prefs(ctx).edit().putInt("accent", accent).putBoolean("sounds", sounds).putBoolean("light", light).apply()
+        Belle.lightLists = light
         shared = accent
         Belle.soundsOn = sounds
         Belle.setAccent(accent)

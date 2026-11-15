@@ -208,6 +208,7 @@ class StorageScreen(act: SettingsActivity) : RowsScreen(act) {
 // ================================================================================================
 
 class AppsScreen(private val act: SettingsActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Apps"
     override val tabs = listOf(TabDef("Installed", Ic.GRID), TabDef("System", Ic.TOOLS))
 

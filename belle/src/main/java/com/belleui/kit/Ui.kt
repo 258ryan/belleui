@@ -31,6 +31,12 @@ object Belle {
     /** Bumped whenever the accent changes, so cached tinted graphics are rebuilt. */
     @JvmField @Volatile var accentVersion = 0
 
+    /** Light list screens (the Belle "inverse" look) on or off (set in Styles). */
+    @JvmField @Volatile var lightLists = false
+
+    /** Page colour behind the light lists. */
+    const val LIGHT_BG = 0xFFF0F0F0.toInt()
+
     /** Navigation sounds on or off (set in Styles). */
     @JvmField @Volatile var soundsOn = true
 
@@ -194,12 +200,50 @@ class Ui(val ctx: Context) {
 
     // ---- text --------------------------------------------------------------------------------
 
+    /** True while drawing on a light list page; dark chrome (bars, buttons, selected rows) switches it off. */
+    var lightMode = false
+    private var darkDepth = 0
+    val lightOn: Boolean get() = lightMode && darkDepth == 0
+
+    /** Runs [block] with the dark-surface text colours (white on the bars, the buttons and the blue highlight). */
+    inline fun <T> onDark(block: () -> T): T {
+        enterDark()
+        try {
+            return block()
+        } finally {
+            leaveDark()
+        }
+    }
+
+    fun enterDark() {
+        darkDepth++
+    }
+
+    fun leaveDark() {
+        darkDepth--
+    }
+
+    /** On a light page the grey and white used for dark pages become dark greys. */
+    private fun forPage(color: Int): Int {
+        if (!lightOn) return color
+        val r = Color.red(color)
+        val g = Color.green(color)
+        val b = Color.blue(color)
+        if (kotlin.math.abs(r - g) > 10 || kotlin.math.abs(g - b) > 10) return color
+        val a = Color.alpha(color)
+        return when {
+            r > 0xE0 -> Color.argb(a, 0x1B, 0x1B, 0x1B)
+            r >= 0x80 -> Color.argb(a, 0x66, 0x66, 0x66)
+            else -> color
+        }
+    }
+
     fun text(
         c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int = Color.WHITE,
         align: Paint.Align = Paint.Align.LEFT, maxW: Float = 0f, face: Typeface = sans,
     ) {
         tp.textSize = size
-        tp.color = color
+        tp.color = forPage(color)
         tp.textAlign = align
         tp.typeface = face
         val t = if (maxW > 0f) TextUtils.ellipsize(s, tp, maxW, TextUtils.TruncateAt.END).toString() else s
@@ -507,7 +551,9 @@ class Ui(val ctx: Context) {
 
     // ---- chrome ------------------------------------------------------------------------------
 
-    fun statusBar(c: Canvas, w: Float, title: String, st: StatusInfo) {
+    fun statusBar(c: Canvas, w: Float, title: String, st: StatusInfo) = onDark { statusBar0(c, w, title, st) }
+
+    private fun statusBar0(c: Canvas, w: Float, title: String, st: StatusInfo) {
         val h = Belle.STATUS_H * sc
         rf.set(0f, 0f, w, h)
         fill(c, rf, Color.BLACK)
@@ -558,7 +604,9 @@ class Ui(val ctx: Context) {
     }
 
     /** [kinds] are the glyphs left to right; [letters] the gamepad hint beside each (null = none). */
-    fun toolbar(c: Canvas, w: Float, top: Float, kinds: IntArray, enabled: BooleanArray, letters: Array<String?>) {
+    fun toolbar(c: Canvas, w: Float, top: Float, kinds: IntArray, enabled: BooleanArray, letters: Array<String?>) = onDark { toolbar0(c, w, top, kinds, enabled, letters) }
+
+    private fun toolbar0(c: Canvas, w: Float, top: Float, kinds: IntArray, enabled: BooleanArray, letters: Array<String?>) {
         val h = Belle.TOOL_H * sc
         rf.set(0f, top, w, top + h)
         fill(c, rf, Color.BLACK)
@@ -576,7 +624,9 @@ class Ui(val ctx: Context) {
         }
     }
 
-    fun tabBar(c: Canvas, w: Float, top: Float, labels: List<String>, kinds: IntArray, selected: Int, focused: Boolean) {
+    fun tabBar(c: Canvas, w: Float, top: Float, labels: List<String>, kinds: IntArray, selected: Int, focused: Boolean) = onDark { tabBar0(c, w, top, labels, kinds, selected, focused) }
+
+    private fun tabBar0(c: Canvas, w: Float, top: Float, labels: List<String>, kinds: IntArray, selected: Int, focused: Boolean) {
         val h = Belle.TAB_H * sc
         val tw = w / labels.size
         rf.set(0f, top, w, top + h)
@@ -613,14 +663,25 @@ class Ui(val ctx: Context) {
 
     /** Belle ListItem: 70px, 12px inset, 50px icon, 22px title, 18px light subtitle, 1px separator. */
     fun listRow(c: Canvas, r: RectF, selected: Boolean, row: Row) {
+        // the blue highlight keeps white text on a light page too
+        if (selected) enterDark()
+        try {
+            listRow0(c, r, selected, row)
+        } finally {
+            if (selected) leaveDark()
+        }
+    }
+
+    private fun listRow0(c: Canvas, r: RectF, selected: Boolean, row: Row) {
         val pad = Belle.PADDING * sc
+        val inv = if (lightOn) "_inverse" else ""
         val dim = if (row.dim) 120 else 255
         if (selected) {
             highlight(c, r, 20f)
         } else {
             p.style = Paint.Style.FILL
             p.shader = null
-            p.color = Belle.SEPARATOR
+            p.color = if (lightOn) al(Color.BLACK, 40) else Belle.SEPARATOR
             c.drawRect(r.left, r.bottom - 1f, r.right, r.bottom, p)
         }
         var tx = r.left + pad
@@ -637,12 +698,12 @@ class Ui(val ctx: Context) {
         var rightEdge = r.right - pad - row.rightReserve * sc
         if (row.drill) {
             val ds = 30f * sc
-            gfx.glyph(c, "qtg_graf_drill_down_indicator", r.right - pad - ds / 2f, r.centerY(), ds, 255)
+            gfx.glyph(c, "qtg_graf_drill_down_indicator$inv", r.right - pad - ds / 2f, r.centerY(), ds, 255)
             rightEdge -= ds + 4f * sc
         }
         if (row.check != null) {
             val cs = 42f * sc
-            gfx.glyph(c, if (row.check) "qtg_graf_checkbox_normal_selected" else "qtg_graf_checkbox_normal_unselected", rightEdge - cs / 2f, r.centerY(), cs)
+            gfx.glyph(c, (if (row.check) "qtg_graf_checkbox_normal_selected" else "qtg_graf_checkbox_normal_unselected") + inv, rightEdge - cs / 2f, r.centerY(), cs)
             rightEdge -= cs + pad
         }
         if (row.right != null) {
@@ -667,12 +728,13 @@ class Ui(val ctx: Context) {
         rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = al(Color.WHITE, 150)
+        p.color = if (lightOn) al(Color.BLACK, 110) else al(Color.WHITE, 150)
         c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
     }
 
     fun progressBar(c: Canvas, r: RectF, frac: Float) {
-        nine(c, "qtg_fr_progressbar_track", r, 20, 10f)
+        val inv = if (lightOn) "_inverse" else ""
+        nine(c, "qtg_fr_progressbar_track$inv", r, 20, 10f)
         val f = frac.coerceIn(0f, 1f)
         if (f > 0.01f) {
             tmp.set(r.left, r.top, r.left + max(r.height(), r.width() * f), r.bottom)
@@ -684,14 +746,16 @@ class Ui(val ctx: Context) {
         val w = 66f * sc
         val h = 44f * sc
         rf.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
-        gfx.draw(c, "qtg_graf_switchbutton_track", rf)
+        gfx.draw(c, if (lightOn) "qtg_graf_switchbutton_track_inverse" else "qtg_graf_switchbutton_track", rf)
         if (on) gfx.draw(c, "qtg_graf_switchbutton_fill", rf)
         val hx = if (on) rf.right - h / 2f else rf.left + h / 2f
         tmp.set(hx - h / 2f, cy - h / 2f, hx + h / 2f, cy + h / 2f)
         gfx.draw(c, "qtg_graf_switchbutton_handle_normal", tmp)
     }
 
-    fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) {
+    fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) = onDark { pushButton0(c, r, label, selected) }
+
+    private fun pushButton0(c: Canvas, r: RectF, label: String, selected: Boolean) {
         if (selected) {
             nine(c, "qtg_fr_pushbutton_pressed", r, 40, 20f)
         } else {
@@ -710,7 +774,9 @@ class Ui(val ctx: Context) {
         text(c, label, r.centerX(), baselineFor(r.centerY(), 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER, maxW = r.width() - 8f * sc)
     }
 
-    fun banner(c: Canvas, w: Float, text: String, t: Float) {
+    fun banner(c: Canvas, w: Float, text: String, t: Float) = onDark { banner0(c, w, text, t) }
+
+    private fun banner0(c: Canvas, w: Float, text: String, t: Float) {
         val top0 = Belle.STATUS_H * sc
         val h = Belle.TOOL_H * sc
         val top = top0 - (1f - t) * h

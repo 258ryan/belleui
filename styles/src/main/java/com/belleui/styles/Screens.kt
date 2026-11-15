@@ -49,6 +49,7 @@ private fun audioPerms(): Array<String> =
 // ================================================================================================
 
 class RootScreen(private val act: StylesActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Styles"
     private val list = ListState()
     private val types = intArrayOf(RingtoneManager.TYPE_RINGTONE, RingtoneManager.TYPE_NOTIFICATION, RingtoneManager.TYPE_ALARM)
@@ -98,6 +99,7 @@ class RootScreen(private val act: StylesActivity) : Screen() {
         out.add(Row("Notification tone", toneTitles[1] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
         out.add(Row("Alarm tone", toneTitles[2] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
         for ((k, label, sub) in switches) out.add(Row(label, sub, icon = g.get("qgn_prop_set_gene_phone"), check = switchOn(k)))
+        out.add(Row("Light lists", "Light Belle look for list apps (Settings, Files, Notes...)", icon = g.get("qgn_menu_theme"), check = styles.getBoolean("light", false)))
         return out
     }
 
@@ -124,6 +126,13 @@ class RootScreen(private val act: StylesActivity) : Screen() {
                 ThemeStore.apply(act, styles.getInt("accent", 0).let { if (it == 0) Belle.DEFAULT_BLUE else it }, on)
                 if (styles.getInt("accent", 0) == 0) styles.edit().remove("accent").apply()
                 if (on) Sounds.play(Sounds.SELECT)
+            }
+            i == 9 -> {
+                val on = !styles.getBoolean("light", false)
+                styles.edit().putBoolean("light", on).apply()
+                ThemeStore.apply(act, styles.getInt("accent", 0).let { if (it == 0) Belle.DEFAULT_BLUE else it }, soundsOn(), on)
+                if (styles.getInt("accent", 0) == 0) styles.edit().remove("accent").apply()
+                shell.toast(if (on) "Light lists on - other apps update when you open them" else "Light lists off")
             }
             i in 3..5 -> shell.push(TonesScreen(act, types[i - 3], listOf("Ringtone", "Notification tone", "Alarm tone")[i - 3]))
             else -> {
@@ -180,6 +189,7 @@ class Tone(val title: String, val uri: Uri) {
 class Pick(val existing: Uri?, val showDefault: Boolean, val showSilent: Boolean)
 
 class TonesScreen(private val act: StylesActivity, private val type: Int, private val what: String, private val pick: Pick? = null) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = what
     override val tabs = listOf(TabDef("Tones", Ic.BELL), TabDef("Music", Ic.NOTE))
     private val lists = arrayOf(ListState(), ListState())

@@ -234,6 +234,7 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
 }
 
 class BookmarksScreen(private val act: BrowserActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Bookmarks"
     private val list = ListState()
     private var items = Bookmarks(act).all()

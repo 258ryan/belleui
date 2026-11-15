@@ -23,6 +23,7 @@ private fun message(c: Canvas, ui: Ui, r: RectF, text: String) {
 
 /** Opened from the launcher, or when the picker has no access to files yet. */
 class StatusScreen(private val act: PickerActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Belle Picker"
     private val list = ListState()
 
@@ -70,6 +71,7 @@ class StatusScreen(private val act: PickerActivity) : Screen() {
 
 /** Phone memory, memory cards and a few common places. */
 class RootsScreen(private val act: PickerActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = when (act.mode) {
         Mode.TREE -> "Choose a folder"
         Mode.CREATE -> "Save to..."
@@ -120,6 +122,7 @@ class RootsScreen(private val act: PickerActivity) : Screen() {
 
 /** One folder: A opens folders and picks files; Y chooses this folder (or saves here). */
 class DirScreen(private val act: PickerActivity, private val dir: File, private val label: String? = null) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = label ?: dir.name.ifEmpty { dir.path }
     private val list = ListState()
     private var items: List<File> = emptyList()

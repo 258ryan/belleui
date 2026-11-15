@@ -165,6 +165,7 @@ class RecorderActivity : BelleActivity() {
 }
 
 class RootScreen(private val act: RecorderActivity) : Screen() {
+    override val lightOk: Boolean get() = true
     override val title get() = "Voice recorder"
     override val tabs = listOf(TabDef("Record", Ic.AUDIO_ON), TabDef("Recordings", Ic.LIST))
     override val tickMs get() = 500L
