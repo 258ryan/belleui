@@ -721,7 +721,15 @@ class LauncherView(private val act: Activity) : View(act) {
         if (abs(pageAnim - pagePos()) > 0.05f) return false
         if (y > cBot) { // soft-key bar
             if (!selectOnly) {
-                if (page == 1 || page == 0 || page == 2) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 0) Act.OK else Act.SETTINGS) else Act.OPTIONS)
+                if (page == 0 && popup == null && !reorder) {
+                    val f = x / width
+                    when {
+                        f < 0.17f -> perform(Act.BACK)
+                        f in 0.2f..0.35f -> lockScreen()
+                        f in 0.62f..0.8f -> toggleSilent()
+                        f > 0.86f -> perform(Act.OPTIONS)
+                    }
+                } else if (page == 1 || page == 0 || page == 2) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 0) Act.OK else Act.SETTINGS) else Act.OPTIONS)
                 else perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
             }
             return true
@@ -1060,6 +1068,25 @@ class LauncherView(private val act: Activity) : View(act) {
         popup = Popup("Hidden apps", items)
     }
 
+    /** The lock key on the home toolbar: put the screen to sleep (the device is rooted; needs no app permission). */
+    private fun lockScreen() {
+        try {
+            Runtime.getRuntime().exec(arrayOf("su", "-c", "input keyevent 223"))
+        } catch (_: Throwable) {
+            showToast("Can't lock the screen")
+        }
+    }
+
+    private fun toggleSilent() {
+        try {
+            val am = act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.ringerMode = if (am.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL) android.media.AudioManager.RINGER_MODE_SILENT else android.media.AudioManager.RINGER_MODE_NORMAL
+            invalidate()
+        } catch (_: Throwable) {
+            showToast("Not available")
+        }
+    }
+
     private fun showToast(s: String) {
         toast = s
         toastStart = System.currentTimeMillis()
@@ -1353,10 +1380,10 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 1, 5 -> 4 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5 -> 4 to 2; else -> 4 to 1 }
 
     /** The heights (in rows) each widget looks right at. */
-    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(1, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); else -> intArrayOf(1) }
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); else -> intArrayOf(1) }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1667,11 +1694,19 @@ class LauncherView(private val act: Activity) : View(act) {
                     val isz = min(r.height() * 0.62f, 76f * sc) // the same icon size as the Menu
                     val top = r.top + 3f * sc
                     drawIcon(c, app.icon, r.centerX(), top + isz / 2f, isz)
-                    val tsz = 15f * sc
-                    val tw = min(measure(app.label, tsz) + 14f * sc, r.width() - 4f * sc)
-                    rf.set(r.centerX() - tw / 2f, top + isz + 3f * sc, r.centerX() + tw / 2f, top + isz + 23f * sc)
-                    p.color = al(Color.BLACK, 150)
-                    c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
+                    // the E6 home screen label: the same dark plate for every shortcut, a little wider than the icon
+                    val tsz = 16f * sc
+                    val tw = min(94f * sc, r.width() - 2f * sc)
+                    rf.set(r.centerX() - tw / 2f, top + isz + 2f * sc, r.centerX() + tw / 2f, top + isz + 24f * sc)
+                    p.style = Paint.Style.FILL
+                    p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, 0xD8505050.toInt(), 0xD8242424.toInt(), Shader.TileMode.CLAMP)
+                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
+                    p.shader = null
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 1f * sc
+                    p.color = al(Color.BLACK, 200)
+                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
+                    p.style = Paint.Style.FILL
                     text(c, app.label, r.centerX(), baselineFor(rf.centerY(), tsz), tsz, Color.WHITE, Paint.Align.CENTER, tw - 8f * sc)
                 }
             }
@@ -2114,42 +2149,124 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
+    /** A round dark media button of the E6 music widget: kind 0 previous, 1 play/pause, 2 next. */
+    private fun mediaDisc(c: Canvas, kind: Int, cx: Float, cy: Float, d: Float) {
+        val rad = d / 2f
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, cy - rad, 0f, cy + rad, 0xFF4A4A4A.toInt(), 0xFF101010.toInt(), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f * sc
+        p.color = 0xFF000000.toInt()
+        c.drawCircle(cx, cy, rad, p)
+        p.style = Paint.Style.FILL
+        p.color = Color.WHITE
+        val s = d * 0.2f
+        when (kind) {
+            1 -> if (media.playing) {
+                c.drawRect(cx - s * 0.9f, cy - s, cx - s * 0.2f, cy + s, p)
+                c.drawRect(cx + s * 0.2f, cy - s, cx + s * 0.9f, cy + s, p)
+            } else {
+                val path = Path()
+                path.moveTo(cx - s * 0.6f, cy - s * 1.1f)
+                path.lineTo(cx + s * 1.1f, cy)
+                path.lineTo(cx - s * 0.6f, cy + s * 1.1f)
+                path.close()
+                c.drawPath(path, p)
+            }
+            else -> {
+                val dir = if (kind == 0) -1f else 1f
+                val path = Path()
+                path.moveTo(cx - dir * s * 0.1f, cy - s)
+                path.lineTo(cx + dir * s * 1.0f, cy)
+                path.lineTo(cx - dir * s * 0.1f, cy + s)
+                path.close()
+                c.drawPath(path, p)
+                c.drawRect(cx - dir * s * 0.9f - s * 0.12f, cy - s, cx - dir * s * 0.9f + s * 0.12f, cy + s, p)
+            }
+        }
+    }
+
+    /** The E6 music widget: the cover on top of a dark glass panel, the title on a dark strip, three round buttons. */
     private fun drawMusic(c: Canvas, r: RectF) {
-        darkCard(c, r, 16f * sc)
-        val side = (r.height() - 28f * sc).coerceIn(70f * sc, 108f * sc)
-        val art = RectF(r.left + 14f * sc, r.centerY() - side / 2f, r.left + 14f * sc + side, r.centerY() + side / 2f)
+        if (r.height() < 170f * sc) {
+            // a short, wide widget: the cover on the left, title and the buttons on the right
+            val glass = RectF(r)
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, glass.top, 0f, glass.bottom, 0xF0303030.toInt(), 0xF0101010.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(glass, 16f * sc, 16f * sc, p)
+            p.shader = null
+            val side0 = r.height() - 12f * sc
+            val art0 = RectF(r.left + 6f * sc, r.top + 6f * sc, r.left + 6f * sc + side0, r.top + 6f * sc + side0)
+            val bmp0 = media.art
+            c.save()
+            c.clipRect(art0)
+            if (bmp0 != null) {
+                val k = max(art0.width() / bmp0.width, art0.height() / bmp0.height)
+                val sw = art0.width() / k
+                val sh = art0.height() / k
+                c.drawBitmap(bmp0, android.graphics.Rect(((bmp0.width - sw) / 2).toInt(), ((bmp0.height - sh) / 2).toInt(), ((bmp0.width + sw) / 2).toInt(), ((bmp0.height + sh) / 2).toInt()), art0, iconPaint)
+            } else {
+                p.color = 0xFF2A2A2A.toInt()
+                c.drawRect(art0, p)
+            }
+            c.restore()
+            val tx = art0.right + 14f * sc
+            val t0 = if (media.available) (media.title ?: "Playing") else "Nothing is playing"
+            text(c, t0, tx, baselineFor(r.top + r.height() * 0.28f, 21f * sc), 21f * sc, Color.WHITE, maxW = r.right - tx - 12f * sc)
+            val cy0 = r.top + r.height() * 0.68f
+            val span = (r.right - tx - 12f * sc)
+            val xs0 = floatArrayOf(tx + span * 0.18f, tx + span * 0.5f, tx + span * 0.82f)
+            val ds0 = floatArrayOf(40f * sc, 52f * sc, 40f * sc)
+            for (i in 0..2) {
+                mediaDisc(c, i, xs0[i], cy0, ds0[i])
+                val hh = ds0[i] / 2f + 3f * sc
+                subRects[i].set(xs0[i] - hh, cy0 - hh, xs0[i] + hh, cy0 + hh)
+            }
+            return
+        }
+        val side = min(r.width() - 28f * sc, r.height() - 92f * sc).coerceAtLeast(60f * sc)
+        val art = RectF(r.centerX() - side / 2f, r.top + 4f * sc, r.centerX() + side / 2f, r.top + 4f * sc + side)
+        // the glass panel starts about halfway down the cover and holds the buttons
+        val panel = RectF(r.left, art.top + side * 0.42f, r.right, r.bottom)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, panel.top, 0f, panel.bottom, 0xF0303030.toInt(), 0xF0101010.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(panel, 16f * sc, 16f * sc, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f * sc
+        p.color = al(Color.WHITE, 40)
+        c.drawRoundRect(panel, 16f * sc, 16f * sc, p)
+        p.style = Paint.Style.FILL
         val bmp = media.art
         c.save()
-        c.clipPath(Path().apply { addRoundRect(art, 12f * sc, 12f * sc, Path.Direction.CW) })
+        c.clipRect(art)
         if (bmp != null) {
-            val s = max(art.width() / bmp.width, art.height() / bmp.height)
-            val sw = art.width() / s
-            val sh = art.height() / s
+            val k = max(art.width() / bmp.width, art.height() / bmp.height)
+            val sw = art.width() / k
+            val sh = art.height() / k
             val src = android.graphics.Rect(((bmp.width - sw) / 2).toInt(), ((bmp.height - sh) / 2).toInt(), ((bmp.width + sw) / 2).toInt(), ((bmp.height + sh) / 2).toInt())
             c.drawBitmap(bmp, src, art, iconPaint)
         } else if (!nine(c, "qgn_graf_mup_npv_defalbumart", art, 0, 0f)) {
             p.color = 0xFF2A2A2A.toInt()
             c.drawRect(art, p)
         }
+        // the title strip along the bottom of the cover
+        val strip = RectF(art.left, art.bottom - 40f * sc, art.right, art.bottom)
+        p.color = al(Color.BLACK, 190)
+        c.drawRect(strip, p)
+        val title = if (media.available) (media.title ?: "Playing") + (media.artist?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: "") else if (!HubStore.hasAccess(act)) "Allow notification access" else "Nothing is playing"
+        text(c, title, strip.left + 10f * sc, baselineFor(strip.centerY(), 21f * sc), 21f * sc, Color.WHITE, maxW = strip.width() - 20f * sc)
         c.restore()
-        val x = art.right + 16f * sc
-        val maxW = r.right - x - 14f * sc
-        // title and artist on the upper half, the three keys centred on the lower half of the right side
-        val top = art.top
-        if (media.available) {
-            text(c, media.title ?: "Playing", x, top + 26f * sc, 20f * sc, Color.WHITE, maxW = maxW)
-            text(c, media.artist ?: "", x, top + 50f * sc, 16f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
-        } else {
-            text(c, "Music", x, top + 26f * sc, 20f * sc, Color.WHITE, maxW = maxW)
-            text(c, if (!HubStore.hasAccess(act)) "Allow notification access to control playback" else "Nothing is playing - press A to open Music", x, top + 50f * sc, 15f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
-        }
-        val by = art.bottom - 24f * sc
-        val xs = floatArrayOf(x + maxW * 0.18f, x + maxW * 0.5f, x + maxW * 0.82f)
-        val sizes = floatArrayOf(38f * sc, 46f * sc, 38f * sc)
+        val by = r.bottom - 46f * sc
+        val dx = min(86f * sc, r.width() * 0.28f)
+        val xs = floatArrayOf(r.centerX() - dx, r.centerX(), r.centerX() + dx)
+        val ds = floatArrayOf(54f * sc, 82f * sc, 54f * sc)
         for (i in 0..2) {
-            mediaButton(c, i, xs[i], by, sizes[i], false)
-            val h = sizes[i] / 2f + 3f * sc
-            subRects[i].set(xs[i] - h, by - h, xs[i] + h, by + h)
+            mediaDisc(c, i, xs[i], by, ds[i])
+            val hh = ds[i] / 2f + 3f * sc
+            subRects[i].set(xs[i] - hh, by - hh, xs[i] + hh, by + hh)
         }
     }
 
@@ -2359,8 +2476,8 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
 
-        val rowH = 62f * sc
-        val headH = 28f * sc
+        val rowH = 94f * sc
+        val headH = 30f * sc
         var total = 0f
         for (it in hubItems) total += if (it.header != null) headH else rowH
         val panelH = min(avail, total + 12f * sc)
@@ -2403,17 +2520,17 @@ class LauncherView(private val act: Activity) : View(act) {
                         p.color = al(Color.WHITE, 30)
                         c.drawRect(rr.left + 8f * sc, rr.bottom, rr.right - 8f * sc, rr.bottom + 1f, p)
                     }
-                    val isz = 42f * sc
+                    val isz = 56f * sc
                     noteIcon(n.pkg)?.let { b ->
                         rf.set(rr.left + 10f * sc, rr.centerY() - isz / 2f, rr.left + 10f * sc + isz, rr.centerY() + isz / 2f)
                         c.drawBitmap(b, null, rf, iconPaint)
                     }
                     val tx = rr.left + 10f * sc + isz + 12f * sc
                     val meta = appLabel(n.pkg) + "  " + DateFormat.format(if (DateFormat.is24HourFormat(act)) "HH:mm" else "h:mm a", n.time)
-                    val mw = min(measure(meta, 14f * sc, light), rr.width() * 0.4f)
-                    text(c, meta, rr.right - 12f * sc, baselineFor(rr.top + 22f * sc, 14f * sc, light), 14f * sc, if (i == hubSel) Color.WHITE else grey, Paint.Align.RIGHT, maxW = rr.width() * 0.4f, face = light)
-                    text(c, n.title.ifBlank { appLabel(n.pkg) }, tx, baselineFor(rr.top + 22f * sc, 18f * sc, medium), 18f * sc, Color.WHITE, maxW = rr.right - tx - mw - 24f * sc, face = medium)
-                    if (n.text.isNotBlank()) text(c, n.text.replace('\n', ' '), tx, baselineFor(rr.top + 46f * sc, 15f * sc, light), 15f * sc, if (i == hubSel) Color.WHITE else 0xFFBBBBBB.toInt(), maxW = rr.right - tx - 14f * sc, face = light)
+                    val mw = min(measure(meta, 17f * sc, light), rr.width() * 0.4f)
+                    text(c, meta, rr.right - 12f * sc, baselineFor(rr.top + 30f * sc, 17f * sc, light), 17f * sc, if (i == hubSel) Color.WHITE else grey, Paint.Align.RIGHT, maxW = rr.width() * 0.4f, face = light)
+                    text(c, n.title.ifBlank { appLabel(n.pkg) }, tx, baselineFor(rr.top + 30f * sc, 24f * sc, medium), 24f * sc, Color.WHITE, maxW = rr.right - tx - mw - 24f * sc, face = medium)
+                    if (n.text.isNotBlank()) text(c, n.text.replace('\n', ' '), tx, baselineFor(rr.top + 66f * sc, 20f * sc, light), 20f * sc, if (i == hubSel) Color.WHITE else 0xFFBBBBBB.toInt(), maxW = rr.right - tx - 14f * sc, face = light)
                     hubHits.add(RectF(rr) to i)
                 }
             }
@@ -2531,12 +2648,12 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRect(14f * sc, tmp.bottom - 1f, w - 14f * sc, tmp.bottom, p)
             }
             val pad = 14f * sc
-            drawIcon(c, app.icon, pad + 30f * sc, tmp.centerY(), 60f * sc)
-            val tx = pad + 60f * sc + pad
+            drawIcon(c, app.icon, pad + 32f * sc, tmp.centerY(), 64f * sc)
+            val tx = pad + 64f * sc + pad
             val t = used[app.component.packageName]
             val sub = if (t != null) android.text.format.DateUtils.getRelativeTimeSpanString(t, now, android.text.format.DateUtils.MINUTE_IN_MILLIS).toString() else "Opened from here"
-            text(c, app.label, tx, tmp.centerY() - 3f * sc, 23f * sc, Color.WHITE, maxW = w - tx - 70f * sc, face = medium)
-            text(c, sub, tx, tmp.centerY() + 22f * sc, 16f * sc, if (sel) Color.WHITE else 0xFFB5B5B5.toInt(), maxW = w - tx - 70f * sc, face = light)
+            text(c, app.label, tx, tmp.centerY() - 6f * sc, 26f * sc, Color.WHITE, maxW = w - tx - 70f * sc, face = medium)
+            text(c, sub, tx, tmp.centerY() + 27f * sc, 21f * sc, if (sel) Color.WHITE else 0xFFB5B5B5.toInt(), maxW = w - tx - 70f * sc, face = light)
             // the cross on the right closes the app
             glyph(c, ICON_CLOSE, w - 34f * sc, tmp.centerY(), 26f * sc, if (sel) Color.WHITE else al(Color.WHITE, 150))
         }
@@ -2578,17 +2695,17 @@ class LauncherView(private val act: Activity) : View(act) {
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
 
         val cy = statusH / 2f
-        text(c, pageTitle(), 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, Color.WHITE)
+        text(c, pageTitle(), 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 18f * sc
+        val csz = 22f * sc
         val tw = measure(time, csz)
         text(c, time, w - 8f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
 
-        val bw = 24f * sc
-        val bh = 18f * sc
-        val bLeft = w - 8f * sc - tw - 10f * sc - bw
+        val bw = 34f * sc
+        val bh = 20f * sc
+        val bLeft = w - 8f * sc - tw - 12f * sc - bw
         drawBattery(c, bLeft, cy - bh / 2f, bw, bh)
-        if (wifi) drawWifi(c, bLeft - 18f * sc, statusH * 0.76f, 10f * sc)
+        if (wifi) drawWifi(c, bLeft - 26f * sc, statusH * 0.78f, 13f * sc)
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float) {
@@ -2631,12 +2748,21 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
         if (page == 0 && !inModal) {
-            // the Belle home toolbar: the Menu on the left, options on the right
-            val mm = 56f * sc
-            toolIcon(c, ICON_GRID, mm, cy, s)
-            hintLetter(c, backLetter(), mm + 26f * sc, cy)
-            toolIcon(c, ICON_MENU, w - mm, cy, s)
-            hintLetter(c, optLetter(), w - mm - 26f * sc, cy)
+            // the E6 home toolbar: Menu, lock, page dots, the sound profile, options (positions measured on the device)
+            val k = w / 640f
+            toolIcon(c, ICON_GRID, 60f * k, cy, s)
+            hintLetter(c, backLetter(), 60f * k + 26f * sc, cy)
+            gfx.glyph(c, "qtg_toolbar_lock", 176f * k, cy, s, 255)
+            val silent = try { (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL } catch (_: Throwable) { false }
+            gfx.glyph(c, if (silent) "qtg_toolbar_audio_off" else "qtg_toolbar_audio_on", 458f * k, cy, s, 255)
+            toolIcon(c, ICON_MENU, w - 57f * k, cy, s)
+            hintLetter(c, optLetter(), w - 57f * k - 26f * sc, cy)
+            // page dots: Hub and Home, the current one lit
+            for (i in 0..1) {
+                p.style = Paint.Style.FILL
+                p.color = if (i == page + 1) Color.WHITE else al(Color.WHITE, 90)
+                c.drawCircle(w / 2f - 10f * sc + i * 20f * sc, cy, 4.5f * sc, p)
+            }
             return
         }
         val leftKind = if (page == 0 && !inModal) ICON_GRID else ICON_BACK
@@ -2850,7 +2976,7 @@ class LauncherView(private val act: Activity) : View(act) {
         const val SEARCH_H = 44f
         const val TAB = 50f      // tab bar (landscape; 60 in portrait)
         const val HEADER = 6f    // a little air above the first row
-        const val ROW = 70f      // heightListItem
+        const val ROW = 94f      // list item height on the E6 (graphicSizeLarge)
         const val POPUP_ROW = 64f // heightMenuItem
         const val WIDGET_CLOCK = 0
         const val WIDGET_DATE = 1
