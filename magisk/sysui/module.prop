@@ -1,0 +1,6 @@
+id=belleui_sysui
+name=BelleUI - System UI (experimental)
+version=v0.1
+versionCode=1
+author=BelleUI
+description=EXPERIMENTAL. Replaces Android's SystemUI with the Belle status bar, Status menu (pull-down), volume pop-up and power menu. No lock screen. Android 11, ROMs signed with the AOSP test keys only. Disables itself after 3 boots that do not come up.

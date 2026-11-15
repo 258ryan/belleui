@@ -763,6 +763,13 @@ object Hud {
         }
     }
 
+    /** True while the Status menu or another full-screen Belle dialog is up. */
+    val statusOpen: Boolean get() = dialog != null
+
+    fun closeStatus() {
+        dialog?.dismiss()
+    }
+
     /** Opens the Status menu, or closes it if it is already open. */
     fun toggleStatus(sys: Context, mod: Context) {
         if (dialog != null) {
