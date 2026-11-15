@@ -42,7 +42,11 @@ abstract class ConfigScreen(act: SettingsActivity, private val name: String) : R
         cache = items()
         return cache.map { s ->
             val icon = shell.ui.gfx.get("qgn_prop_set_gene_sub")
-            Row(s.title, s.sub(), icon = icon, check = s.check?.invoke(), drill = s.drill)
+            val sub = s.sub()
+            val check = s.check?.invoke()
+            // a setting with a value and no sub page is an E6 setting item: title with the value in a button
+            if (check == null && !s.drill && sub != null) Row(s.title, right = sub, button = true)
+            else Row(s.title, sub, icon = icon, check = check, drill = s.drill)
         }
     }
 

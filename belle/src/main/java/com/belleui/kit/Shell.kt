@@ -408,13 +408,17 @@ abstract class Overlay {
     abstract fun onAct(a: Act, shell: BelleShell)
     open fun onTap(x: Float, y: Float, shell: BelleShell): Boolean = false
 
+    /** A selection popup: dark plate, the title in Belle blue over a thin blue line (as on the E6). */
     protected fun dialogFrame(c: Canvas, ui: Ui, box: RectF, title: String?) {
-        ui.nine(c, "qtg_fr_popup", box, 40, 20f)
+        ui.popupPlate(c, box)
         if (title != null) {
-            ui.rf.set(box.left, box.top, box.right, box.top + 50f * ui.sc)
-            ui.nine(c, "qtg_fr_popup_heading", ui.rf, 40, 20f)
-            ui.text(c, title, box.left + 12f * ui.sc, ui.baselineFor(box.top + 25f * ui.sc, 22f * ui.sc), 22f * ui.sc, maxW = box.width() - 80f * ui.sc)
-            ui.glyph(c, Ic.CLOSE, box.right - 28f * ui.sc, box.top + 25f * ui.sc, 30f * ui.sc)
+            val sc = ui.sc
+            val head = 50f * sc
+            ui.text(c, title, box.left + 14f * sc, ui.baselineFor(box.top + head / 2f + 2f * sc, 23f * sc), 23f * sc, 0xFF4A90D9.toInt(), maxW = box.width() - 28f * sc)
+            ui.p.style = Paint.Style.FILL
+            ui.p.shader = null
+            ui.p.color = 0xFF4A90D9.toInt()
+            c.drawRect(box.left + 8f * sc, box.top + head, box.right - 8f * sc, box.top + head + 2f * sc, ui.p)
         }
     }
 }
@@ -576,15 +580,9 @@ class QueryDialog(
         val x = (w - bw) / 2f
         val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
         box.set(x, y, x + bw, y + bh)
-        ui.nine(c, "qtg_fr_popup", box, 40, 20f)
-        ui.rf.set(box.left, box.top, box.right, box.top + head)
-        ui.nine(c, "qtg_fr_popup_heading", ui.rf, 40, 20f)
-        ui.text(c, title ?: (if (no == null) "Information" else "Confirm"), box.left + 14f * sc, ui.baselineFor(box.top + head / 2f, 22f * sc), 22f * sc, maxW = bw - 70f * sc, face = ui.medium)
-        // the round "?" of a query, "i" of an information box
-        ui.p.style = Paint.Style.FILL
-        ui.p.color = Color.WHITE
-        c.drawCircle(box.right - 26f * sc, box.top + head / 2f, 11f * sc, ui.p)
-        ui.text(c, if (no == null) "i" else "?", box.right - 26f * sc, ui.baselineFor(box.top + head / 2f, 17f * sc), 17f * sc, Color.BLACK, Paint.Align.CENTER, face = ui.medium)
+        ui.popupPlate(c, box)
+        // the heading is plain white text on the plate, as in the E6 query dialogs
+        ui.text(c, title ?: (if (no == null) "Information" else "Confirm"), box.left + 26f * sc, ui.baselineFor(box.top + head / 2f + 4f * sc, 26f * sc), 26f * sc, maxW = bw - 52f * sc)
         for ((i, l) in lines.withIndex()) {
             ui.text(c, l, box.left + 16f * sc, ui.baselineFor(box.top + head + 22f * sc + i * 28f * sc, 20f * sc), 20f * sc, maxW = bw - 32f * sc)
         }
@@ -750,6 +748,9 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private var overlay: Overlay? = null
     private var shownOverlay: Overlay? = null
     private var overlayT = 0f
+    private var overlayTarget = 0f
+    private var overlayFrom = 0f
+    private var overlayStartMs = 0L
     private var tabFocus = false
     private var banner = ""
     private var bannerStart = 0L
@@ -1079,15 +1080,34 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         ui.toolbar(c, w, h - Belle.TOOL_H * ui.sc, kinds, enabled, letters)
 
         // overlay animation
+        // popups and menus use Nokia's own timings (resource/effects/*.fxml): notes and popups scale 0.9 -> 1 and fade over
+        // 0.25 s (out-quad in, in-quad out), the options menu is a 0.3 s linear reveal
         val target = if (overlay != null) 1f else 0f
-        overlayT += (target - overlayT) * ui.k
-        if (abs(target - overlayT) < 0.01f) overlayT = target else ui.busy = true
+        val animNow = System.currentTimeMillis()
+        if (target != overlayTarget) {
+            overlayTarget = target
+            overlayFrom = overlayT
+            overlayStartMs = animNow
+        }
+        val menuLike = (shownOverlay ?: overlay)?.slideUp == true
+        val durMs = if (menuLike) 300f else 250f
+        val tt = ((animNow - overlayStartMs) / durMs).coerceIn(0f, 1f)
+        val ease = if (menuLike) tt else if (target == 1f) 1f - (1f - tt) * (1f - tt) else tt * tt
+        overlayT = overlayFrom + (target - overlayFrom) * ease
+        if (tt < 1f) ui.busy = true else overlayT = target
         if (overlayT <= 0f && overlay == null) shownOverlay = null
         shownOverlay?.let { o ->
             val box = h * 0.9f
             c.save()
-            c.translate(0f, (1f - overlayT) * (if (o.slideUp) box else 28f * ui.sc))
+            if (o.slideUp) {
+                c.translate(0f, (1f - overlayT) * box)
+            } else {
+                val sca = 0.9f + 0.1f * overlayT
+                c.scale(sca, sca, w / 2f, h / 2f)
+                c.saveLayerAlpha(0f, 0f, w, h, (overlayT * 255).toInt().coerceIn(0, 255))
+            }
             o.draw(c, ui, w, h, statusH, h - Belle.TOOL_H * ui.sc)
+            if (!o.slideUp) c.restore()
             c.restore()
         }
 
@@ -1125,6 +1145,18 @@ abstract class BelleActivity : Activity() {
         setContentView(buildContent(shell), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         hideSystemBars()
         shell.push(createRoot(shell))
+        // app start: Nokia's 0.25 s linear mask reveal (app_start.fxml), here a circle growing from the middle
+        shell.post {
+            try {
+                val cx = shell.width / 2
+                val cy = shell.height / 2
+                val r = Math.hypot(cx.toDouble(), cy.toDouble()).toFloat()
+                android.view.ViewAnimationUtils.createCircularReveal(shell, cx, cy, 0f, r).apply {
+                    duration = 250
+                    interpolator = android.view.animation.LinearInterpolator()
+                }.start()
+            } catch (_: Throwable) { }
+        }
         // the last time this app crashed, show what happened
         CrashLog.pending(this)?.let { shell.push(CrashScreen(it)) }
     }

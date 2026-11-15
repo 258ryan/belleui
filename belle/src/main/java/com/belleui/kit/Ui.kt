@@ -171,6 +171,8 @@ class Row(
     val check: Boolean? = null,
     /** Space kept free at the right edge, e.g. for a switch drawn over the row. */
     val rightReserve: Float = 0f,
+    /** E6 setting item: the title on top and the value in a dark button under it, on the right ([right] is the value). */
+    val button: Boolean = false,
 )
 
 /** Drawing helpers shared by every Belle app. [sc] scales the 640x480 design grid to the screen. */
@@ -684,6 +686,26 @@ class Ui(val ctx: Context) {
             p.color = if (lightOn) al(Color.BLACK, 40) else Belle.SEPARATOR
             c.drawRect(r.left, r.bottom - 1f, r.right, r.bottom, p)
         }
+        if (row.button && row.right != null) {
+            val white0 = al(Color.WHITE, dim)
+            text(c, row.title, r.left + pad, baselineFor(r.top + 31f * sc, 26f * sc), 26f * sc, white0, maxW = r.width() - 2 * pad)
+            // the value button: 336 px wide, 31 px tall, right-aligned with 51 px of margin (measured on the E6)
+            val bw = min(336f * sc, r.width() - 2 * pad - 20f * sc)
+            val right = r.right - 51f * sc * (r.width() / (640f * sc)).coerceAtMost(1f)
+            tmp.set(right - bw, r.top + 52f * sc, right, r.top + 83f * sc)
+            val rad = 5f * sc
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, tmp.top, 0f, tmp.bottom, 0xFF4F4F4F.toInt(), 0xFF262626.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(tmp, rad, rad, p)
+            p.shader = null
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = 0xFF000000.toInt()
+            c.drawRoundRect(tmp, rad, rad, p)
+            p.style = Paint.Style.FILL
+            text(c, row.right, tmp.centerX(), baselineFor(tmp.centerY(), 22f * sc), 22f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, maxW = tmp.width() - 16f * sc)
+            return
+        }
         var tx = r.left + pad
         val iconSize = 64f * sc
         if (row.icon != null || row.iconKind >= 0) {
@@ -764,6 +786,24 @@ class Ui(val ctx: Context) {
         val hx = if (on) rf.right - h / 2f else rf.left + h / 2f
         tmp.set(hx - h / 2f, cy - h / 2f, hx + h / 2f, cy + h / 2f)
         gfx.draw(c, "qtg_graf_switchbutton_handle_normal", tmp)
+    }
+
+    /** The E6 popup plate: near-black with a lighter top edge, a thin border and a soft shadow (measured on the device). */
+    fun popupPlate(c: Canvas, r: RectF) = onDark {
+        val rad = 7f * sc
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 120)
+        rf.set(r.left - 3f * sc, r.top - 1f * sc, r.right + 3f * sc, r.bottom + 6f * sc)
+        c.drawRoundRect(rf, rad + 3f * sc, rad + 3f * sc, p)
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, intArrayOf(0xFF525252.toInt(), 0xFF303030.toInt(), 0xFF1D1D1D.toInt(), 0xFF1B1B1B.toInt()), floatArrayOf(0f, 0.05f, 0.14f, 1f), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, rad, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1f * sc
+        p.color = 0xFF000000.toInt()
+        c.drawRoundRect(r, rad, rad, p)
+        p.style = Paint.Style.FILL
     }
 
     fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) = onDark { pushButton0(c, r, label, selected) }

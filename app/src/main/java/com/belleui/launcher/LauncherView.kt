@@ -105,6 +105,9 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- ui state ----------------------------------------------------------------
     private var page = 0
     private var pageAnim = 0f
+    private var pageTarget = 0f
+    private var pageFrom = 0f
+    private var pageStartMs = 0L
     private var tab = 1
     private var tabFocus = false
     private var homeSel = 0
@@ -140,8 +143,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 26f
-    private var softH = 60f
+    private var statusH = 36f
+    private var softH = 67f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -734,9 +737,9 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             0 -> hit = homeTap(x, y, selectOnly)
             1 -> {
-                val cw = width / COLS.toFloat()
+                val cw = menuCellW()
                 val ch = menuCellH()
-                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * COLS + (x / cw).toInt()
+                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * COLS + ((x - menuGridLeft()) / cw).toInt().coerceIn(0, COLS - 1)
                 if (y > menuAreaTop() && idx in menuApps.indices) {
                     menuSel = idx
                     hit = true
@@ -1070,8 +1073,8 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = 26f * sc
-        softH = 60f * sc
+        statusH = 36f * sc
+        softH = 67f * sc
         cTop = statusH
         cBot = h - softH
         buildBackground()
@@ -1099,12 +1102,15 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun menuAreaBottom() = cBot
 
-    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3.15f
+    // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
+    private fun menuCellW() = 151f * sc
+    private fun menuGridLeft() = (width - menuCellW() * COLS) / 2f
+    private fun menuCellH() = 122f * sc
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
-        val cw = width / COLS.toFloat()
+        val cw = menuCellW()
         val ch = menuCellH()
-        val x = (idx % COLS) * cw
+        val x = menuGridLeft() + (idx % COLS) * cw
         val y = menuAreaTop() + ((idx / COLS) - top) * ch
         out.set(x, y, x + cw, y + ch)
         return out
@@ -1234,8 +1240,17 @@ class LauncherView(private val act: Activity) : View(act) {
         frameK = k
         var busy = false
 
-        pageAnim += (pagePos() - pageAnim) * k
-        if (abs(pagePos() - pageAnim) < 0.004f) pageAnim = pagePos().toFloat() else busy = true
+        // switching home views: a 0.225 s out-quad slide (activeidle_viewswitch_*.fxml on the E6)
+        val pageGoal = pagePos().toFloat()
+        val nowMs = System.currentTimeMillis()
+        if (pageGoal != pageTarget) {
+            pageTarget = pageGoal
+            pageFrom = pageAnim
+            pageStartMs = nowMs
+        }
+        val pt = ((nowMs - pageStartMs) / 225f).coerceIn(0f, 1f)
+        pageAnim = pageFrom + (pageGoal - pageFrom) * (1f - (1f - pt) * (1f - pt))
+        if (pt < 1f) busy = true else pageAnim = pageGoal
         menuTopAnim += (menuTop - menuTopAnim) * k
         if (abs(menuTop - menuTopAnim) < 0.004f) menuTopAnim = menuTop.toFloat() else busy = true
         recentTopAnim += (recentTop - recentTopAnim) * k
@@ -2007,41 +2022,63 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /** A paper calendar: the Belle calendar widget paper, "Today" and what is coming in the next week. */
-    private fun drawToday(c: Canvas, r: RectF) {
-        darkCard(c, r, 16f * sc)
-        val grey = 0xFFB5B5B5.toInt()
-        // left block: weekday and big day number, like the Belle calendar widget
-        val now = java.util.Date()
-        val bw = min(96f * sc, r.width() * 0.3f)
+    /** The E6 paper widget: white card, rounded at the bottom, two binder rings on top (from the real home screen). */
+    private fun paperWidget(c: Canvas, r: RectF, rings: Boolean) {
+        val rad = 14f * sc
+        // soft shadow
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, al(theme.accentLight, 255), al(theme.accent, 255), Shader.TileMode.CLAMP)
-        rf.set(r.left + 8f * sc, r.top + 8f * sc, r.left + 8f * sc + bw, r.bottom - 8f * sc)
-        c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
         p.shader = null
-        val cx = rf.centerX()
-        text(c, java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault()).format(now).uppercase(), cx, baselineFor(rf.top + 24f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
-        text(c, java.text.SimpleDateFormat("d", java.util.Locale.getDefault()).format(now), cx, baselineFor(rf.centerY() + 6f * sc, 50f * sc, light), 50f * sc, Color.WHITE, Paint.Align.CENTER, face = light)
-        text(c, java.text.SimpleDateFormat("MMM", java.util.Locale.getDefault()).format(now), cx, baselineFor(rf.bottom - 20f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.CENTER, face = medium)
-        val x = rf.right + 14f * sc
-        val maxW = r.right - x - 12f * sc
+        p.color = al(Color.BLACK, 70)
+        rf.set(r.left - 1f * sc, r.top + 2f * sc, r.right + 1f * sc, r.bottom + 5f * sc)
+        c.drawRoundRect(rf, rad, rad, p)
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFFFFFFFF.toInt(), 0xFFE4E4E4.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, rad, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1f * sc
+        p.color = al(Color.BLACK, 120)
+        c.drawRoundRect(r, rad, rad, p)
+        p.style = Paint.Style.FILL
+        if (rings) {
+            for (fx in floatArrayOf(0.1f, 0.9f)) {
+                val cx = r.left + r.width() * fx
+                p.color = 0xFF9A9A9A.toInt()
+                rf.set(cx - 5f * sc, r.top - 6f * sc, cx + 5f * sc, r.top + 14f * sc)
+                c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
+                p.color = 0xFFF4F4F4.toInt()
+                rf.set(cx - 2.5f * sc, r.top - 3f * sc, cx + 2.5f * sc, r.top + 10f * sc)
+                c.drawRoundRect(rf, 2.5f * sc, 2.5f * sc, p)
+            }
+        }
+    }
+
+    private fun drawToday(c: Canvas, r: RectF) {
+        paperWidget(c, r, true)
+        val ink = 0xFF111111.toInt()
+        val headH = min(46f * sc, r.height() * 0.3f)
+        text(c, "Today", r.centerX(), baselineFor(r.top + headH / 2f + 2f * sc, 26f * sc), 26f * sc, ink, Paint.Align.CENTER)
+        p.color = al(Color.BLACK, 70)
+        c.drawRect(r.left + 1f, r.top + headH, r.right - 1f, r.top + headH + 1f * sc, p)
         val ev = calendar.events
+        val grey = 0xFF707070.toInt()
         when {
-            !calendar.hasPermission() -> text(c, "Press A to show your calendar", x, baselineFor(r.centerY(), 17f * sc), 17f * sc, grey, maxW = maxW)
-            ev.isEmpty() -> text(c, "No events for 7 days", x, baselineFor(r.centerY(), 18f * sc), 18f * sc, Color.WHITE, maxW = maxW)
+            !calendar.hasPermission() -> text(c, "Press A to show your calendar", r.centerX(), baselineFor(r.top + headH + (r.height() - headH) / 2f, 19f * sc), 19f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            ev.isEmpty() -> text(c, "No events for 7 days", r.centerX(), baselineFor(r.top + headH + (r.height() - headH) / 2f, 20f * sc), 20f * sc, ink, Paint.Align.CENTER)
             else -> {
                 val rowH = 42f * sc
-                val n = max(1, min(3, ((r.height() - 12f * sc) / rowH).toInt()))
-                var y = r.top + (r.height() - rowH * min(n, ev.size)) / 2f
+                val n = max(1, min(3, ((r.height() - headH - 6f * sc) / rowH).toInt()))
+                var y = r.top + headH + 6f * sc
                 val fmt = DateFormat.getTimeFormat(act)
                 val day = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
-                for ((i, e) in ev.take(n).withIndex()) {
-                    if (i > 0) {
-                        p.color = al(Color.WHITE, 30)
-                        c.drawRect(x, y, r.right - 12f * sc, y + 1f, p)
-                    }
-                    val whenText = (if (isToday(e.begin) && e.begin < System.currentTimeMillis() + 24 * 3600_000L) "" else day.format(java.util.Date(e.begin)) + " ") + if (e.allDay) "all day" else fmt.format(java.util.Date(e.begin))
-                    text(c, e.title, x, y + 19f * sc, 18f * sc, Color.WHITE, maxW = maxW, face = medium)
-                    text(c, whenText, x, y + 38f * sc, 15f * sc, theme.accentLight, maxW = maxW, face = light)
+                for (e in ev.take(n)) {
+                    val whenText = if (e.allDay) "all day" else fmt.format(java.util.Date(e.begin))
+                    val dayText = if (isToday(e.begin) && e.begin < System.currentTimeMillis() + 24 * 3600_000L) null else day.format(java.util.Date(e.begin))
+                    text(c, whenText, r.left + 14f * sc, baselineFor(y + rowH / 2f - (if (dayText != null) 8f * sc else 0f), 22f * sc), 22f * sc, ink)
+                    if (dayText != null) text(c, dayText, r.left + 14f * sc, baselineFor(y + rowH / 2f + 12f * sc, 16f * sc, light), 16f * sc, grey, face = light)
+                    // the yellow event bar and the title, as in the E6 calendar widget
+                    p.color = 0xFFF2C500.toInt()
+                    c.drawRect(r.left + 84f * sc, y + 4f * sc, r.left + 89f * sc, y + rowH - 4f * sc, p)
+                    text(c, e.title, r.left + 100f * sc, baselineFor(y + rowH / 2f, 21f * sc), 21f * sc, ink, maxW = r.right - r.left - 116f * sc)
                     y += rowH
                 }
             }
@@ -2117,45 +2154,40 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun drawInbox(c: Canvas, r: RectF) {
-        darkCard(c, r, 16f * sc)
+        paperWidget(c, r, false)
         HubStore.load(act)
-        val ink = Color.WHITE
-        val grey = 0xFFB5B5B5.toInt()
-        // header strip
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, r.top, 0f, r.top + 38f * sc, al(theme.accentLight, 255), al(theme.accent, 255), Shader.TileMode.CLAMP)
-        rf.set(r.left + 1f, r.top + 1f, r.right - 1f, r.top + 38f * sc)
-        c.drawRoundRect(rf, 11f * sc, 11f * sc, p)
-        p.shader = null
-        text(c, "Notifications", r.left + 16f * sc, baselineFor(r.top + 19f * sc, 19f * sc, medium), 19f * sc, Color.WHITE, face = medium)
+        val ink = 0xFF111111.toInt()
+        val grey = 0xFF707070.toInt()
         val total = HubStore.notes.count { it.title.isNotBlank() || it.text.isNotBlank() }
-        if (total > 0) text(c, total.toString(), r.right - 16f * sc, baselineFor(r.top + 19f * sc, 17f * sc, medium), 17f * sc, Color.WHITE, Paint.Align.RIGHT, face = medium)
-        val fit = max(1, ((r.height() - 46f * sc) / (50f * sc)).toInt())
+        val fit = max(1, (r.height() / (66f * sc)).toInt())
         val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(min(3, fit))
         if (!HubStore.hasAccess(act)) {
-            text(c, "Press A and allow notification access", r.centerX(), baselineFor(r.top + 100f * sc, 18f * sc), 18f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            text(c, "Press A and allow notification access", r.centerX(), baselineFor(r.centerY(), 18f * sc), 18f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
             return
         }
         if (list.isEmpty()) {
-            text(c, "No notifications yet", r.centerX(), baselineFor(r.top + 100f * sc, 19f * sc), 19f * sc, grey, Paint.Align.CENTER)
+            text(c, "No notifications yet", r.centerX(), baselineFor(r.centerY(), 20f * sc), 20f * sc, grey, Paint.Align.CENTER)
             return
         }
         val fmt = DateFormat.getTimeFormat(act)
-        var y = r.top + 40f * sc
-        val rowH = ((r.bottom - y - 6f * sc) / list.size.toFloat()).coerceAtMost(58f * sc)
+        val rowH = r.height() / list.size.toFloat()
+        var y = r.top
         for ((i, n) in list.withIndex()) {
             if (i > 0) {
-                p.color = al(Color.BLACK, 40)
-                c.drawRect(r.left + 12f * sc, y, r.right - 12f * sc, y + 1f, p)
+                p.color = al(Color.BLACK, 60)
+                c.drawRect(r.left + 16f * sc, y, r.right - 16f * sc, y + 1f * sc, p)
             }
-            p.color = theme.accent
-            c.drawCircle(r.left + 20f * sc, y + 19f * sc, 5f * sc, p)
             val t = fmt.format(java.util.Date(n.time))
-            val tw = measure(t, 15f * sc, light)
-            text(c, t, r.right - 14f * sc, y + 25f * sc, 15f * sc, theme.accent, Paint.Align.RIGHT, face = light)
-            text(c, n.title.ifBlank { n.pkg }, r.left + 34f * sc, y + 25f * sc, 18f * sc, ink, maxW = r.width() - 34f * sc - tw - 30f * sc, face = medium)
-            text(c, n.text, r.left + 34f * sc, y + 47f * sc, 16f * sc, grey, maxW = r.width() - 50f * sc, face = light)
+            text(c, t, r.right - 26f * sc, baselineFor(y + rowH * 0.32f, 19f * sc, light), 19f * sc, 0xFF3E7FBF.toInt(), Paint.Align.RIGHT, face = light)
+            text(c, n.title.ifBlank { n.pkg }, r.left + 18f * sc, baselineFor(y + rowH * 0.32f, 21f * sc, medium), 21f * sc, ink, maxW = r.width() - 110f * sc, face = medium)
+            text(c, n.text, r.left + 18f * sc, baselineFor(y + rowH * 0.70f, 20f * sc, light), 20f * sc, grey, maxW = r.width() - 48f * sc, face = light)
             y += rowH
+        }
+        // the blue scroll bar down the right edge of the list
+        if (total > list.size) {
+            p.color = 0xFF3E7FBF.toInt()
+            rf.set(r.right - 9f * sc, r.top + 8f * sc, r.right - 5f * sc, r.top + 8f * sc + (r.height() - 16f) * list.size / total)
+            c.drawRoundRect(rf, 2f * sc, 2f * sc, p)
         }
     }
 
@@ -2405,18 +2437,18 @@ class LauncherView(private val act: Activity) : View(act) {
             text(c, msg, w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
             drawFocus(c, menuFocus.cur, 14f * sc)
-            val cw = w / COLS
+            val cw = menuCellW()
             val ch = menuCellH()
-            val isz = 76f * sc
+            val isz = 72f * sc
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + 8f * sc
+                val iconTop = tmp.top + 16f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), iconTop + isz + 26f * sc, 21f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
+                text(c, app.label, tmp.centerX(), iconTop + isz + 30f * sc, 19f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
             }
             val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
