@@ -361,6 +361,13 @@ class AppRepo(private val ctx: Context) {
         return getList(pk("favs")).mapNotNull { byKey[it] }.take(MAX_FAVS)
     }
 
+    /** The Belle home screen layout (shortcuts and widgets on a grid), saved as text by the launcher. */
+    var homeLayout: String?
+        get() = prefs.getString("homeLayout", null)
+        set(v) {
+            prefs.edit().putString("homeLayout", v).apply()
+        }
+
     fun isFavorite(key: String) = key in getList(pk("favs"))
 
     fun addFavorite(key: String): Boolean {
