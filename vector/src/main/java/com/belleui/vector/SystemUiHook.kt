@@ -29,6 +29,7 @@ object SystemUiHook {
             val methods: List<Method> = cls.declaredMethods.filter { it.name == name }
             if (methods.isEmpty()) {
                 XposedBridge.log("BelleChooser: $className.$name not found")
+                Status.note(lpparam.processName ?: "?", "${className.substringAfterLast('.')}.$name not found")
                 return
             }
             for (m in methods) {
@@ -47,8 +48,10 @@ object SystemUiHook {
                 })
             }
             XposedBridge.log("BelleChooser: hooked $className.$name (${methods.size})")
+            Status.note(lpparam.processName ?: "?", "hooked ${className.substringAfterLast('.')}.$name")
         } catch (t: Throwable) {
             XposedBridge.log("BelleChooser: could not hook $className.$name: $t")
+            Status.note(lpparam.processName ?: "?", "could not hook ${className.substringAfterLast('.')}.$name: ${t.javaClass.simpleName}")
         }
     }
 

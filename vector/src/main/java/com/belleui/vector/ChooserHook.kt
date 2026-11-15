@@ -15,6 +15,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
  */
 class ChooserHook : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        Status.note(lpparam.processName ?: "?", "loaded into ${lpparam.processName} for ${lpparam.packageName}")
         if (lpparam.packageName == "com.android.systemui") {
             SystemUiHook.install(lpparam)
             return
@@ -28,14 +29,17 @@ class ChooserHook : IXposedHookLoadPackage {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         try {
                             Restyle.apply(param.thisObject as Activity)
+                            Status.note(lpparam.processName ?: "?", "restyled a chooser (${param.thisObject.javaClass.simpleName})")
                         } catch (t: Throwable) {
                             XposedBridge.log("BelleChooser: restyle failed: $t")
                         }
                     }
                 })
                 XposedBridge.log("BelleChooser: hooked ResolverActivity.$n in ${lpparam.processName}")
+                Status.note(lpparam.processName ?: "?", "hooked ResolverActivity.$n")
             } catch (t: Throwable) {
                 XposedBridge.log("BelleChooser: could not hook ResolverActivity.$n: $t")
+                Status.note(lpparam.processName ?: "?", "could not hook ResolverActivity.$n: ${t.javaClass.simpleName}")
             }
         }
     }
@@ -72,8 +76,10 @@ class ChooserHook : IXposedHookLoadPackage {
             try {
                 XposedHelpers.findAndHookMethod(cls, name, hook)
                 XposedBridge.log("BelleChooser: hooked PhoneWindowManager.$name")
+                Status.note(lpparam.processName ?: "?", "hooked PhoneWindowManager.$name")
             } catch (t: Throwable) {
                 XposedBridge.log("BelleChooser: could not hook PhoneWindowManager.$name: $t")
+                Status.note(lpparam.processName ?: "?", "could not hook PhoneWindowManager.$name: ${t.javaClass.simpleName}")
             }
         }
         try {
