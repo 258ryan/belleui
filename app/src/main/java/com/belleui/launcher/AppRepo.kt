@@ -69,15 +69,20 @@ class AppRepo(private val ctx: Context) {
     private fun symbianApps(): List<AppEntry> {
         val out = ArrayList<AppEntry>()
         val base = android.net.Uri.parse("content://$EKA_AUTH")
+        // an unstable client: if the emulator process dies while we ask it, the launcher must not die with it
+        val client = try {
+            ctx.packageManager.getPackageInfo(EKA_PKG, 0)
+            ctx.contentResolver.acquireUnstableContentProviderClient(base)
+        } catch (_: Throwable) { null } ?: return out
         try {
-            ctx.contentResolver.query(base.buildUpon().appendPath("apps").build(), null, null, null, null)?.use { c ->
+            client.query(base.buildUpon().appendPath("apps").build(), null, null, null, null)?.use { c ->
                 while (c.moveToNext()) {
                     try {
                         val uid = c.getLong(0)
                         val name = c.getString(1) ?: continue
                         val device = c.getString(2) ?: ""
                         val raw = try {
-                            ctx.contentResolver.openInputStream(base.buildUpon().appendPath("icon").appendPath(uid.toString()).build())?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                            client.openFile(base.buildUpon().appendPath("icon").appendPath(uid.toString()).build(), "r")?.let { pfd -> android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).use { android.graphics.BitmapFactory.decodeStream(it) } }
                         } catch (_: Throwable) { null }
                         val icon = withShadow(loadCustomIcon("eka:$uid") ?: frameTile(raw?.let { android.graphics.drawable.BitmapDrawable(ctx.resources, it) } ?: ctx.packageManager.getApplicationIcon(EKA_PKG), name))
                         val ex = android.os.Bundle().apply {
@@ -92,7 +97,9 @@ class AppRepo(private val ctx: Context) {
                 }
             }
         } catch (_: Throwable) {
-            // EKA21 not installed
+            // EKA21 missing or its process died: no Symbian apps this time
+        } finally {
+            try { client.release() } catch (_: Throwable) { }
         }
         return out
     }
