@@ -8,7 +8,9 @@ all keep working exactly as in the stock System UI.
 
 usage: restyle.py <decoded-dir>
 """
+import os
 import re
+import shutil
 import sys
 
 BELLE = {
@@ -41,6 +43,62 @@ BELLE = {
 }
 
 
+# sizes: a slimmer status bar text, bigger rounder switch-like quick settings tiles
+DIMENS = {
+    "status_bar_clock_size": "17.0sp",
+    "qs_tile_text_size": "14.0sp",
+    "qs_tile_background_size": "56.0dip",
+    "qs_quick_tile_size": "56.0dip",
+    "qs_tile_height": "108.0dip",
+    "qs_tile_icon_size": "28.0dip",
+}
+
+
+def patch_dimens(path):
+    try:
+        s = open(path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return 0
+    n = 0
+    for name, val in DIMENS.items():
+        s, k = re.subn(r'(<dimen name="%s">)[^<]*(</dimen>)' % re.escape(name), r"\g<1>%s\g<2>" % val, s)
+        n += k
+    open(path, "w", encoding="utf-8").write(s)
+    return n
+
+
+# the Belle squircle for the quick-settings tiles, in the 100x100 box the tile shape uses (the ROM's icon mask is a circle)
+SQUIRCLE = "M0,50 C0,8 8,0 50,0 C92,0 100,8 100,50 C100,92 92,100 50,100 C8,100 0,92 0,50 Z"
+
+
+def patch_tiles(d):
+    """Quick-settings tiles take their shape from the system icon mask; use the Belle squircle instead."""
+    path = os.path.join(d, "smali/com/android/systemui/qs/tileimpl/QSTileBaseView.smali")
+    s = open(path, encoding="utf-8").read()
+    # the first PathParser call after the icon-mask string (0x1040225 = config_icon_mask) is the tile shape
+    i = s.find("0x1040225")
+    j = s.find("invoke-static {v1}, Landroid/util/PathParser;->createPathFromPathData", i) if i >= 0 else -1
+    if j < 0:
+        print("tile shape: pattern not found, left as it is")
+        return 0
+    s = s[:j] + 'const-string v1, "%s"\n\n    ' % SQUIRCLE + s[j:]
+    open(path, "w", encoding="utf-8").write(s)
+    return 1
+
+
+def copy_overlay(src, dst):
+    """Whole-file replacements (flat Belle panels and rows) from overlay/res/ over the decoded res/."""
+    n = 0
+    for root, _, files in os.walk(src):
+        for f in files:
+            rel = os.path.relpath(os.path.join(root, f), src)
+            target = os.path.join(dst, rel)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copyfile(os.path.join(root, f), target)
+            n += 1
+    return n
+
+
 def patch(path):
     try:
         s = open(path, encoding="utf-8").read()
@@ -62,5 +120,14 @@ if __name__ == "__main__":
         k = patch("%s/res/%s" % (d, f))
         print(f, k, "colours changed")
         total += k
+    k = patch_dimens("%s/res/values/dimens.xml" % d)
+    print("dimens", k, "sizes changed")
+    total += k
+    k = patch_tiles(d)
+    print("tiles", k, "shape patched")
+    here = os.path.dirname(os.path.abspath(__file__))
+    k = copy_overlay(os.path.join(here, "overlay", "res"), "%s/res" % d)
+    print("overlay", k, "files copied")
+    total += k
     if total == 0:
         sys.exit("nothing was changed: is this a decoded System UI?")
