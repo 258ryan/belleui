@@ -1,0 +1,33 @@
+name: Build Tube (standalone app)
+# Manual: builds ONLY the Tube app, a standalone APK you install like any app. It is not part of any Magisk module.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: belle/all
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon -PwithTube :tube:assembleDebug
+      - run: cp tube/build/outputs/apk/debug/tube-debug.apk BelleUI-Tube.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BelleUI-Tube
+          path: BelleUI-Tube.apk
+      - name: Publish release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view tube-latest >/dev/null 2>&1 || gh release create tube-latest --title "Tube (standalone app)" --notes "Install BelleUI-Tube.apk like any app." --target "$GITHUB_SHA"
+          gh release upload tube-latest BelleUI-Tube.apk --clobber
