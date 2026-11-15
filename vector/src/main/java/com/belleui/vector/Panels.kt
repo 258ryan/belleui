@@ -42,10 +42,6 @@ object Hud {
     // volume
     // ------------------------------------------------------------------------------------------
 
-    /** Hosts that have their own notification listener (the real System UI) supply the list and the dismissals here. */
-    var noteSource: (() -> Array<android.service.notification.StatusBarNotification>?)? = null
-    var noteCancel: ((android.service.notification.StatusBarNotification) -> Unit)? = null
-
     private var volumeView: VolumeView? = null
     private val hideVolume = Runnable { removeVolume() }
 
@@ -246,42 +242,27 @@ object Hud {
     // the Status menu: the Belle pull-down (quick switches, notifications, activities)
     // ------------------------------------------------------------------------------------------
 
-    /** What is currently notifying, read from the system's notification service (the system UI is allowed to). */
+    /** What is currently notifying, from the Belle launcher's status provider (its listener is the one Android lets read them). */
     private object Notes {
-        class Item(val sbn: android.service.notification.StatusBarNotification, val title: String, val text: String?, val ongoing: Boolean, val progress: Float?)
+        class Item(val key: String, val pkg: String, val title: String, val text: String?, val ongoing: Boolean, val progress: Float?, val clearable: Boolean, val postTime: Long)
 
-        private fun service(): Any? = try {
-            android.app.NotificationManager::class.java.getMethod("getService").invoke(null)
-        } catch (_: Throwable) {
-            null
-        }
+        private val uri = android.net.Uri.parse("content://com.belleui.launcher.status/active")
 
-        @Suppress("UNCHECKED_CAST")
         fun active(sys: Context): List<Item> {
-            val nm = service()
-            if (nm == null && noteSource == null) return emptyList()
-            val arr = (try { noteSource?.invoke() } catch (_: Throwable) { null }) ?: try {
-                nm?.javaClass?.getMethod("getActiveNotifications", String::class.java)?.invoke(nm, sys.packageName) as? Array<android.service.notification.StatusBarNotification>
-            } catch (_: Throwable) {
-                null
-            } ?: return emptyList()
             val out = ArrayList<Item>()
-            for (n in arr) {
-                try {
-                    val no = n.notification
-                    if (no.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0) continue
-                    val ex = no.extras
-                    val title = ex.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
-                    val text = ex.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
-                    if (title.isBlank() && text.isNullOrBlank()) continue
-                    val max = ex.getInt(android.app.Notification.EXTRA_PROGRESS_MAX, 0)
-                    val prog = if (max > 0) ex.getInt(android.app.Notification.EXTRA_PROGRESS, 0).toFloat() / max else null
-                    val ongoing = no.flags and (android.app.Notification.FLAG_ONGOING_EVENT or android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0
-                    out.add(Item(n, title.ifBlank { appName(sys, n.packageName) }, text, ongoing, prog))
-                } catch (_: Throwable) {
+            try {
+                sys.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val ix = { n: String -> c.getColumnIndex(n) }
+                    while (c.moveToNext()) {
+                        val pkg = c.getString(ix("pkg"))
+                        val title = c.getString(ix("title")).ifBlank { appName(sys, pkg) }
+                        val prog = c.getFloat(ix("progress"))
+                        out.add(Item(c.getString(ix("key")), pkg, title, c.getString(ix("text")).ifBlank { null }, c.getInt(ix("ongoing")) != 0, if (prog >= 0f) prog else null, c.getInt(ix("clearable")) != 0, c.getLong(ix("post"))))
+                    }
                 }
+            } catch (_: Throwable) {
             }
-            return out.sortedByDescending { it.sbn.postTime }
+            return out.sortedByDescending { it.postTime }
         }
 
         fun appName(sys: Context, pkg: String): String = try {
@@ -290,22 +271,31 @@ object Hud {
             pkg
         }
 
-        fun cancel(sys: Context, n: android.service.notification.StatusBarNotification) {
-            noteCancel?.let {
-                try {
-                    it(n)
-                    return
-                } catch (_: Throwable) {
-                }
-            }
+        private fun call(sys: Context, method: String, arg: String?) = try {
+            sys.contentResolver.call(android.net.Uri.parse("content://com.belleui.launcher.status"), method, arg, null)
+        } catch (_: Throwable) {
+            null
+        }
+
+        fun cancel(sys: Context, n: Item) {
+            call(sys, "cancel", n.key)
+        }
+
+        fun clear(sys: Context) {
+            call(sys, "clear", null)
+        }
+
+        /** Runs the notification's own action from here (the System UI may start apps from the background). */
+        fun open(sys: Context, n: Item) {
             try {
-                val nm = service() ?: return
-                nm.javaClass.getMethod("cancelNotificationWithTag", String::class.java, String::class.java, String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                    .invoke(nm, n.packageName, (try { n.javaClass.getMethod("getOpPkg").invoke(n) as String } catch (_: Throwable) { n.packageName }), n.tag, n.id, n.userId)
+                call(sys, "open", n.key)?.getParcelable<android.app.PendingIntent>("intent")?.send()
             } catch (_: Throwable) {
             }
         }
     }
+
+    /** How many notifications are showing, for the status bar's mail mark. */
+    fun activeCount(sys: Context): Int = Notes.active(sys).count { !it.ongoing }
 
     private class PullDown(val sys: Context, val mod: Context, val close: () -> Unit) : View(sys) {
         private var ui: Ui? = null
@@ -528,12 +518,17 @@ object Hud {
                 val cx = cell * i + cell / 2f
                 val focused = sel == 0 && sw == i
                 rf.set(cx - 29f * sc, 34f * sc, cx + 29f * sc, 34f * sc + 66f * sc)
-                if (!u.gfx.draw(c, "qtg_graf_panel_switch_${art[i]}_${if (on[i]) "on" else "off"}", rf)) {
+                if (i == 4) {
+                    // Settings has no picture of its own: a dark rounded tile in the same style, with the Belle gear
+                    u.p.shader = android.graphics.LinearGradient(0f, rf.top + 4f * sc, 0f, rf.bottom - 8f * sc, 0xFF3A3A3A.toInt(), 0xFF1C1C1C.toInt(), android.graphics.Shader.TileMode.CLAMP)
+                    c.drawRoundRect(rf.left + 3f * sc, rf.top + 5f * sc, rf.right - 3f * sc, rf.bottom - 9f * sc, 14f * sc, 14f * sc, u.p)
+                    u.p.shader = null
+                } else if (!u.gfx.draw(c, "qtg_graf_panel_switch_${art[i]}_${if (on[i]) "on" else "off"}", rf)) {
                     u.p.color = if (on[i]) Belle.BLUE else 0xFF3A3A3A.toInt()
                     c.drawCircle(cx, 67f * sc, 27f * sc, u.p)
                 }
                 // the Settings tile has no art of its own: the Belle settings glyph on a dark tile
-                if (i == 4) u.gfx.glyph(c, "toolbar_settings", cx, rf.centerY(), 30f * sc, 255)
+                if (i == 4) u.gfx.glyph(c, "toolbar_settings", cx, rf.centerY() - 2f * sc, 30f * sc, 255)
                 if (focused) {
                     u.p.style = Paint.Style.STROKE
                     u.p.strokeWidth = 3f * sc
@@ -639,10 +634,10 @@ object Hud {
                     u.p.color = 0xFF3A3A3A.toInt()
                     c.drawRect(0f, y + h - 1f, w, y + h, u.p)
                 }
-                val ic = icon(n.sbn.packageName)
+                val ic = icon(n.pkg)
                 rf.set(14f * sc, y + 13f * sc, 14f * sc + 40f * sc, y + 13f * sc + 40f * sc)
                 if (ic != null) c.drawBitmap(ic, null, rf, null)
-                if (!n.ongoing && android.os.SystemClock.uptimeMillis() > 0 && System.currentTimeMillis() - n.sbn.postTime < 10 * 60_000L) {
+                if (!n.ongoing && android.os.SystemClock.uptimeMillis() > 0 && System.currentTimeMillis() - n.postTime < 10 * 60_000L) {
                     u.p.color = 0xFFE23B3B.toInt()
                     c.drawCircle(52f * sc, y + 15f * sc, 5f * sc, u.p)
                 }
@@ -697,16 +692,12 @@ object Hud {
                 } else toggle(sw)
                 sel == 1 -> Profiles.apply(sys, (Profiles.current(sys) + 1) % Profiles.names.size)
                 sel == 5 -> {
-                    for (n in normal) if (n.sbn.notification.flags and android.app.Notification.FLAG_NO_CLEAR == 0) Notes.cancel(sys, n.sbn)
+                    for (n in normal) if (n.clearable) Notes.cancel(sys, n)
                     notesAt = 0
                 }
                 sel in 6 until 6 + normal.size + acts.size -> {
                     val n = (normal + acts)[sel - 6]
-                    try {
-                        n.sbn.notification.contentIntent?.send()
-                    } catch (_: Throwable) {
-                    }
-                    if (n.sbn.notification.flags and android.app.Notification.FLAG_AUTO_CANCEL != 0) Notes.cancel(sys, n.sbn)
+                    Notes.open(sys, n)
                     close()
                 }
                 else -> {}
@@ -754,7 +745,7 @@ object Hud {
                     val all = normal() + acts()
                     if (sel in 6 until 6 + all.size) {
                         val n = all[sel - 6]
-                        if (!n.ongoing) Notes.cancel(sys, n.sbn)
+                        if (!n.ongoing) Notes.cancel(sys, n)
                         notesAt = 0
                     }
                 }

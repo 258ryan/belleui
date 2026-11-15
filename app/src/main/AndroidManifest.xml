@@ -41,6 +41,13 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Belle">
 
+        <!-- the live notification list for the Belle Status menu (System UI only) -->
+        <provider
+            android:name=".StatusProvider"
+            android:authorities="com.belleui.launcher.status"
+            android:exported="true" />
+
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

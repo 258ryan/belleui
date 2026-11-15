@@ -1989,10 +1989,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun drawMusic(c: Canvas, r: RectF) {
         darkCard(c, r, 16f * sc)
-        val art = RectF(r.left + 14f * sc, r.top + 14f * sc, r.left + 14f * sc + 100f * sc, r.top + 14f * sc + 100f * sc)
+        val side = (r.height() - 28f * sc).coerceIn(70f * sc, 108f * sc)
+        val art = RectF(r.left + 14f * sc, r.centerY() - side / 2f, r.left + 14f * sc + side, r.centerY() + side / 2f)
         val bmp = media.art
         c.save()
-        c.clipPath(Path().apply { addRoundRect(art, 14f * sc, 14f * sc, Path.Direction.CW) })
+        c.clipPath(Path().apply { addRoundRect(art, 12f * sc, 12f * sc, Path.Direction.CW) })
         if (bmp != null) {
             val s = max(art.width() / bmp.width, art.height() / bmp.height)
             val sw = art.width() / s
@@ -2006,20 +2007,22 @@ class LauncherView(private val act: Activity) : View(act) {
         c.restore()
         val x = art.right + 16f * sc
         val maxW = r.right - x - 14f * sc
+        // title and artist on the upper half, the three keys centred on the lower half of the right side
+        val top = art.top
         if (media.available) {
-            text(c, media.title ?: "Playing", x, r.top + 44f * sc, 22f * sc, Color.WHITE, maxW = maxW)
-            text(c, media.artist ?: "", x, r.top + 72f * sc, 17f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
+            text(c, media.title ?: "Playing", x, top + 26f * sc, 20f * sc, Color.WHITE, maxW = maxW)
+            text(c, media.artist ?: "", x, top + 50f * sc, 16f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
         } else {
-            text(c, "Music", x, r.top + 44f * sc, 22f * sc, Color.WHITE, maxW = maxW)
-            text(c, if (!HubStore.hasAccess(act)) "Allow notification access to control playback" else "Nothing is playing - press A to open Music", x, r.top + 72f * sc, 16f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
+            text(c, "Music", x, top + 26f * sc, 20f * sc, Color.WHITE, maxW = maxW)
+            text(c, if (!HubStore.hasAccess(act)) "Allow notification access to control playback" else "Nothing is playing - press A to open Music", x, top + 50f * sc, 15f * sc, 0xFFB5B5B5.toInt(), maxW = maxW, face = light)
         }
-        // transport buttons
-        val by = r.bottom - 34f * sc
-        val xs = floatArrayOf(r.left + r.width() * 0.50f, r.left + r.width() * 0.68f, r.left + r.width() * 0.86f)
+        val by = art.bottom - 24f * sc
+        val xs = floatArrayOf(x + maxW * 0.18f, x + maxW * 0.5f, x + maxW * 0.82f)
+        val sizes = floatArrayOf(38f * sc, 46f * sc, 38f * sc)
         for (i in 0..2) {
-            val sz = if (i == 1) 56f * sc else 44f * sc
-            mediaButton(c, i, xs[i], by, sz, false)
-            subRects[i].set(xs[i] - 30f * sc, by - 30f * sc, xs[i] + 30f * sc, by + 30f * sc)
+            mediaButton(c, i, xs[i], by, sizes[i], false)
+            val h = sizes[i] / 2f + 3f * sc
+            subRects[i].set(xs[i] - h, by - h, xs[i] + h, by + h)
         }
     }
 

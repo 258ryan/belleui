@@ -52,12 +52,6 @@ object Bar {
         started = true
         ctx = c
         step("hidden api") { unseal() }
-        step("listener") { enableListener() }
-        step("notes") {
-            // the Status menu reads and clears notifications through the listener (the system's own list needs a permission we may not hold)
-            Hud.noteSource = { NotifListener.instance?.activeNotifications }
-            Hud.noteCancel = { n -> NotifListener.instance?.cancelNotification(n.key) }
-        }
         step("window") { addWindow() }
         step("receivers") { receivers() }
         step("register") { register(0) }
@@ -78,6 +72,11 @@ object Bar {
                     top.packageName
                 }
             }
+            val n = Hud.activeCount(ctx)
+            if (n != notifications) {
+                notifications = n
+                view?.invalidate()
+            }
             if (label != title) {
                 title = label
                 view?.invalidate()
@@ -95,11 +94,6 @@ object Bar {
         }
     }
 
-    fun setNotifications(n: Int) {
-        notifications = n
-        main.post { view?.invalidate() }
-    }
-
     /** System apps are normally exempt from the hidden-API limits; this makes sure of it for the few calls below. */
     private fun unseal() {
         val forName = Class::class.java.getDeclaredMethod("forName", String::class.java)
@@ -108,16 +102,6 @@ object Bar {
         val getRuntime = getDeclared.invoke(vm, "getRuntime", arrayOf<Class<*>>()) as Method
         val setEx = getDeclared.invoke(vm, "setHiddenApiExemptions", arrayOf<Class<*>>(Array<String>::class.java)) as Method
         setEx.invoke(getRuntime.invoke(null), arrayOf("L") as Any)
-    }
-
-    /** The notification list needs a listener; the system UI may enable its own. */
-    private fun enableListener() {
-        val cn = ComponentName(ctx, NotifListener::class.java).flattenToString()
-        val cr = ctx.contentResolver
-        val cur = Settings.Secure.getString(cr, "enabled_notification_listeners") ?: ""
-        if (!cur.split(':').contains(cn)) {
-            Settings.Secure.putString(cr, "enabled_notification_listeners", if (cur.isEmpty()) cn else "$cur:$cn")
-        }
     }
 
     private fun addWindow() {
