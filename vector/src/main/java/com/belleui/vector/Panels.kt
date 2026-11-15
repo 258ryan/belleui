@@ -490,32 +490,33 @@ object Hud {
             val barH = 92f * sc
             u.p.color = 0xFF111111.toInt()
             c.drawRect(0f, 0f, w, barH, u.p)
-            val on = booleanArrayOf(if (hasCell) dataOn() else airplane(), wifi(), bt(), soundOn())
+            // the real Belle panel switches (Belle FP2 theme): lit in blue when on; Silence is lit when the phone is quiet
+            val on = booleanArrayOf(if (hasCell) dataOn() else airplane(), wifi(), bt(), !soundOn())
             val names = arrayOf(if (hasCell) "Data" else "Airplane", "Wi-Fi", "Bluetooth", "Silence")
+            val art = arrayOf("signal", "wlan", "bt", "audio")
             val cell = w / 4f
             for (i in 0..3) {
                 val cx = cell * i + cell / 2f
-                val cy = 36f * sc
-                val rad = 27f * sc
                 val focused = sel == 0 && sw == i
-                u.p.shader = android.graphics.LinearGradient(0f, cy - rad, 0f, cy + rad, if (on[i]) Belle.BLUE_LIGHT else 0xFF5A5A5A.toInt(), if (on[i]) Belle.BLUE else 0xFF2E2E2E.toInt(), android.graphics.Shader.TileMode.CLAMP)
-                c.drawCircle(cx, cy, rad, u.p)
-                u.p.shader = null
+                rf.set(cx - 29f * sc, 5f * sc, cx + 29f * sc, 5f * sc + 66f * sc)
+                if (!u.gfx.draw(c, "qtg_graf_panel_switch_${art[i]}_${if (on[i]) "on" else "off"}", rf)) {
+                    u.p.color = if (on[i]) Belle.BLUE else 0xFF3A3A3A.toInt()
+                    c.drawCircle(cx, 36f * sc, 27f * sc, u.p)
+                }
                 if (focused) {
                     u.p.style = Paint.Style.STROKE
                     u.p.strokeWidth = 3f * sc
                     u.p.color = Color.WHITE
-                    c.drawCircle(cx, cy, rad + 4f * sc, u.p)
+                    c.drawRoundRect(rf.left - 3f * sc, rf.top - 3f * sc, rf.right + 3f * sc, rf.bottom + 3f * sc, 16f * sc, 16f * sc, u.p)
                     u.p.style = Paint.Style.FILL
                 }
-                glyph(c, u, if (i == 3) 3 else i, cx, cy, 17f * sc, if (i == 3) on[3] else true)
-                u.text(c, names[i], cx, 80f * sc, 14f * sc, if (focused) Color.WHITE else Belle.TEXT_MID, Paint.Align.CENTER, face = u.light)
+                u.text(c, names[i], cx, 86f * sc, 14f * sc, if (focused) Color.WHITE else Belle.TEXT_MID, Paint.Align.CENTER, face = u.light)
             }
             hits.add(0 to RectF(0f, 0f, w, barH))
 
             // everything below scrolls
             c.save()
-            c.clipRect(0f, barH, w, panelH - 20f * sc)
+            c.clipRect(0f, barH, w, panelH - 24f * sc)
             var y = barH - scroll
             var selTop = barH
             var selBottom = barH + 40f * sc
@@ -560,7 +561,10 @@ object Hud {
                     c.drawRect(0f, y, w, y + h, u.p)
                 }
                 u.text(c, "Profile", 16f * sc, y + 28f * sc, 17f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, face = u.light)
-                u.text(c, Profiles.names[Profiles.current(sys)], 130f * sc, y + 29f * sc, 21f * sc, Color.WHITE)
+                val pi = Profiles.current(sys)
+                rf.set(130f * sc, y + 8f * sc, 130f * sc + 28f * sc, y + 8f * sc + 28f * sc)
+                u.gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", rf)
+                u.text(c, Profiles.names[pi], 166f * sc, y + 29f * sc, 21f * sc, Color.WHITE)
                 u.text(c, "A: change", w - 16f * sc, y + 28f * sc, 15f * sc, Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
                 mark(1, y, y + h)
                 y += h
@@ -631,20 +635,18 @@ object Hud {
             }
             c.restore()
             // keep the focused row on screen
-            val view = panelH - barH - 20f * sc
+            val view = panelH - barH - 24f * sc
             if (selBottom - scroll > barH + view) scroll = selBottom - barH - view
             if (selTop - scroll < barH) scroll = selTop - barH
             scroll = scroll.coerceAtLeast(0f)
 
-            // the pull handle: a hatched strip, like the guideline
+            // the pull handle: the Belle panel handle graphic on a dark strip, like the guideline
             u.p.color = 0xFF1A1A1A.toInt()
-            c.drawRect(0f, panelH - 20f * sc, w, panelH, u.p)
-            u.p.color = 0x55FFFFFF
-            u.p.strokeWidth = 1f * sc
-            var x = -20f * sc
-            while (x < w) {
-                c.drawLine(x, panelH, x + 18f * sc, panelH - 20f * sc, u.p)
-                x += 8f * sc
+            c.drawRect(0f, panelH - 24f * sc, w, panelH, u.p)
+            rf.set(w / 2f - 39f * sc, panelH - 25f * sc, w / 2f + 39f * sc, panelH - 1f * sc)
+            if (!u.gfx.draw(c, "qtg_graf_panel_handle_normal", rf)) {
+                u.p.color = 0x55FFFFFF
+                c.drawRect(w / 2f - 30f * sc, panelH - 14f * sc, w / 2f + 30f * sc, panelH - 11f * sc, u.p)
             }
             c.restore()
         }

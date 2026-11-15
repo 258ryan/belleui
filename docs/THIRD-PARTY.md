@@ -48,3 +48,6 @@ artwork with no licence granted for redistribution; check before making the repo
 
 ## Keyboard word list
 `keyboard/src/main/assets/words.txt` is the 20,000 most frequent English words (profanity filtered) taken from the FrequencyWords project (hermitdave/FrequencyWords, 2018 English list from OpenSubtitles), licensed CC BY-SA 4.0 (content) / MIT (code). The list is used on the device only, for word suggestions.
+
+## Belle FP1 / FP2 theme packs
+`vector/src/main/assets/belle/qtg_graf_panel_*`, `qgn_indi_home_profile_*` and similar graphics are rendered from the Nokia Belle FP2 theme pack (the quick switches, panel handle and profile indicators of the Belle status menu). Nokia artwork, not licensed for redistribution: private use only, like the E6 pack.
