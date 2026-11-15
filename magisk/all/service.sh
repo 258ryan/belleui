@@ -20,6 +20,22 @@ fi
 until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 3; done
 sleep 12
 
+LOG=$DIR/boot.log
+{
+  echo "boot: $(date)"
+  echo "module system apps present:"; ls $MODDIR/system/priv-app $MODDIR/system/app 2>&1
+  echo "mounted system apps:"; ls /system/priv-app /system/app 2>&1 | grep -i belle
+} > $LOG 2>&1
+
+# an app that was uninstalled "for the user" (from the app list or with adb) stays on the system image
+# and can be brought back: do that for every Belle app, so they never stay missing
+ALL="launcher settings files picker music clock gallery browser games styles keyboard video notes calc recorder"
+for n in $ALL; do
+  cmd package install-existing com.belleui.$n >> $LOG 2>&1
+done
+echo "installed Belle packages:" >> $LOG
+pm list packages | grep belleui >> $LOG 2>&1
+
 L=com.belleui.launcher
 # shared storage, for the apps that browse or scan files
 for p in com.belleui.files com.belleui.games com.belleui.picker com.belleui.music com.belleui.gallery com.belleui.video com.belleui.recorder com.belleui.notes com.belleui.styles com.belleui.settings $L; do
