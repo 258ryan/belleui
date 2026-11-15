@@ -1,7 +1,6 @@
 name: Build launcher
 # This branch has its own workflow: it builds only the launcher module and publishes only its own release.
 on:
-  push:
   workflow_dispatch:
 
 permissions:
