@@ -48,10 +48,30 @@ object BelleHook {
         }
     }
 
+    @Volatile
+    private var bypassPower = false
+
+    /** Opens the stock power menu: the next call from the System UI is let through. */
+    private fun openStockPower(ctx: Context) {
+        try {
+            bypassPower = true
+            val dep = Class.forName("com.android.systemui.Dependency")
+            val cq = dep.getMethod("get", Class::class.java).invoke(null, Class.forName("com.android.systemui.statusbar.CommandQueue"))
+            cq!!.javaClass.getMethod("showGlobalActionsMenu").invoke(cq)
+        } catch (_: Throwable) {
+            bypassPower = false
+        }
+    }
+
     @JvmStatic
     fun power(ctx: Context): Boolean {
         return try {
+            if (bypassPower) {
+                bypassPower = false
+                return false
+            }
             if (locked(ctx)) return false
+            Hud.stockPower = { openStockPower(ctx) }
             Hud.showPower(ctx, ctx)
             true
         } catch (_: Throwable) {

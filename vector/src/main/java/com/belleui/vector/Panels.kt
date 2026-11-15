@@ -234,7 +234,11 @@ object Hud {
                 Profiles.apply(sys, (Profiles.current(sys) + 1) % Profiles.names.size)
             },
             Entry("Cancel") { },
-        )
+        ).let { base ->
+            // the real System UI adds a way to the full Android power menu (emergency, screenshot, lockdown and the rest)
+            val stock = stockPower
+            if (stock == null) base else base.dropLast(1) + Entry("More options", "The full Android power menu") { stock() } + base.last()
+        }
         showList(sys, mod, "Phone", entries)
     }
 
@@ -352,6 +356,10 @@ object Hud {
             }
         }
     }
+
+    /** Set by the real System UI: opens its own full power menu. */
+    @Volatile
+    var stockPower: (() -> Unit)? = null
 
     /** Set by the real System UI: opens its own full quick settings and notification panel. */
     @Volatile

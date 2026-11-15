@@ -56,6 +56,10 @@ DIMENS = {
     "qs_quick_tile_size": "56.0dip",
     "qs_tile_height": "108.0dip",
     "qs_tile_icon_size": "28.0dip",
+    # the horizontal Belle battery (the stock portrait box is 7.8 x 13 dip) and bigger status icons
+    "status_bar_battery_icon_width": "26.0dip",
+    "status_bar_battery_icon_height": "16.0dip",
+    "status_bar_icon_drawing_size": "18.0dip",
 }
 
 
@@ -266,6 +270,36 @@ def hooks(d):
     return n
 
 
+def patch_battery(d):
+    """The status bar battery uses the Belle horizontal battery (falls back to the stock one if that cannot be made)."""
+    path = os.path.join(d, "smali/com/android/systemui/BatteryMeterView.smali")
+    s = open(path, encoding="utf-8").read()
+    i = s.find(".method private updateBatteryStyle()V")
+    if i < 0:
+        return 0
+    old = "    iget-object v3, p0, Lcom/android/systemui/BatteryMeterView;->mThemedDrawable:Lcom/android/settingslib/graph/ThemedBatteryDrawable;\n"
+    j = s.find(old, i)
+    if j < 0 or j > s.find(".end method", i):
+        print("battery: pattern not found")
+        return 0
+    new = (
+        "    :belle_a\n"
+        "    invoke-virtual {p0}, Landroid/widget/LinearLayout;->getContext()Landroid/content/Context;\n\n"
+        "    move-result-object v3\n\n"
+        "    invoke-static {v3}, Lcom/belleui/hook/BelleBattery;->drawable(Landroid/content/Context;)Landroid/graphics/drawable/Drawable;\n\n"
+        "    move-result-object v3\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    goto :belle_d\n\n"
+        "    :belle_c\n"
+        + old +
+        "    :belle_d\n"
+    )
+    s = s[:j] + new + s[j + len(old):]
+    open(path, "w", encoding="utf-8").write(s)
+    return 1
+
+
 def patch_hints(d):
     """The device's gamepad hint bar: white letters on dark Belle keys (its drawable is replaced from the overlay)."""
     path = os.path.join(d, "smali/org/andr36oid/hints/HintBar.smali")
@@ -335,7 +369,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         k = merge_belle(d, sys.argv[2])
         print("belle code and graphics merged:", k)
-        k = hooks(d)
+        k = hooks(d) + patch_battery(d)
         print("stock calls hooked:", k)
         total += k
     here = os.path.dirname(os.path.abspath(__file__))
