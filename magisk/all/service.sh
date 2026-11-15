@@ -94,3 +94,9 @@ if [ "$variant" != "none" ]; then
   } >> $DIR/sysui.log
   [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
 fi
+
+# Belle puts the clock at the right end of the status bar next to the battery (Lineage setting: 0 right, 1 centre, 2 left); set once
+if [ ! -f $DIR/clock_right_set ]; then
+  settings put system status_bar_clock 0 2>/dev/null
+  touch $DIR/clock_right_set
+fi

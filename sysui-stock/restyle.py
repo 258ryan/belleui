@@ -54,6 +54,52 @@ DIMENS = {
 }
 
 
+DIMENS.update({
+    "notification_section_header_height": "40.0dip",
+})
+
+# four switches across, like the Belle Status menu
+INTEGERS = {
+    "quick_settings_num_columns": "4",
+    "quick_qs_panel_max_columns": "4",
+    "quick_settings_min_num_tiles": "4",
+}
+
+
+def patch_integers(path):
+    try:
+        s = open(path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return 0
+    n = 0
+    for name, val in INTEGERS.items():
+        s, k = re.subn(r'(<integer name="%s">)[^<]*(</integer>)' % re.escape(name), r"\g<1>%s\g<2>" % val, s)
+        n += k
+    open(path, "w", encoding="utf-8").write(s)
+    return n
+
+
+def patch_notification_shade(d):
+    """Grey Belle section bars and white 16 sp header buttons in the notification shade."""
+    n = 0
+    lp = os.path.join(d, "res/layout/status_bar_notification_section_header.xml")
+    s = open(lp, encoding="utf-8").read()
+    tag = "<com.android.systemui.statusbar.notification.stack.SectionHeaderView "
+    if tag in s and "belle_section_bar" not in s:
+        s = s.replace(tag, tag + 'android:background="@drawable/belle_section_bar" ', 1)
+        open(lp, "w", encoding="utf-8").write(s)
+        n += 1
+    sp = os.path.join(d, "res/values/styles.xml")
+    s = open(sp, encoding="utf-8").read()
+    m = re.search(r'(<style name="TextAppearance.NotificationSectionHeaderButton"[^>]*>)(.*?)(</style>)', s, re.S)
+    if m:
+        body = m.group(2).replace("?wallpaperTextColor", "#ffffffff").replace('name="android:textSize">14.0sp', 'name="android:textSize">16.0sp')
+        s = s[: m.start(2)] + body + s[m.end(2):]
+        open(sp, "w", encoding="utf-8").write(s)
+        n += 1
+    return n
+
+
 def patch_dimens(path):
     try:
         s = open(path, encoding="utf-8").read()
@@ -122,6 +168,12 @@ if __name__ == "__main__":
         total += k
     k = patch_dimens("%s/res/values/dimens.xml" % d)
     print("dimens", k, "sizes changed")
+    total += k
+    k = patch_integers("%s/res/values/integers.xml" % d)
+    print("integers", k, "changed")
+    total += k
+    k = patch_notification_shade(d)
+    print("notification shade", k, "edits")
     total += k
     k = patch_tiles(d)
     print("tiles", k, "shape patched")
