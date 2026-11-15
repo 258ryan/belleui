@@ -52,11 +52,17 @@ jobs:
           path: BelleUI-Complete-Magisk.zip
           if-no-files-found: error
       - name: Publish release
+        # the zip is already attached to this run as an artifact; a release problem must not fail the build
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete module-latest --yes --cleanup-tag || true
-          gh release create module-latest BelleUI-Complete-Magisk.zip \
-            --title "BelleUI complete (Magisk module)" \
-            --notes "The Belle launcher, every Belle app and the Belle System UI as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot." \
-            --prerelease --target "$GITHUB_SHA"
+          if gh release view module-latest >/dev/null 2>&1; then
+            gh release upload module-latest BelleUI-Complete-Magisk.zip --clobber
+            gh release edit module-latest --notes "The Belle launcher, every Belle app and the Belle System UI as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot."
+          else
+            gh release create module-latest BelleUI-Complete-Magisk.zip \
+              --title "BelleUI complete (Magisk module)" \
+              --notes "The Belle launcher, every Belle app and the Belle System UI as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot." \
+              --prerelease --target "$GITHUB_SHA"
+          fi
