@@ -243,13 +243,41 @@ def hooks(d):
         "    return-void\n\n"
         "    :belle_c\n\n"
     )
+    recents = (
+        "\n    :belle_a\n"
+        "    iget-object v0, p0, Lcom/android/systemui/SystemUI;->mContext:Landroid/content/Context;\n\n"
+        "    invoke-static {v0}, Lcom/belleui/hook/BelleHook;->recents(Landroid/content/Context;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    return-void\n\n"
+        "    :belle_c\n\n"
+    )
     n = 0
+    rc = os.path.join(base, "recents/Recents.smali")
+    n += _hook(rc, ".method public toggleRecentApps()V", recents, 2)
+    n += _hook(rc, ".method public showRecentApps(Z)V", recents, 2)
     sb = os.path.join(base, "statusbar/phone/StatusBar.smali")
     n += _hook(sb, ".method public animateExpandNotificationsPanel()V", status, 2)
     n += _hook(sb, ".method public animateExpandSettingsPanel(Ljava/lang/String;)V", status, 2)
     n += _hook(os.path.join(base, "globalactions/GlobalActionsDialog.smali"), ".method public showOrHideDialog(ZZLcom/android/systemui/plugins/GlobalActionsPanelPlugin;)V", power, 2)
     n += _hook(os.path.join(base, "volume/VolumeDialogImpl.smali"), ".method private showH(I)V", volume, 2)
     return n
+
+
+def patch_hints(d):
+    """The device's gamepad hint bar: white letters on dark Belle keys (its drawable is replaced from the overlay)."""
+    path = os.path.join(d, "smali/org/andr36oid/hints/HintBar.smali")
+    try:
+        s = open(path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return 0
+    if "const p1, -0xd1d1d2" not in s:
+        return 0
+    s = s.replace("const p1, -0xd1d1d2", "const p1, -0x1", 1)
+    open(path, "w", encoding="utf-8").write(s)
+    return 1
 
 
 def copy_overlay(src, dst):
@@ -300,7 +328,9 @@ if __name__ == "__main__":
     k = patch_notification_shade(d)
     print("notification shade", k, "edits")
     total += k
-    k = patch_tiles(d)
+    k = patch_hints(d)
+    print("hint bar", k, "edits")
+    k += patch_tiles(d)
     print("tiles", k, "shape patched")
     if len(sys.argv) > 2:
         k = merge_belle(d, sys.argv[2])

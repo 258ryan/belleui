@@ -59,6 +59,23 @@ object BelleHook {
         }
     }
 
+    /** The recents key: the Belle launcher's Recent list instead of the stock overview, which needs the stock launcher. */
+    @JvmStatic
+    fun recents(ctx: Context): Boolean {
+        return try {
+            if (locked(ctx)) return false
+            val i = android.content.Intent("com.belleui.launcher.RECENTS")
+                .setClassName("com.belleui.launcher", "com.belleui.launcher.MainActivity")
+                .putExtra("belle_recents", true)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            if (ctx.packageManager.resolveActivity(i, 0) == null) return false
+            ctx.startActivity(i)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     @JvmStatic
     fun volume(ctx: Context, stream: Int): Boolean {
         return try {
