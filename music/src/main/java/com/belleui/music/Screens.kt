@@ -246,9 +246,10 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         Player.listen(this) { if (shell.screen === this) shell.postInvalidate() }
     }
 
+    // the Belle Now playing toolbar: back, repeat, shuffle, menu
     override fun tools(): List<Tool> = listOf(
-        playPauseTool { Player.toggle() },
-        Tool(Ic.NEXT, { Player.next() }, Player.current != null),
+        Tool(when (Player.repeat) { 1 -> Ic.REPEAT; 2 -> Ic.REPEAT_ONE; else -> Ic.REPEAT_OFF }, { Player.repeat = (Player.repeat + 1) % 3 }),
+        Tool(if (Player.shuffle) Ic.SHUFFLE else Ic.SHUFFLE_OFF, { Player.shuffle = !Player.shuffle }),
     )
 
     override fun menu() = listOf(
@@ -266,9 +267,10 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
             ui.text(c, "Nothing is playing", r.centerX(), ui.baselineFor(r.centerY(), 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
             return
         }
+        // the Belle Now playing view: album art left; artist, title and album, the bar and three big buttons right
         val pad = 20f * ui.sc
-        val side = min(r.height() - 2 * pad, 300f * ui.sc)
-        val art = RectF(r.left + pad, r.centerY() - side / 2f, r.left + pad + side, r.centerY() + side / 2f)
+        val side = min(r.height() - 2 * pad, 214f * ui.sc)
+        val art = RectF(r.left + pad, r.top + pad, r.left + pad + side, r.top + pad + side)
         val bmp = ArtCache.peek(t)
         if (bmp != null) {
             ui.drawBitmap(c, bmp, art)
@@ -288,32 +290,39 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
 
         val x = art.right + pad
         val maxW = r.right - x - pad
-        var y = art.top + 30f * ui.sc
-        ui.text(c, t.title, x, y, 24f * ui.sc, maxW = maxW)
-        y += 34f * ui.sc
-        ui.text(c, t.artist, x, y, 20f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-        y += 28f * ui.sc
+        var y = art.top + 24f * ui.sc
+        ui.text(c, t.artist, x, y, 19f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        y += 38f * ui.sc
+        ui.text(c, t.title, x, y, 28f * ui.sc, maxW = maxW, face = ui.medium)
+        y += 30f * ui.sc
         ui.text(c, t.album, x, y, 18f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
 
-        val barY = art.bottom - 134f * ui.sc
+        val barY = art.top + 118f * ui.sc
         progress.set(x, barY, x + maxW, barY + 20f * ui.sc)
         ui.progressBar(c, progress, if (Player.duration > 0) pos.toFloat() / Player.duration else 0f)
         ui.text(c, fmtTime(pos), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
         ui.text(c, fmtTime(Player.duration), x + maxW, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
 
-        // transport: shuffle, previous, play / pause, next, repeat
-        val cy = art.bottom - 38f * ui.sc
-        val xs = floatArrayOf(0.08f, 0.30f, 0.50f, 0.70f, 0.92f).map { x + maxW * it }
-        val shuffleKind = if (Player.shuffle) Ic.SHUFFLE else Ic.SHUFFLE_OFF
-        val repeatKind = when (Player.repeat) { 1 -> Ic.REPEAT; 2 -> Ic.REPEAT_ONE; else -> Ic.REPEAT_OFF }
-        ui.glyph(c, shuffleKind, xs[0], cy, 36f * ui.sc)
-        ui.glyph(c, Ic.PREVIOUS, xs[1], cy, 44f * ui.sc)
-        val round = if (Player.playing) "qgn_indi_mup2_button_pause" else "qgn_indi_mup2_button_play"
-        if (!ui.gfx.glyph(c, round, xs[2], cy, 64f * ui.sc)) ui.glyph(c, if (Player.playing) Ic.PAUSE else Ic.PLAY, xs[2], cy, 44f * ui.sc)
-        ui.glyph(c, Ic.NEXT, xs[3], cy, 44f * ui.sc)
-        ui.glyph(c, repeatKind, xs[4], cy, 36f * ui.sc)
-        val half = 30f * ui.sc
-        for (i in 0..4) transport[i].set(xs[i] - half, cy - half, xs[i] + half, cy + half)
+        // transport: previous, play / pause, next as three big keys (shuffle and repeat live in the toolbar)
+        val gap = 10f * ui.sc
+        val bw = (maxW - 2 * gap) / 3f
+        val bh = 62f * ui.sc
+        val bt = art.top + 174f * ui.sc
+        for (i in 0..2) {
+            val bx = x + i * (bw + gap)
+            transport[i + 1].set(bx, bt, bx + bw, bt + bh)
+            if (!ui.nine(c, "qtg_fr_pushbutton_normal", transport[i + 1], 30, 14f)) {
+                ui.p.color = 0xFF2B2B2B.toInt()
+                c.drawRoundRect(transport[i + 1], 12f * ui.sc, 12f * ui.sc, ui.p)
+            }
+            val gcx = transport[i + 1].centerX()
+            val gcy = transport[i + 1].centerY()
+            when (i) {
+                0 -> ui.glyph(c, Ic.PREVIOUS, gcx, gcy, 38f * ui.sc)
+                1 -> ui.glyph(c, if (Player.playing) Ic.PAUSE else Ic.PLAY, gcx, gcy, 38f * ui.sc)
+                else -> ui.glyph(c, Ic.NEXT, gcx, gcy, 38f * ui.sc)
+            }
+        }
 
         // transient volume indicator
         if (SystemClock.uptimeMillis() < volumeUntil) {
@@ -349,11 +358,10 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
     override fun onTap(x: Float, y: Float): Boolean {
         when {
             progress.contains(x, y) && Player.duration > 0 -> Player.seek((Player.duration * ((x - progress.left) / progress.width())).toLong())
-            transport[0].contains(x, y) -> Player.shuffle = !Player.shuffle
             transport[1].contains(x, y) -> Player.prev()
+            transport[2].contains(x, y) -> Player.toggle()
             transport[3].contains(x, y) -> Player.next()
-            transport[4].contains(x, y) -> Player.repeat = (Player.repeat + 1) % 3
-            else -> Player.toggle()
+            else -> {}
         }
         return true
     }
