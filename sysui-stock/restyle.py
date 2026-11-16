@@ -286,7 +286,25 @@ def hooks(d):
         "    return v0\n\n"
         "    :belle_c\n\n"
     )
+    # the status bar: touches never reach the stock shade, a pull down opens the Belle Status menu
+    bar = (
+        "\n    :belle_a\n"
+        "    invoke-virtual {p0}, Landroid/view/View;->getContext()Landroid/content/Context;\n\n"
+        "    move-result-object v0\n\n"
+        "    invoke-static {v0, p1}, Lcom/belleui/hook/BelleHook;->barTouch(Landroid/content/Context;Landroid/view/MotionEvent;)Z\n\n"
+        "    move-result v0\n"
+        "    :belle_b\n"
+        "    .catchall {:belle_a .. :belle_b} :belle_c\n\n"
+        "    if-eqz v0, :belle_c\n\n"
+        "    const/4 v0, 0x1\n\n"
+        "    return v0\n\n"
+        "    :belle_c\n\n"
+    )
     n = 0
+    pb = os.path.join(base, "statusbar/phone/PhoneStatusBarView.smali")
+    n += _hook(pb, ".method public onInterceptTouchEvent(Landroid/view/MotionEvent;)Z", bar, 2)
+    n += _hook(pb, ".method public onTouchEvent(Landroid/view/MotionEvent;)Z", bar, 2)
+    n += _hook(os.path.join(base, "statusbar/phone/StatusBar.smali"), ".method public togglePanel()V", status, 2)
     n += _hook(os.path.join(base, "globalactions/GlobalActionsDialog.smali"), ".method public showAppSwitcher(ZZLcom/android/systemui/plugins/GlobalActionsPanelPlugin;)Z", switcher, 2)
     n += _hook(os.path.join(base, "statusbar/AlertingNotificationManager.smali"), ".method public showNotification(Lcom/android/systemui/statusbar/notification/collection/NotificationEntry;)V", banner, 2)
     rc = os.path.join(base, "recents/Recents.smali")

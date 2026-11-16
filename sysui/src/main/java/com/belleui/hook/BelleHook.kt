@@ -40,7 +40,6 @@ object BelleHook {
                 return false
             }
             if (locked(ctx)) return false
-            Hud.stockShade = { openStock(ctx) }
             Hud.toggleStatus(ctx, ctx)
             true
         } catch (_: Throwable) {
@@ -107,6 +106,36 @@ object BelleHook {
             val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Context
             if (locked(app)) return false
             Hud.showBanner(app, app, sbn)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private var barDownY = 0f
+    private var barOpened = false
+
+    /**
+     * Touches on the status bar. A pull down opens the Belle Status menu and the stock Android shade is never shown;
+     * the events are swallowed so the stock panel never starts to open under it. Not on the lock screen.
+     */
+    @JvmStatic
+    fun barTouch(ctx: Context, e: android.view.MotionEvent): Boolean {
+        return try {
+            if (locked(ctx)) return false
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    barDownY = e.rawY
+                    barOpened = false
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val slop = 14f * ctx.resources.displayMetrics.density
+                    if (!barOpened && e.rawY - barDownY > slop) {
+                        barOpened = true
+                        status(ctx)
+                    }
+                }
+            }
+            true
         } catch (_: Throwable) {
             false
         }
