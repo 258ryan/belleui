@@ -134,7 +134,7 @@ class RootScreen(act: GalleryActivity) : GridScreen(act) {
         val all = act.photos()
         when {
             state == 0 -> message(c, ui, r, "Loading...")
-            state == 2 -> message(c, ui, r, "Gallery needs access to your photos and videos.\nPress A to allow.")
+            state == 2 -> message(c, ui, r, com.belleui.kit.Keys.hint("Gallery needs access to your photos and videos.\nPress A to allow."))
             tab == 1 -> {
                 val al = albumsNow()
                 if (al.isEmpty()) message(c, ui, r, "No albums") else albumList.draw(c, ui, r, al.size) { i ->

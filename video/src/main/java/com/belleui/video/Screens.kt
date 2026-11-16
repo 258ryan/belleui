@@ -156,7 +156,7 @@ class RootScreen(private val act: VideoActivity) : Screen() {
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         when {
             state == 0 -> message(c, ui, r, "Looking for videos...")
-            state == 2 -> message(c, ui, r, "Video needs access to your videos.\nPress A to allow.")
+            state == 2 -> message(c, ui, r, com.belleui.kit.Keys.hint("Video needs access to your videos.\nPress A to allow."))
             tab == 1 -> if (folders.isEmpty()) message(c, ui, r, "No videos found") else folderList.draw(c, ui, r, folders.size) { i ->
                 Row(folders[i].first, "${folders[i].second.size} video${if (folders[i].second.size == 1) "" else "s"}", iconKind = Ic.ALBUMS, iconColor = BLUE, drill = true)
             }

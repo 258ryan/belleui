@@ -43,29 +43,27 @@ Needs JDK 17 and the Android SDK (platform 34).
 gradle assembleDebug        # or ./gradlew assembleDebug if you generated the wrapper
 ```
 
-The APK lands in `app/build/outputs/apk/debug/`. The GitHub Actions workflow
-(`.github/workflows/build.yml`) builds it on every push and uploads it as an artifact.
+The launcher APK lands in `app/build/outputs/apk/debug/`; every other app builds the same way into its own module
+folder. The manual GitHub Actions workflows (`module.yml`, `sysui.yml`) build the whole set from this branch.
 
 Install it, press Home, and choose BelleUI as the default launcher.
 
 ## Look
 
-Follows the real Symbian Belle (Qt Quick Components 1.1, nHD profile) measurements and colours, taken from
-[likidu/symbian-belle-ui](https://github.com/likidu/symbian-belle-ui) (`DESIGN.md`, `belle.tokens.json`, reference screenshots),
-plus the All About Symbian write-up of the Belle design guidelines. One design px = one device px; the 640x480
-screen is ~228 ppi, close to Belle's 210 ppi.
+The target is the Nokia E6 running Symbian Belle: the same 640x480 landscape screen, so one design px is one E6 px.
+Measurements were taken from real E6 screenshots and checked against Nokia's own E6 Belle theme package
+(Carbide.ui `E6Belle_1.2.0`: `HomeScreen.xml`, `ApplicationGrid.xml`, the 640x480 layout tables and the theme SVGs).
 
-- **Status bar** 26px, black: page title on the left; wifi, battery and clock on the right
-- **Toolbar** 60px (`heightToolBar`), 30px white glyphs spread evenly edge to edge. First button is Back (the apps button on Home), last is the three-line options menu; select and settings sit between. The gamepad letter is shown beside each.
-- **Tab bar** 50px under the status bar: Applications / Recent are real tabs that switch in place (no sliding). Press Up from the top row to focus the tab bar, then Left/Right to switch; L1/R1 also switch tabs.
-- **Applications**: black page, 70px icon frames, 18px labels, blue highlight
-- **Recent**: 70px `ListItem`s, 12px inset, 50px icon, 22px title, 18px light subtitle, `#444` 1px separators, blue pressed frame
-- **Options menu** slides up from the bottom over the toolbar: 64px items, 22px text, full-width Cancel button
-- **Dialogs** (Settings) are `SelectionDialog` style: `#1E1E1E` rounded panel, Belle-blue title with a close icon, 64px items, max 504px wide
-- **Info banner**: 60px, slides in under the status bar and dismisses itself
-- Nothing dims the screen behind an overlay. Belle blue is `#1080DD`; text white / `#999999`.
-- **Wallpaper:** the launcher window is transparent, so your actual system wallpaper shows on Home (set it from the system wallpaper picker); Applications and Recent are black like real Belle apps.
-- **Home** is the wallpaper page: a clock widget and a battery widget on the Belle widget plate, then shortcuts.
+- **Status bar** 36px: the screen's title on the left; indicators, battery and clock on the right. With the Belle System UI installed the real status bar does this and the apps draw none of their own.
+- **Toolbar** 67px, 30px white glyphs. Home: Menu, page dots, Options. Menu: Back, Search, Options. Apps: Back, up to two tools, Options. The small gamepad letter beside each button is not part of the E6 look; turn it off in Styles > **Button hints**.
+- **Menu**: four icons across and three rows to a screen, 151x122px cells, 72px icons, 19px labels over the dimmed wallpaper, blue highlight.
+- **Lists**: 94px rows, 20px inset, 64px icon, 26px title, 21px light subtitle, 1px separators, blue highlight frame.
+- **Options menu** slides up from the bottom over the toolbar: 80px items (squeezed when there are many), full-width 67px Cancel button.
+- **Popups**: dark E6 plate, the title in blue over a thin blue rule, 80px items, full-width 67px Back button; query dialogs have flush 67px buttons. The launcher's popups and the apps' popups are drawn by the same kit code.
+- **Info banner**: as tall as the toolbar, slides in under the status bar and dismisses itself.
+- Belle blue is `#1080DD` (or the colour chosen in Styles); text white / `#999999`.
+- **Wallpaper:** the launcher window is transparent, so your system wallpaper shows on Home and, dimmed, behind the Menu, Recent and the Hub.
+- **Home**: widgets (flip clock, Today, music, notifications, quick switches, notes) and shortcuts with the E6 label plate on a 4x3 grid you arrange yourself.
 - **Icons:** pack art is drawn exactly as supplied, with a drop shadow traced from the icon's own outline (no overlay). Apps without pack art keep their own colours: adaptive icons are clipped to the Belle superellipse (exponent 2.8), legacy icons are left untouched, and an app whose icon cannot be rendered gets a blue tile with its initial.
 
 Frames and stock glyphs (status bar, toolbar, tab bar, list pressed, popups, buttons, info banner, back/menu/settings/close, battery) are the real Belle theme graphics rendered to PNG in `assets/belle/` and drawn as 9-slice images. Home widgets use the Belle widget plate from the Symbian HomeScreen widget template. The Nokia Pure typeface is proprietary and not bundled; text uses the system sans-serif at the same sizes. See `docs/THIRD-PARTY.md` for licences.

@@ -179,7 +179,7 @@ class StorageScreen(act: SettingsActivity) : RowsScreen(act) {
             out.add(Row("Apps (installed packages)", right = Sys.fmtSize(apkBytes)))
             for ((k, v) in m) out.add(Row(k, right = Sys.fmtSize(v)))
         } else if (!hasMedia()) {
-            out.add(Row("See what takes up space", "Allow access to media - press A", drill = true))
+            out.add(Row("See what takes up space", com.belleui.kit.Keys.hint("Allow access to media - press A"), drill = true))
         } else {
             out.add(Row("Counting...", dim = true))
         }
@@ -439,7 +439,7 @@ class BatteryScreen(act: SettingsActivity) : RowsScreen(act) {
         out.add(Row("Temperature", right = "%.1f °C".format(b.tempC)))
         out.add(Row("Voltage", right = "%.2f V".format(b.voltage)))
         out.add(Row("Technology", right = b.tech))
-        out.add(Row("Battery saver", if (Sys.powerSave(act)) "On" else "Off - press A to change", drill = true))
+        out.add(Row("Battery saver", if (Sys.powerSave(act)) "On" else com.belleui.kit.Keys.hint("Off - press A to change"), drill = true))
         out.add(Row("Battery usage by app", drill = true))
         return out
     }
@@ -480,7 +480,7 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
     override fun rows(): List<Row> {
         val canWrite = act.canWriteSettings()
         val out = ArrayList<Row>()
-        if (!canWrite) out.add(Row("Allow changing settings", "Needed for brightness and timeout - press A", drill = true))
+        if (!canWrite) out.add(Row("Allow changing settings", com.belleui.kit.Keys.hint("Needed for brightness and timeout - press A"), drill = true))
         out.add(Row("Brightness", right = "${brightness() * 100 / 255}%", dim = !canWrite))
         out.add(Row("Automatic brightness", check = auto(), dim = !canWrite))
         val t = timeouts.indexOfFirst { it >= timeout() }.let { if (it < 0) timeouts.size - 1 else it }
@@ -644,7 +644,7 @@ class PerformanceScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("CPU speed now", mhz("$cpu0/scaling_cur_freq") ?: "-", icon = g.get("qgn_prop_set_gene_sensor")),
             Row("CPU speed limit", mhz("$cpu0/scaling_max_freq") ?: "-", icon = g.get("qgn_prop_set_gene_sensor")),
             Row("Temperature", temperature() ?: "-", icon = g.get("qgn_indi_battery_strength")),
-            Row("Root", when (rootState) { 1 -> "Available"; 2 -> "Not available - changes won't apply"; else -> "Press A to check" }, icon = g.get("qgn_prop_cp_dev_about")),
+            Row("Root", when (rootState) { 1 -> "Available"; 2 -> "Not available - changes won't apply"; else -> com.belleui.kit.Keys.hint("Press A to check") }, icon = g.get("qgn_prop_cp_dev_about")),
         )
     }
 

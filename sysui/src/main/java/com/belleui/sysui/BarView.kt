@@ -13,7 +13,7 @@ import android.view.View
 import com.belleui.kit.Ui
 import com.belleui.vector.Hud
 
-/** The Belle status bar: wifi and the notification count on the left; clock and battery on the right. */
+/** The Belle status bar, as on the E6: the screen's title on the left; indicators, battery and clock on the right. */
 class BarView(context: Context, private val barH: Int) : View(context) {
     private val ui = Ui(context).also { it.sc = barH / 28f }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)

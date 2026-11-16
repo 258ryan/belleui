@@ -168,7 +168,7 @@ class ListScreen(private val act: NotesActivity) : Screen() {
         val notes = act.notes
         if (notes.isEmpty()) {
             ui.text(c, "No notes yet", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-            ui.text(c, "Press Y to write one", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to write one"), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
             return
         }
         val g = ui.gfx

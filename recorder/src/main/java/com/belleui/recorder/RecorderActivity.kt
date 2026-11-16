@@ -315,7 +315,7 @@ class RootScreen(private val act: RecorderActivity) : Screen() {
         val g = ui.gfx
         list.draw(c, ui, r, items.size) { i ->
             val it = items[i]
-            Row(it.title, if (playingId == it.id) "Playing - press A to stop" else "Press A to play", icon = g.get("qgn_menu_voirec"), right = it.durText)
+            Row(it.title, if (playingId == it.id) com.belleui.kit.Keys.hint("Playing - press A to stop") else com.belleui.kit.Keys.hint("Press A to play"), icon = g.get("qgn_menu_voirec"), right = it.durText)
         }
     }
 

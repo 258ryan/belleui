@@ -61,7 +61,7 @@ class FoldersScreen(private val act: GalleryActivity) : Screen() {
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         if (folders.isEmpty()) {
             ui.text(c, "Pictures and videos from the whole device", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = r.width() - 30f * ui.sc)
-            ui.text(c, "Press Y to pick the folders to show", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to pick the folders to show"), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
             return
         }
         list.draw(c, ui, r, folders.size) { i -> Row(folders[i].substringAfterLast('/'), folders[i], iconKind = Ic.ALBUMS) }
