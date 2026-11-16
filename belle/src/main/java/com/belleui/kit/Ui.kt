@@ -796,6 +796,25 @@ class Ui(val ctx: Context) {
         gfx.draw(c, "qtg_graf_switchbutton_handle_normal", tmp)
     }
 
+    /** A round dark control key (media buttons): a glossy disc with a thin dark ring and a white [kind] glyph in the middle. */
+    fun roundButton(c: Canvas, cx: Float, cy: Float, d: Float, kind: Int, pressed: Boolean = false) {
+        val rad = d / 2f
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 120)
+        c.drawCircle(cx, cy + 2f * sc, rad, p)
+        p.shader = LinearGradient(0f, cy - rad, 0f, cy + rad,
+            if (pressed) intArrayOf(Belle.BLUE_LIGHT, Belle.BLUE) else intArrayOf(0xFF4E4E4E.toInt(), 0xFF141414.toInt()), null, Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f * sc
+        p.color = 0xFF000000.toInt()
+        c.drawCircle(cx, cy, rad, p)
+        p.style = Paint.Style.FILL
+        glyph(c, kind, cx, cy, d * 0.52f)
+    }
+
     /** The E6 popup plate: near-black with a lighter top edge, a thin border and a soft shadow (measured on the device). */
     fun popupPlate(c: Canvas, r: RectF) = onDark {
         val rad = 7f * sc

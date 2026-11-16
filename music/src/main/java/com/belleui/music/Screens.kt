@@ -29,13 +29,62 @@ private const val GREEN = 0xFF4C9A2E.toInt()
 private fun playPauseTool(onClick: () -> Unit) =
     Tool(if (Player.playing) Ic.PAUSE else Ic.PLAY, onClick, Player.current != null)
 
-/** Songs / Albums / Artists, as Belle tabs. */
+private fun letterOf(s: String): String = s.trim().firstOrNull()?.uppercaseChar()?.takeIf { it.isLetter() }?.toString() ?: "#"
+
+/** The small "now playing" bar over the toolbar: cover, title and artist, a round play / pause key. Tap it for the full view. */
+private class MiniPlayer(private val act: MusicActivity) {
+    val bar = RectF()
+    private val key = RectF()
+
+    fun visible() = Player.current != null
+
+    fun height(ui: Ui) = if (visible()) 72f * ui.sc else 0f
+
+    fun draw(c: Canvas, ui: Ui, r: RectF, shell: com.belleui.kit.BelleShell) {
+        val t = Player.current ?: return
+        val sc = ui.sc
+        bar.set(r.left, r.bottom - 72f * sc, r.right, r.bottom)
+        ui.p.style = Paint.Style.FILL
+        ui.p.shader = android.graphics.LinearGradient(0f, bar.top, 0f, bar.bottom, 0xFF3A3A3A.toInt(), 0xFF1A1A1A.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(bar, ui.p)
+        ui.p.shader = null
+        ui.p.color = Belle.BLUE
+        c.drawRect(bar.left, bar.top, bar.right, bar.top + 2f * sc, ui.p)
+        val art = RectF(bar.left + 10f * sc, bar.top + 10f * sc, bar.left + 62f * sc, bar.bottom - 10f * sc)
+        val bmp = ArtCache.peek(t)
+        if (bmp != null) ui.drawBitmapCover(c, bmp, art) else {
+            ArtCache.load(act, t, 200) { shell.invalidate() }
+            ui.fill(c, art, 0xFF2A2A2A.toInt())
+            ui.glyph(c, Ic.NOTE, art.centerX(), art.centerY(), 28f * sc, ui.al(Color.WHITE, 120))
+        }
+        val tx = art.right + 14f * sc
+        ui.text(c, t.title, tx, ui.baselineFor(bar.top + 26f * sc, 22f * sc, ui.medium), 22f * sc, maxW = bar.right - tx - 90f * sc, face = ui.medium)
+        ui.text(c, t.artist, tx, ui.baselineFor(bar.top + 52f * sc, 18f * sc, ui.light), 18f * sc, Belle.TEXT_MID, maxW = bar.right - tx - 90f * sc, face = ui.light)
+        key.set(bar.right - 74f * sc, bar.top + 6f * sc, bar.right - 10f * sc, bar.bottom - 6f * sc)
+        ui.roundButton(c, key.centerX(), key.centerY(), 54f * sc, if (Player.playing) Ic.PAUSE else Ic.PLAY)
+        val frac = if (Player.duration > 0) Player.position.toFloat() / Player.duration else 0f
+        ui.p.color = Belle.BLUE_LIGHT
+        c.drawRect(bar.left, bar.bottom - 3f * sc, bar.left + bar.width() * frac, bar.bottom, ui.p)
+    }
+
+    /** True if the touch was on the bar (and handled). */
+    fun tap(x: Float, y: Float, shell: com.belleui.kit.BelleShell): Boolean {
+        if (!visible() || !bar.contains(x, y)) return false
+        if (key.contains(x, y)) Player.toggle() else shell.push(NowPlayingScreen(act))
+        return true
+    }
+}
+
+/** Songs / Albums / Artists, as Belle tabs. Albums are a grid of covers, the lists have letter bars and a letter strip. */
 class RootScreen(private val act: MusicActivity) : Screen() {
     override val lightOk: Boolean get() = true
     override val title get() = "Music"
     override val tabs = listOf(TabDef("Songs", Ic.NOTE), TabDef("Albums", Ic.DISC), TabDef("Artists", Ic.PERSON))
 
     private val lists = Array(3) { ListState() }
+    private val alpha = Array(3) { com.belleui.kit.AlphaIndex() }
+    private val albumGrid = com.belleui.kit.GridState(4, 1.34f)
+    private val mini = MiniPlayer(act)
     private var state = 0 // 0 loading, 1 ready, 2 access denied
     private var albums: List<Pair<String, List<Track>>> = emptyList()
     private var artists: List<Pair<String, List<Track>>> = emptyList()
@@ -65,6 +114,9 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                     albums = act.library.albums()
                     artists = act.library.artists()
                     shell.post {
+                        val songs = act.library.tracks
+                        lists[0].sectionOf = { i -> if (i == 0 || letterOf(songs[i].title) != letterOf(songs[i - 1].title)) letterOf(songs[i].title) else null }
+                        lists[2].sectionOf = { i -> if (i == 0 || letterOf(artists[i].first) != letterOf(artists[i - 1].first)) letterOf(artists[i].first) else null }
                         state = 1
                         shell.invalidate()
                     }
@@ -104,13 +156,40 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         else shell.toast("Nothing is playing")
     }
 
+    private fun body(r: RectF) = RectF(r.left, r.top, r.right, r.bottom - mini.height(shell.ui))
+
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        val b = body(r)
         when (state) {
             0 -> message(c, ui, r, "Loading music...")
             2 -> message(c, ui, r, "Music needs access to your audio files.\nPress A to allow.")
-            else -> if (count() == 0) message(c, ui, r, "No music found") else {
-                lists[tab].draw(c, ui, r, count()) { i -> rowAt(i) }
+            else -> if (count() == 0) message(c, ui, r, "No music found") else if (tab == 1) drawAlbums(c, ui, b) else {
+                lists[tab].draw(c, ui, b, count()) { i -> rowAt(i) }
+                alpha[tab].set((0 until count()).mapNotNull { lists[tab].sectionOf?.invoke(it) })
+                alpha[tab].draw(c, ui, b, lists[tab].sectionOf?.let { f -> (lists[tab].sel downTo 0).firstNotNullOfOrNull { f(it) } })
             }
+        }
+        mini.draw(c, ui, r, shell)
+    }
+
+    private fun drawAlbums(c: Canvas, ui: Ui, r: RectF) {
+        albumGrid.draw(c, ui, r, albums.size) { cv, cell, i, selected ->
+            val (name, ts) = albums[i]
+            val sc = ui.sc
+            val cw = cell.width()
+            val cover = RectF(cell.left + 10f * sc, cell.top + 8f * sc, cell.right - 10f * sc, cell.top + 8f * sc + cw - 20f * sc)
+            val bmp = ArtCache.peek(ts.first())
+            if (bmp != null) {
+                ui.p.style = Paint.Style.FILL
+                ui.p.color = ui.al(Color.BLACK, 130)
+                cv.drawRect(cover.left + 2f * sc, cover.top + 4f * sc, cover.right + 2f * sc, cover.bottom + 4f * sc, ui.p)
+                ui.drawBitmapCover(cv, bmp, cover)
+            } else {
+                ArtCache.load(act, ts.first(), 240) { shell.invalidate() }
+                if (!ui.gfx.draw(cv, "qgn_graf_mup_npv_defalbumart", cover)) ui.fill(cv, cover, 0xFF2A2A2A.toInt())
+            }
+            ui.text(cv, name, cover.left, ui.baselineFor(cover.bottom + 20f * sc, 19f * sc, ui.medium), 19f * sc, maxW = cover.width(), face = ui.medium)
+            ui.text(cv, ts.first().artist, cover.left, ui.baselineFor(cover.bottom + 42f * sc, 16f * sc, ui.light), 16f * sc, Belle.TEXT_MID, maxW = cover.width(), face = ui.light)
         }
     }
 
@@ -125,7 +204,6 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         val gfx = shell.ui.gfx
         return when (tab) {
             0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
-            1 -> albums[i].let { (name, ts) -> Row(name, "${ts.first().artist} - ${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.DISC, iconColor = ORANGE, drill = true) }
             else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_artist"), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
         }
     }
@@ -141,13 +219,22 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         }
     }
 
+    private fun contentRect() = body(RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom))
+
     override fun onAct(a: Act): Boolean {
         if (state == 2 && a == Act.OK) {
             request()
             return true
         }
         if (state != 1 || count() == 0) return false
-        val vis = lists[tab].visible(shell.ui, shell.contentBottom - shell.contentTop)
+        if (tab == 1) {
+            if (a == Act.OK) {
+                open(albumGrid.sel)
+                return true
+            }
+            return albumGrid.act(a, albums.size, contentRect())
+        }
+        val vis = lists[tab].visible(shell.ui, contentRect().height())
         return when (a) {
             Act.OK -> {
                 open(lists[tab].sel)
@@ -162,7 +249,19 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             request()
             return true
         }
-        val r = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
+        if (mini.tap(x, y, shell)) return true
+        val r = contentRect()
+        if (tab == 1) {
+            val i = albumGrid.hit(r, x, y, albums.size)
+            if (i < 0) return false
+            albumGrid.sel = i
+            open(i)
+            return true
+        }
+        alpha[tab].hit(shell.ui, r, x, y)?.let { l ->
+            lists[tab].jumpTo(l, count())
+            return true
+        }
         val i = lists[tab].hit(shell.ui, r, y, count())
         if (i < 0) return false
         lists[tab].sel = i
@@ -171,7 +270,11 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     }
 
     override fun onScroll(dy: Float) {
-        val vis = lists[tab].visible(shell.ui, shell.contentBottom - shell.contentTop)
+        if (tab == 1) {
+            albumGrid.scrollBy(if (dy > 0) 1 else -1, albums.size, contentRect())
+            return
+        }
+        val vis = lists[tab].visible(shell.ui, contentRect().height())
         lists[tab].scrollBy(if (dy > 0) 1 else -1, count(), vis)
     }
 }
@@ -299,32 +402,31 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         y += 30f * ui.sc
         ui.text(c, t.album, x, y, 18f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
 
-        val barY = art.top + 118f * ui.sc
-        progress.set(x, barY, x + maxW, barY + 20f * ui.sc)
+        val barY = art.top + 112f * ui.sc
+        progress.set(x, barY, x + maxW, barY + 26f * ui.sc)
         ui.progressBar(c, progress, if (Player.duration > 0) pos.toFloat() / Player.duration else 0f)
         ui.text(c, fmtTime(pos), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
         ui.text(c, fmtTime(Player.duration), x + maxW, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
 
-        // transport: previous, play / pause, next as three big keys (shuffle and repeat live in the toolbar)
-        val gap = 10f * ui.sc
-        val bw = (maxW - 2 * gap) / 3f
-        val bh = 62f * ui.sc
-        val bt = art.top + 174f * ui.sc
+        // the progress slider with a round knob, as on the E6
+        val kx = progress.left + progress.width() * (if (Player.duration > 0) pos.toFloat() / Player.duration else 0f)
+        ui.p.style = Paint.Style.FILL
+        ui.p.shader = android.graphics.LinearGradient(0f, progress.centerY() - 14f * ui.sc, 0f, progress.centerY() + 14f * ui.sc, 0xFFFFFFFF.toInt(), 0xFFB5B5B5.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawCircle(kx.coerceIn(progress.left, progress.right), progress.centerY(), 14f * ui.sc, ui.p)
+        ui.p.shader = null
+
+        // transport: previous, play / pause, next as round keys (shuffle and repeat live in the toolbar)
+        val bt = art.top + 204f * ui.sc
+        val cxm = x + maxW / 2f
+        val dx = min(112f * ui.sc, maxW * 0.34f)
+        val ds = floatArrayOf(66f * ui.sc, 92f * ui.sc, 66f * ui.sc)
+        val xs = floatArrayOf(cxm - dx, cxm, cxm + dx)
         for (i in 0..2) {
-            val bx = x + i * (bw + gap)
-            transport[i + 1].set(bx, bt, bx + bw, bt + bh)
-            if (!ui.nine(c, "qtg_fr_pushbutton_normal", transport[i + 1], 30, 14f)) {
-                ui.p.color = 0xFF2B2B2B.toInt()
-                c.drawRoundRect(transport[i + 1], 12f * ui.sc, 12f * ui.sc, ui.p)
-            }
-            val gcx = transport[i + 1].centerX()
-            val gcy = transport[i + 1].centerY()
-            when (i) {
-                0 -> ui.glyph(c, Ic.PREVIOUS, gcx, gcy, 38f * ui.sc)
-                1 -> ui.glyph(c, if (Player.playing) Ic.PAUSE else Ic.PLAY, gcx, gcy, 38f * ui.sc)
-                else -> ui.glyph(c, Ic.NEXT, gcx, gcy, 38f * ui.sc)
-            }
+            ui.roundButton(c, xs[i], bt, ds[i], when (i) { 0 -> Ic.PREVIOUS; 1 -> if (Player.playing) Ic.PAUSE else Ic.PLAY; else -> Ic.NEXT })
+            val hh = ds[i] / 2f + 4f * ui.sc
+            transport[i + 1].set(xs[i] - hh, bt - hh, xs[i] + hh, bt + hh)
         }
+        ui.text(c, "${Player.index + 1} of ${Player.queue.size}", x, art.bottom + 2f * ui.sc, 16f * ui.sc, Belle.TEXT_MID, face = ui.light)
 
         // transient volume indicator
         if (SystemClock.uptimeMillis() < volumeUntil) {

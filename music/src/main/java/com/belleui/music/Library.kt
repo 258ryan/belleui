@@ -126,7 +126,7 @@ class Library(private val ctx: Context) {
 
 /** Album art, loaded off the main thread. */
 object ArtCache {
-    private val cache = LruCache<Long, Bitmap>(24)
+    private val cache = LruCache<Long, Bitmap>(160)
     private val failed = HashSet<Long>()
     private val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
