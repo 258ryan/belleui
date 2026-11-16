@@ -56,6 +56,10 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun hideSystemBars() {
+        // the themes are "...Fullscreen", which sets the window's fullscreen flag and hides the status bar whatever the
+        // visibility flags below say: with the Belle System UI the flag is taken off so the real status bar shows
+        if (com.belleui.kit.Belle.sysBar) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        else window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
         // with the Belle System UI the real status bar stays; only the navigation bar goes
         val status = if (com.belleui.kit.Belle.sysBar) 0 else (View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
