@@ -56,7 +56,35 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawBitmap(full, null, r, null)
             c.restore()
         }
+        if (Bar.charging) {
+            // a bolt over the battery while it charges
+            p.style = Paint.Style.FILL
+            p.color = Color.WHITE
+            val bx = r.centerX()
+            val by = r.centerY()
+            val bolt = android.graphics.Path()
+            bolt.moveTo(bx + bw * 0.06f, by - bh * 0.42f)
+            bolt.lineTo(bx - bw * 0.14f, by + bh * 0.08f)
+            bolt.lineTo(bx - bw * 0.01f, by + bh * 0.08f)
+            bolt.lineTo(bx - bw * 0.06f, by + bh * 0.42f)
+            bolt.lineTo(bx + bw * 0.16f, by - bh * 0.1f)
+            bolt.lineTo(bx + bw * 0.03f, by - bh * 0.1f)
+            bolt.close()
+            c.drawPath(bolt, p)
+        }
         x -= bw + pad * 0.6f
+        // the small indicators, from the battery outwards: wifi, bluetooth, silent, alarm, airplane
+        fun glyph(name: String) {
+            val s = h * 0.8f
+            r.set(x - s, (h - s) / 2f, x, (h + s) / 2f)
+            ui.gfx.draw(c, name, r)
+            x -= s + pad * 0.3f
+        }
+        if (Bar.wifi) glyph("qtg_toolbar_wlan_on")
+        if (Bar.bluetooth) glyph("qtg_toolbar_bluetooth_on")
+        if (Bar.silent) glyph("qtg_toolbar_audio_off")
+        if (Bar.alarm) { ui.glyph(c, com.belleui.kit.Ic.BELL, x - h * 0.4f, h / 2f, h * 0.62f); x -= h * 0.8f + pad * 0.3f }
+        if (Bar.airplane) glyph("qtg_toolbar_network_off")
         if (Bar.notifications > 0) {
             // an envelope, with the count beside it
             val label = if (Bar.notifications > 99) "99+" else Bar.notifications.toString()
@@ -74,11 +102,6 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawLine(r.right, r.top, r.centerX(), r.centerY(), p)
             p.style = Paint.Style.FILL
             x -= ew + pad * 0.6f
-        }
-        if (Bar.wifi) {
-            val s = h * 0.8f
-            r.set(x - s, (h - s) / 2f, x, (h + s) / 2f)
-            ui.gfx.draw(c, "qtg_toolbar_wlan_on", r)
         }
     }
 

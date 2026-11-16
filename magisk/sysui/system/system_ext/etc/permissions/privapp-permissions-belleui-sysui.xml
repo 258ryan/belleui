@@ -18,5 +18,7 @@
         <permission name="android.permission.CONTROL_DISPLAY_BRIGHTNESS" />
         <permission name="android.permission.REBOOT" />
         <permission name="android.permission.SHUTDOWN" />
+        <permission name="android.permission.MANAGE_DEBUGGING" />
+        <permission name="android.permission.READ_FRAME_BUFFER" />
     </privapp-permissions>
 </permissions>

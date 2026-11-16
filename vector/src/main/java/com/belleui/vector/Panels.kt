@@ -178,6 +178,31 @@ object Hud {
     }
 
     /** Shows [sbn] as a Belle banner under the status bar; false lets the stock heads-up run. */
+    /** A plain Belle banner with no notification behind it (low battery, screenshot saved). */
+    fun showNote(sys: Context, mod: Context, title: String, body: String) {
+        main.post {
+            try {
+                removeBanner(false)
+                val wm = sys.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val dm = sys.resources.displayMetrics
+                val sc = min(dm.widthPixels / 640f, dm.heightPixels / 480f)
+                val v = BannerView(sys, mod, title, body, null, null)
+                val lp = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT, (64 * sc).toInt(), 2020,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT,
+                )
+                lp.gravity = Gravity.TOP
+                lp.title = "BelleBanner"
+                wm.addView(v, lp)
+                bannerView = v
+                v.translationY = -64f * sc
+                v.animate().translationY(0f).setDuration(220).start()
+                main.postDelayed(hideBanner, 4500)
+            } catch (_: Throwable) { }
+        }
+    }
+
     fun showBanner(sys: Context, mod: Context, sbn: android.service.notification.StatusBarNotification): Boolean {
         val n = sbn.notification
         if (n.fullScreenIntent != null) return false
@@ -466,7 +491,7 @@ object Hud {
         private val uri = android.net.Uri.parse("content://com.belleui.launcher.status/active")
 
         /** The real System UI's own notification listener: every notification, with no other app needed. */
-        private fun listener(): android.service.notification.NotificationListenerService? = try {
+        private fun listener(): android.service.notification.NotificationListenerService? = ownListener ?: try {
             val dep = Class.forName("com.android.systemui.Dependency")
             val cls = Class.forName("com.android.systemui.statusbar.NotificationListener")
             dep.getMethod("get", Class::class.java).invoke(null, cls) as? android.service.notification.NotificationListenerService
@@ -577,6 +602,9 @@ object Hud {
     /** Set by the real System UI: opens its own full quick settings and notification panel. */
     @Volatile
     var stockShade: (() -> Unit)? = null
+
+    /** The notification listener of the standalone Belle System UI (null when the stock System UI is in use). */
+    @Volatile var ownListener: android.service.notification.NotificationListenerService? = null
 
     /** How many notifications are showing, for the status bar's mail mark. */
     fun activeCount(sys: Context): Int = Notes.active(sys).count { !it.ongoing }

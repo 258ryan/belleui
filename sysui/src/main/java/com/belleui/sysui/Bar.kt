@@ -46,6 +46,15 @@ object Bar {
         private set
     var charging = false
         private set
+    var bluetooth = false
+        private set
+    var silent = false
+        private set
+    var airplane = false
+        private set
+    var alarm = false
+        private set
+    private var warned = 100
 
     fun start(c: Context) {
         if (started) return
@@ -55,7 +64,38 @@ object Bar {
         step("window") { addWindow() }
         step("receivers") { receivers() }
         step("register") { register(0) }
+        step("listener") { startListener() }
         step("title") { pollTitle() }
+    }
+
+    /** Registers the System UI's own notification listener as a system service: no "allow notification access" step. */
+    private fun startListener() {
+        val l = SysListener()
+        NotificationListenerServiceReflect.register(l, ctx)
+    }
+
+    fun notesChanged() {
+        val n = Hud.activeCount(ctx)
+        if (n != notifications) {
+            notifications = n
+            main.post { view?.invalidate() }
+        }
+    }
+
+    /** A new notification: the Belle banner for the ones that interrupt (high importance), not for ongoing or silent ones. */
+    fun posted(l: android.service.notification.NotificationListenerService, sbn: android.service.notification.StatusBarNotification) {
+        notesChanged()
+        try {
+            val n = sbn.notification ?: return
+            if (n.flags and (android.app.Notification.FLAG_ONGOING_EVENT or android.app.Notification.FLAG_GROUP_SUMMARY or android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0) return
+            val rm = android.service.notification.NotificationListenerService.Ranking()
+            val importance = if (l.currentRanking.getRanking(sbn.key, rm)) rm.importance else android.app.NotificationManager.IMPORTANCE_DEFAULT
+            if (importance < android.app.NotificationManager.IMPORTANCE_HIGH) return
+            if (sbn.packageName == title) return
+            Hud.showBanner(ctx, ctx, sbn)
+        } catch (t: Throwable) {
+            Log.e(TAG, "banner", t)
+        }
     }
 
     /** The label of the app on screen: the Belle status bar names what you are looking at. */
@@ -129,7 +169,18 @@ object Bar {
             addAction(Intent.ACTION_TIME_TICK)
             addAction(Intent.ACTION_TIME_CHANGED)
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction("android.bluetooth.adapter.action.STATE_CHANGED")
+            addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
         }
+        // the first values, before any change arrives
+        try {
+            silent = (ctx.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode != 2
+            airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+            alarm = (ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).nextAlarmClock != null
+            bluetooth = android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+        } catch (_: Throwable) { }
         ctx.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 if (i.action == Intent.ACTION_BATTERY_CHANGED) {
@@ -137,6 +188,16 @@ object Bar {
                     val scale = i.getIntExtra("scale", 100).coerceAtLeast(1)
                     batteryPct = level * 100 / scale
                     charging = i.getIntExtra("plugged", 0) != 0
+                    // the low battery warnings: 15 % and 5 %, once each until the phone charges again
+                    if (charging) warned = 100
+                    else if (batteryPct <= 5 && warned > 5) { warned = 5; Hud.showNote(ctx, ctx, "Battery almost empty", "$batteryPct% left - charge now") }
+                    else if (batteryPct <= 15 && warned > 15) { warned = 15; Hud.showNote(ctx, ctx, "Battery low", "$batteryPct% left") }
+                }
+                when (i.action) {
+                    "android.bluetooth.adapter.action.STATE_CHANGED" -> bluetooth = i.getIntExtra("android.bluetooth.adapter.extra.STATE", 10) == 12
+                    android.media.AudioManager.RINGER_MODE_CHANGED_ACTION -> silent = i.getIntExtra(android.media.AudioManager.EXTRA_RINGER_MODE, 2) != 2
+                    Intent.ACTION_AIRPLANE_MODE_CHANGED -> airplane = i.getBooleanExtra("state", false)
+                    android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> alarm = (ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).nextAlarmClock != null
                 }
                 view?.invalidate()
             }
@@ -214,7 +275,7 @@ object Bar {
                 "togglePanel" -> Hud.toggleStatus(ctx, ctx)
                 "animateCollapsePanels" -> Hud.closeStatus()
                 "showGlobalActionsMenu" -> Hud.showPower(ctx, ctx)
-                "toggleRecentApps", "showRecentApps" -> recents()
+                "toggleRecentApps", "showRecentApps" -> if (!Hud.showRecents(ctx, ctx)) recents()
             }
         } catch (t: Throwable) {
             Log.e(TAG, "handling $name", t)
