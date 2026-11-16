@@ -8,6 +8,8 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class VideoActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF9B4CC4.toInt()
+
     val library by lazy { VideoLibrary(this) }
 
     /** Set when something changed what the list should show; the main screen reloads when shown again. */

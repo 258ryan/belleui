@@ -22,6 +22,8 @@ import com.belleui.kit.Tool
 import com.belleui.kit.Ui
 
 class CalcActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFFE0952D.toInt()
+
     val calc = CalcScreen(this)
     val history = ArrayList<Pair<String, String>>()
 

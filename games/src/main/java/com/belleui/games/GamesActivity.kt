@@ -23,6 +23,8 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class GamesActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF58B04A.toInt()
+
     val prefs by lazy { Prefs(this) }
     val emus by lazy { Emulators(this, prefs) }
     val art by lazy { Art(this, prefs) }

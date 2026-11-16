@@ -8,6 +8,8 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class GalleryActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF2F9E5F.toInt()
+
     val library by lazy { MediaLibrary(this) }
     val marks by lazy { Marks(this) }
 

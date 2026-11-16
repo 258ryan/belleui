@@ -54,10 +54,10 @@ object Belle {
     const val PANEL = 0xFF1B1B1B.toInt()
 
     const val STATUS_H = 36f   // measured on the E6 at 640x480
-    const val TAB_H = 50f      // landscape; 60 in portrait
+    const val TAB_H = 67f      // as tall as the toolbar (scaled from the measured bars)
     const val TOOL_H = 67f
     const val ROW_H = 94f
-    const val MENU_ITEM_H = 64f
+    const val MENU_ITEM_H = 80f
     const val PADDING = 12f
 }
 
@@ -652,12 +652,12 @@ class Ui(val ctx: Context) {
             }
             val col = if (sel) Color.WHITE else Belle.TEXT_MID
             val face = if (sel) sans else light
-            val tsz = 18f * sc
+            val tsz = 22f * sc
             val textW = measure(labels[i], tsz, face)
-            val total = 30f * sc + 8f * sc + textW
+            val total = 40f * sc + 10f * sc + textW
             val sx = rf.centerX() - total / 2f
-            glyph(c, kinds[i], sx + 15f * sc, top + h / 2f, 26f * sc, col)
-            text(c, labels[i], sx + 38f * sc, baselineFor(top + h / 2f, tsz, face), tsz, col, face = face, maxW = tw - 50f * sc)
+            glyph(c, kinds[i], sx + 20f * sc, top + h / 2f, 34f * sc, col)
+            text(c, labels[i], sx + 50f * sc, baselineFor(top + h / 2f, tsz, face), tsz, col, face = face, maxW = tw - 62f * sc)
         }
     }
 
@@ -724,7 +724,7 @@ class Ui(val ctx: Context) {
             rightEdge -= ds + 4f * sc
         }
         if (row.check != null) {
-            val cs = 42f * sc
+            val cs = 56f * sc
             gfx.glyph(c, (if (row.check) "qtg_graf_checkbox_normal_selected" else "qtg_graf_checkbox_normal_unselected") + inv, rightEdge - cs / 2f, r.centerY(), cs)
             rightEdge -= cs + pad
         }
@@ -767,7 +767,15 @@ class Ui(val ctx: Context) {
         c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
     }
 
-    fun progressBar(c: Canvas, r: RectF, frac: Float) {
+    fun progressBar(c: Canvas, r0: RectF, frac: Float) {
+        // the bar is 26 px tall (scaled up with the other controls); a thinner box is grown around its middle
+        val r = RectF(r0)
+        val minH = 26f * sc
+        if (r.height() < minH) {
+            val grow = (minH - r.height()) / 2f
+            r.top -= grow
+            r.bottom += grow
+        }
         val inv = if (lightOn) "_inverse" else ""
         nine(c, "qtg_fr_progressbar_track$inv", r, 20, 10f)
         val f = frac.coerceIn(0f, 1f)
@@ -778,8 +786,8 @@ class Ui(val ctx: Context) {
     }
 
     fun switchButton(c: Canvas, cx: Float, cy: Float, on: Boolean) {
-        val w = 66f * sc
-        val h = 44f * sc
+        val w = 88f * sc
+        val h = 58f * sc
         rf.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
         gfx.draw(c, if (lightOn) "qtg_graf_switchbutton_track_inverse" else "qtg_graf_switchbutton_track", rf)
         if (on) gfx.draw(c, "qtg_graf_switchbutton_fill", rf)

@@ -31,6 +31,8 @@ import com.belleui.kit.Tool
 import com.belleui.kit.Ui
 
 class RecorderActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFFD84545.toInt()
+
     val store by lazy { RecordingStore(this) }
     private val audio by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     private val handler = Handler(Looper.getMainLooper())

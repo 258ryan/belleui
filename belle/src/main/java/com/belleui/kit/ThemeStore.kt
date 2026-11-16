@@ -24,7 +24,8 @@ object ThemeStore {
     /** Reads the saved values; cheap, call before building any UI. */
     fun load(ctx: Context) {
         val p = prefs(ctx)
-        if (p.contains("accent")) {
+        // the default blue means the accent was never picked: an app may keep its own colour then
+        if (p.contains("accent") && p.getInt("accent", Belle.DEFAULT_BLUE) != Belle.DEFAULT_BLUE) {
             shared = p.getInt("accent", Belle.DEFAULT_BLUE)
             Belle.setAccent(shared!!)
         }
@@ -47,7 +48,7 @@ object ThemeStore {
                         Belle.lightLists = light
                         val e = prefs(app).edit().putBoolean("sounds", sounds).putBoolean("light", light)
                         Belle.soundsOn = sounds
-                        if (accent != 0) {
+                        if (accent != 0 && accent != Belle.DEFAULT_BLUE) {
                             e.putInt("accent", accent)
                             if (Belle.BLUE != accent) {
                                 shared = accent

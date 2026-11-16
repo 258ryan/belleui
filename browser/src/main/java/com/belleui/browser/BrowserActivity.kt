@@ -39,6 +39,8 @@ import kotlin.math.abs
 
 /** A Belle-styled browser on top of Android WebView (the Chromium engine). */
 class BrowserActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF1FA8B8.toInt()
+
     lateinit var web: WebView
     private lateinit var root: FrameLayout
     private lateinit var urlField: EditText

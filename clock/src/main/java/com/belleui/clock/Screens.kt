@@ -363,7 +363,7 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
         for (i in alarms.indices) {
             val rr = alarmList.rowRect(ui, r, i, ui.tmp)
             if (rr.bottom < r.top || rr.top > r.bottom) continue
-            ui.switchButton(c, r.right - 12f * ui.sc - 33f * ui.sc, rr.centerY(), alarms[i].enabled)
+            ui.switchButton(c, r.right - 18f * ui.sc - 44f * ui.sc, rr.centerY(), alarms[i].enabled)
         }
         if (vis < 0) return
     }

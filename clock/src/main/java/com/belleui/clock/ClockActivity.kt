@@ -7,6 +7,8 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class ClockActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFFE0702D.toInt()
+
     val store by lazy { AlarmStore(this) }
 
     override fun createRoot(shell: BelleShell): Screen {

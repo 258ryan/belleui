@@ -36,6 +36,8 @@ class Note(val file: File, val text: String) {
 
 /** Notes kept as plain text files, one per note, in the app's own folder. */
 class NotesActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFFD2A62B.toInt()
+
     private lateinit var field: EditText
     private var editing: File? = null
     private val dir by lazy { File(filesDir, "notes").also { it.mkdirs() } }

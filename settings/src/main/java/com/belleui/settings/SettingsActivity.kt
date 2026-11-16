@@ -10,6 +10,8 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class SettingsActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF5E7DB0.toInt()
+
     override fun createRoot(shell: BelleShell): Screen = RootScreen(this)
 
     /** Opens a system screen; false if this device doesn't have it. */

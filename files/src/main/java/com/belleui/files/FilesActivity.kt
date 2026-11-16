@@ -28,6 +28,8 @@ import com.belleui.kit.Screen
 import java.io.File
 
 class FilesActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFF6F86A3.toInt()
+
     private lateinit var field: EditText
     private var textCb: ((String) -> Unit)? = null
     private lateinit var homeUi: BelleShell

@@ -1180,6 +1180,9 @@ abstract class BelleActivity : Activity() {
     /** First screen of the app. */
     abstract fun createRoot(shell: BelleShell): Screen
 
+    /** This app's own highlight colour, used unless a theme colour was picked in Styles. */
+    open val appAccent: Int? get() = null
+
     /** Content view; override to add views underneath the shell (the shell is drawn on top). */
     open fun buildContent(shell: BelleShell): View = shell
 
@@ -1187,6 +1190,7 @@ abstract class BelleActivity : Activity() {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
         ThemeStore.load(this)
+        if (ThemeStore.shared == null) appAccent?.let { Belle.setAccent(it) }
         try { Sounds.init(this) } catch (_: Throwable) { }
         shell = BelleShell(this)
         setContentView(buildContent(shell), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))

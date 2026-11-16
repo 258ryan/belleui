@@ -2609,13 +2609,13 @@ class LauncherView(private val act: Activity) : View(act) {
                 p.style = Paint.Style.FILL
             }
             val col = if (sel) Color.WHITE else 0xFF999999.toInt()
-            val tsz = 18f * sc
+            val tsz = 22f * sc
             val face = if (sel) sans else light
             val textW = measure(labels[i], tsz, face)
-            val total = 30f * sc + 8f * sc + textW
+            val total = 40f * sc + 10f * sc + textW
             val sx = rf.centerX() - total / 2f
-            glyph(c, kinds[i], sx + 15f * sc, cTop + h / 2f, 26f * sc, col)
-            text(c, labels[i], sx + 38f * sc, baselineFor(cTop + h / 2f, tsz, face), tsz, col, face = face)
+            glyph(c, kinds[i], sx + 20f * sc, cTop + h / 2f, 34f * sc, col)
+            text(c, labels[i], sx + 50f * sc, baselineFor(cTop + h / 2f, tsz, face), tsz, col, face = face)
         }
     }
 
@@ -2969,7 +2969,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private companion object {
         const val SEARCH_H = 44f
-        const val TAB = 50f      // tab bar (landscape; 60 in portrait)
+        const val TAB = 67f      // tab bar, as tall as the toolbar
         const val HEADER = 6f    // a little air above the first row
         const val ROW = 94f      // list item height on the E6 (graphicSizeLarge)
         const val POPUP_ROW = 64f // heightMenuItem

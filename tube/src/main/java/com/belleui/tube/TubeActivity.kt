@@ -22,6 +22,8 @@ import com.belleui.kit.Screen
 
 /** A YouTube client in the Belle look: Trending, search, and playback, with NewPipe's extractor doing the talking. */
 class TubeActivity : BelleActivity() {
+    override val appAccent: Int? get() = 0xFFE03C3C.toInt()
+
     private lateinit var field: EditText
     private var textCb: ((String) -> Unit)? = null
     private lateinit var homeUi: BelleShell
