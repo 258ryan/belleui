@@ -11,8 +11,8 @@ if [ ! -f $CONF ]; then
 set_default_home=1
 # make the Belle keyboard the input method
 set_default_keyboard=0
-# which System UI: belle (written from scratch), restyled (the ROM's own with Belle colours), none (stock)
-system_ui=restyled
+# which System UI: belle (written from scratch, the default), restyled (the ROM's own with Belle colours), none (stock)
+system_ui=belle
 # 0 puts the stock System UI back whatever system_ui says
 install_system_ui=1
 # install the Belle Chooser (Vector) module APK once
@@ -76,7 +76,7 @@ if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f 
 fi
 
 # System UI boot guard: once the chosen System UI is up, the "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
-variant=${system_ui:-restyled}
+variant=${system_ui:-belle}
 [ "$install_system_ui" = "0" ] && variant=none
 if [ "$variant" != "none" ]; then
   sleep 30

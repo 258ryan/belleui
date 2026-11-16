@@ -1,14 +1,14 @@
 #!/system/bin/sh
 # BelleUI System UI chooser and boot guard. Runs before the module's files are mounted.
-#   system_ui=belle    the Belle System UI written from scratch
-#   system_ui=restyled the stock System UI of this ROM with the Belle colours (default; keeps the lock screen, notifications, hint bar)
+#   system_ui=belle    the Belle System UI written from scratch (the default)
+#   system_ui=restyled the stock System UI of this ROM with the Belle colours (keeps the lock screen, notifications, hint bar)
 #   system_ui=none     the stock System UI, untouched
 # in /data/adb/belleui/config. If the chosen one did not come up on two boots in a row, the third boot uses the stock one.
 MODDIR=${0%/*}
 D=/data/adb/belleui
 mkdir -p $D
 [ -f $D/config ] && . $D/config
-variant=${system_ui:-restyled}
+variant=${system_ui:-belle}
 [ "$install_system_ui" = "0" ] && variant=none
 n=$(cat $D/sysui_boots 2>/dev/null)
 [ -z "$n" ] && n=0
