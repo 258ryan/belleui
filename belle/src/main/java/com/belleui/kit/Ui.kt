@@ -53,6 +53,31 @@ object Belle {
     const val SEPARATOR = 0xFF444444.toInt()
     const val PANEL = 0xFF1B1B1B.toInt()
 
+    /** True when the Belle System UI draws the status bar: the apps then draw none of their own and sit below the real one. */
+    @JvmField @Volatile var sysBar = false
+
+    /** Height of the status bar the app draws itself (none when the real one is there). */
+    fun statusH(): Float = if (sysBar) 0f else STATUS_H
+
+    /** Looks for the Belle System UI: it writes the boot number into a setting once it is the registered status bar. */
+    fun detectSysBar(ctx: android.content.Context) {
+        sysBar = try {
+            val r = ctx.contentResolver
+            val ok = android.provider.Settings.Global.getString(r, "belle_sysui_ok")
+            ok != null && ok == android.provider.Settings.Global.getString(r, android.provider.Settings.Global.BOOT_COUNT)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** Tells the real status bar what this app's current screen is called (it shows it on the left). */
+    fun publishTitle(ctx: android.content.Context, title: String) {
+        if (!sysBar) return
+        try {
+            ctx.sendBroadcast(android.content.Intent("com.belleui.kit.TITLE").setPackage("com.android.systemui").putExtra("pkg", ctx.packageName).putExtra("title", title))
+        } catch (_: Throwable) { }
+    }
+
     const val STATUS_H = 36f   // measured on the E6 at 640x480
     const val TAB_H = 67f      // as tall as the toolbar (scaled from the measured bars)
     const val TOOL_H = 67f
@@ -858,7 +883,7 @@ class Ui(val ctx: Context) {
     fun banner(c: Canvas, w: Float, text: String, t: Float) = onDark { banner0(c, w, text, t) }
 
     private fun banner0(c: Canvas, w: Float, text: String, t: Float) {
-        val top0 = Belle.STATUS_H * sc
+        val top0 = Belle.statusH() * sc
         val h = Belle.TOOL_H * sc
         val top = top0 - (1f - t) * h
         c.save()

@@ -44,6 +44,9 @@ object Bar {
         private set
     var title = ""
         private set
+    private var apTitlePkg = ""
+    private var apTitle = ""
+    private var topPkg = ""
     var charging = false
         private set
     var bluetooth = false
@@ -104,7 +107,8 @@ object Bar {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
             @Suppress("DEPRECATION")
             val top = am.getRunningTasks(1).firstOrNull()?.topActivity
-            val label = if (top == null) "" else {
+            topPkg = top?.packageName ?: ""
+            val label = if (top == null) "" else if (top.packageName == apTitlePkg && apTitle.isNotEmpty()) apTitle else {
                 val pm = ctx.packageManager
                 try {
                     pm.getActivityInfo(top, 0).loadLabel(pm).toString().ifBlank { pm.getApplicationLabel(pm.getApplicationInfo(top.packageName, 0)).toString() }
@@ -202,6 +206,17 @@ object Bar {
                 view?.invalidate()
             }
         }, f)
+        // the Belle apps and the launcher say what their current screen is called, for the left of the status bar
+        ctx.registerReceiver(object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                apTitlePkg = i.getStringExtra("pkg") ?: return
+                apTitle = i.getStringExtra("title") ?: ""
+                if (apTitlePkg == topPkg && apTitle != title) {
+                    title = apTitle
+                    view?.invalidate()
+                }
+            }
+        }, IntentFilter("com.belleui.kit.TITLE"))
         // the volume pop-up: the system sends this whenever a volume changes
         ctx.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {

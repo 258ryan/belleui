@@ -789,6 +789,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     var contentBottom = 0f; private set
     private val content = RectF()
     private var rawActive = false
+    private var lastTitleSent = ""
 
     private val gestures = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
@@ -909,7 +910,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private fun computeContent() {
         val tabs = if (stack.isNotEmpty() && screen.tabs.isNotEmpty()) Belle.TAB_H * ui.sc else 0f
         contentLeft = 0f
-        contentTop = Belle.STATUS_H * ui.sc + tabs
+        contentTop = Belle.statusH() * ui.sc + tabs
         contentRight = width.toFloat()
         contentBottom = height - Belle.TOOL_H * ui.sc
         val changed = content.left != contentLeft || content.top != contentTop ||
@@ -949,7 +950,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
             return
         }
         val tabs = screen.tabs
-        val tabTop = Belle.STATUS_H * ui.sc
+        val tabTop = Belle.statusH() * ui.sc
         if (tabs.isNotEmpty() && y >= tabTop && y < tabTop + Belle.TAB_H * ui.sc) {
             Sounds.play(Sounds.TICK)
             switchTab((x / (width.toFloat() / tabs.size)).toInt())
@@ -1085,7 +1086,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         computeContent()
         val s = screen
         val tabsH = if (s.tabs.isNotEmpty()) Belle.TAB_H * ui.sc else 0f
-        val statusH = Belle.STATUS_H * ui.sc
+        val statusH = Belle.statusH() * ui.sc
 
         val light = Belle.lightLists && s.lightOk
         if (!s.transparentContent) {
@@ -1115,7 +1116,11 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         if (s.tabs.isNotEmpty()) {
             ui.tabBar(c, w, statusH, s.tabs.map { it.label }, IntArray(s.tabs.size) { s.tabs[it].kind }, s.tab, tabFocus)
         }
-        ui.statusBar(c, w, s.title, status)
+        if (!Belle.sysBar) ui.statusBar(c, w, s.title, status)
+        else if (s.title != lastTitleSent) {
+            lastTitleSent = s.title
+            Belle.publishTitle(activity, s.title)
+        }
 
         val tools = s.tools().take(2)
         val kinds = toolKinds()
@@ -1189,6 +1194,7 @@ abstract class BelleActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        Belle.detectSysBar(this)
         ThemeStore.load(this)
         if (ThemeStore.shared == null) appAccent?.let { Belle.setAccent(it) }
         try { Sounds.init(this) } catch (_: Throwable) { }
@@ -1256,11 +1262,11 @@ abstract class BelleActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun hideSystemBars() {
+        // with the Belle System UI the real status bar stays; only the navigation bar is hidden
+        val statusFlags = if (Belle.sysBar) 0 else (View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            or statusFlags)
     }
 }

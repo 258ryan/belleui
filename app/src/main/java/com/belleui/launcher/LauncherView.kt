@@ -1079,7 +1079,7 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = 36f * sc
+        statusH = (if (com.belleui.kit.Belle.sysBar) 0f else 36f) * sc
         softH = 67f * sc
         cTop = statusH
         cBot = h - softH
@@ -1236,6 +1236,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private var drawFaults = 0
+    private var titleSent = ""
 
     override fun onDraw(c: Canvas) {
         val mark = c.save()
@@ -1310,7 +1311,13 @@ class LauncherView(private val act: Activity) : View(act) {
             c.restore()
         }
 
-        drawStatusBar(c, w)
+        if (com.belleui.kit.Belle.sysBar) {
+            val t = pageTitle()
+            if (t != titleSent) {
+                titleSent = t
+                com.belleui.kit.Belle.publishTitle(act, t)
+            }
+        } else drawStatusBar(c, w)
         drawToolbar(c, w, h)
         if (popup != null) popupShown = popup
         val popupTarget = if (popup != null) 1f else 0f

@@ -10,6 +10,7 @@ class MainActivity : Activity() {
     private lateinit var launcher: LauncherView
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.belleui.kit.Belle.detectSysBar(this)
         super.onCreate(savedInstanceState)
         launcher = LauncherView(this)
         setContentView(launcher)
@@ -55,11 +56,11 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun hideSystemBars() {
+        // with the Belle System UI the real status bar stays; only the navigation bar goes
+        val status = if (com.belleui.kit.Belle.sysBar) 0 else (View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                or status)
     }
 }
