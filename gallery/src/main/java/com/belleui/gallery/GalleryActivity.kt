@@ -9,6 +9,30 @@ import com.belleui.kit.Screen
 
 class GalleryActivity : BelleActivity() {
     val library by lazy { MediaLibrary(this) }
+    val marks by lazy { Marks(this) }
+
+    private var cacheKey = -1L
+    private var shownList: List<Media> = emptyList()
+    private var favList: List<Media> = emptyList()
+    private var hiddenList: List<Media> = emptyList()
+    private var trashList: List<Media> = emptyList()
+
+    private fun rebuild() {
+        val key = marks.version.toLong() * 1_000_003L + library.items.size + System.identityHashCode(library.items)
+        if (key == cacheKey) return
+        cacheKey = key
+        val all = library.items
+        shownList = all.filter { !marks.isHidden(it) && !marks.isTrashed(it) }
+        favList = shownList.filter { marks.isFav(it) }
+        hiddenList = all.filter { marks.isHidden(it) && !marks.isTrashed(it) }
+        trashList = all.filter { marks.isTrashed(it) }
+    }
+
+    /** The library as the user sees it: without hidden and deleted photos. */
+    fun photos(): List<Media> { rebuild(); return shownList }
+    fun favourites(): List<Media> { rebuild(); return favList }
+    fun hiddenItems(): List<Media> { rebuild(); return hiddenList }
+    fun trashed(): List<Media> { rebuild(); return trashList }
 
     /** Set when the folder choice changed; the main screen reloads when it is shown again. */
     var libraryDirty = false

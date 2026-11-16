@@ -141,6 +141,12 @@ abstract class Screen {
     open fun onLongPress(x: Float, y: Float) {}
     open fun onScroll(dy: Float) {}
 
+    /** True for a screen that wants every touch inside its content (drag, pinch, fling) instead of tap / scroll steps. */
+    open val rawTouch: Boolean get() = false
+
+    /** Raw touch events of a [rawTouch] screen; the screen does its own tap detection. */
+    open fun onTouch(e: android.view.MotionEvent): Boolean = false
+
     /** Redraw period in ms for live content such as clocks; 0 = only on change. */
     open val tickMs: Long get() = 0L
 
@@ -782,6 +788,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     var contentRight = 0f; private set
     var contentBottom = 0f; private set
     private val content = RectF()
+    private var rawActive = false
 
     private val gestures = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
@@ -960,6 +967,15 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
                 e.y >= contentTop && e.y <= contentBottom
         }
         if (passThrough) return false
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            rawActive = overlay == null && stack.isNotEmpty() && screen.rawTouch && e.y >= contentTop && e.y <= contentBottom
+        }
+        if (rawActive) {
+            val used = screen.onTouch(e)
+            invalidate()
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) rawActive = false
+            if (used) return true
+        }
         return gestures.onTouchEvent(e) || super.onTouchEvent(e)
     }
 
