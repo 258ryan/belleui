@@ -82,7 +82,7 @@ class RootScreen(private val act: FilesActivity) : Screen() {
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         if (!act.hasAccess()) {
             ui.text(c, "File manager needs access to all files.", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-            ui.text(c, "Press A to allow.", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
+            ui.text(c, com.belleui.kit.Keys.hint("Press A to allow."), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
             return
         }
         val rows = rows()

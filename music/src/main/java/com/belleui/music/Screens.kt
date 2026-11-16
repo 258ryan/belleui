@@ -162,7 +162,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         val b = body(r)
         when (state) {
             0 -> message(c, ui, r, "Loading music...")
-            2 -> message(c, ui, r, "Music needs access to your audio files.\nPress A to allow.")
+            2 -> message(c, ui, r, com.belleui.kit.Keys.hint("Music needs access to your audio files.\nPress A to allow."))
             else -> if (count() == 0) message(c, ui, r, "No music found") else if (tab == 1) drawAlbums(c, ui, b) else {
                 lists[tab].draw(c, ui, b, count()) { i -> rowAt(i) }
                 alpha[tab].set((0 until count()).mapNotNull { lists[tab].sectionOf?.invoke(it) })
@@ -571,7 +571,7 @@ class FoldersScreen(private val act: MusicActivity) : Screen() {
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         if (folders.isEmpty()) {
             ui.text(c, "Music from the whole device", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-            ui.text(c, "Press Y to pick the folder your music is in", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to pick the folder your music is in"), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
             return
         }
         list.draw(c, ui, r, folders.size) { i -> Row(folders[i].substringAfterLast('/'), folders[i], iconKind = Ic.LIST, iconColor = ORANGE) }

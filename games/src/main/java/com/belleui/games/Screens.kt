@@ -255,7 +255,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
     /** Text to show instead of content, or null when there are games. */
     private fun emptyMessage(): String? = when {
-        !act.hasAccess() -> "Games needs access to your files to find ROMs.\nPress A to allow."
+        !act.hasAccess() -> com.belleui.kit.Keys.hint("Games needs access to your files to find ROMs.\nPress A to allow.")
         act.scanning && act.games.isEmpty() -> "Looking for games..."
         act.games.isEmpty() -> "No games found.\nIn Settings use \"Find ROM cards\", or add a ROM folder."
         else -> null
@@ -329,7 +329,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         return listOf(
             Row("RetroArch", if (ra != null) "Installed - $ra" else "Not installed", iconKind = Ic.PLAY, iconColor = 0xFF3E5CC8.toInt(), drill = ra != null, dim = ra == null),
             Row("PPSSPP", if (pp != null) "Installed - $pp" else "Not installed", iconKind = Ic.PLAY, iconColor = 0xFF2B2F36.toInt(), drill = pp != null, dim = pp == null),
-            Row("RetroArch remote", remoteStatus ?: "Press A to check", iconKind = Ic.WLAN_ON, iconColor = 0xFF1F9D63.toInt()),
+            Row("RetroArch remote", remoteStatus ?: com.belleui.kit.Keys.hint("Press A to check"), iconKind = Ic.WLAN_ON, iconColor = 0xFF1F9D63.toInt()),
             Row("Save state", "Of the game running in RetroArch"),
             Row("Load state"),
             Row("Pause / resume"),
@@ -759,7 +759,7 @@ class GameListScreen(
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         val g = games
         if (g.isEmpty()) {
-            val msg = if (query.isNotBlank() || filter != 0 || genre != null) "Nothing matches.\nPress X, then \"Clear search and filters\"." else "No games here yet"
+            val msg = if (query.isNotBlank() || filter != 0 || genre != null) com.belleui.kit.Keys.hint("Nothing matches.\nPress X, then \"Clear search and filters\".") else "No games here yet"
             val lines = msg.split("\n")
             for ((i, l) in lines.withIndex()) ui.text(c, l, r.centerX(), ui.baselineFor(r.centerY() + (i - (lines.size - 1) / 2f) * 30f * ui.sc, 20f * ui.sc), 20f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = r.width() - 40f * ui.sc)
             return
@@ -950,7 +950,7 @@ class SettingsScreen(private val act: GamesActivity) : Screen() {
         val ra = act.emus.installedRetroArch()
         return listOf(
             Row("ROM folders", "${act.prefs.roots.size} folder${if (act.prefs.roots.size == 1) "" else "s"}", iconKind = Ic.LIST, iconColor = 0xFF3E5CC8.toInt(), drill = true),
-            Row("File access", if (act.hasAccess()) "Allowed" else "Not allowed - press A", iconKind = Ic.CHECK, iconColor = 0xFF1F9D63.toInt()),
+            Row("File access", if (act.hasAccess()) "Allowed" else com.belleui.kit.Keys.hint("Not allowed - press A"), iconKind = Ic.CHECK, iconColor = 0xFF1F9D63.toInt()),
             Row("PSP games open with", if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch (ppsspp core)", iconKind = Ic.PLAY, iconColor = 0xFF2B2F36.toInt()),
             Row("Download box art", "From the libretro thumbnail server", iconKind = Ic.IMAGES, iconColor = 0xFFC2185B.toInt(), check = act.prefs.downloadArt),
             Row("RetroArch app", act.emus.retroArch() ?: "Not installed", iconKind = Ic.TOOLS, iconColor = 0xFF58606B.toInt(), drill = ra.size > 1),
@@ -1038,7 +1038,7 @@ class FoldersScreen(private val act: GamesActivity) : Screen() {
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         if (roots.isEmpty()) {
             ui.text(c, "No folders yet", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-            ui.text(c, "Press Y to add the folder that holds your ROMs", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to add the folder that holds your ROMs"), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
             return
         }
         list.draw(c, ui, r, roots.size) { i -> Row(roots[i].substringAfterLast('/'), roots[i], iconKind = Ic.LIST, iconColor = 0xFF3E5CC8.toInt()) }

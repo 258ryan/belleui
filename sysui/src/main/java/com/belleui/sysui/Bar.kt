@@ -94,7 +94,7 @@ object Bar {
             val rm = android.service.notification.NotificationListenerService.Ranking()
             val importance = if (l.currentRanking.getRanking(sbn.key, rm)) rm.importance else android.app.NotificationManager.IMPORTANCE_DEFAULT
             if (importance < android.app.NotificationManager.IMPORTANCE_HIGH) return
-            if (sbn.packageName == title) return
+            if (sbn.packageName == topPkg) return // the app on screen shows its own news
             Hud.showBanner(ctx, ctx, sbn)
         } catch (t: Throwable) {
             Log.e(TAG, "banner", t)

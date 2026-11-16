@@ -10,9 +10,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # builds the branch the workflow is run on (belle/all when started from there)
       - uses: actions/checkout@v4
-        with:
-          ref: belle/all
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -68,12 +67,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view module-latest >/dev/null 2>&1; then
-            gh release upload module-latest BelleUI-Complete-Magisk.zip --clobber
-            gh release edit module-latest --notes "The Belle launcher, every Belle app and the Belle System UI as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot."
+          # belle/all publishes module-latest; a build of any other branch goes to its own module-preview release
+          TAG=module-latest; TITLE="BelleUI complete (Magisk module)"
+          if [ "$GITHUB_REF_NAME" != "belle/all" ]; then TAG=module-preview; TITLE="BelleUI complete (Magisk module, preview of $GITHUB_REF_NAME)"; fi
+          NOTES="The Belle launcher, every Belle app and the Belle System UI as system apps, built from $GITHUB_REF_NAME at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" BelleUI-Complete-Magisk.zip --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
           else
-            gh release create module-latest BelleUI-Complete-Magisk.zip \
-              --title "BelleUI complete (Magisk module)" \
-              --notes "The Belle launcher, every Belle app and the Belle System UI as system apps, built from belle/all at ${GITHUB_SHA::7}. Flash in Magisk (Modules > Install from storage) and reboot." \
-              --prerelease --target "$GITHUB_SHA"
+            gh release create "$TAG" BelleUI-Complete-Magisk.zip --title "$TITLE" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi

@@ -100,6 +100,7 @@ class RootScreen(private val act: StylesActivity) : Screen() {
         out.add(Row("Alarm tone", toneTitles[2] ?: "...", icon = g.get("qgn_prop_set_tones_sub"), drill = true))
         for ((k, label, sub) in switches) out.add(Row(label, sub, icon = g.get("qgn_prop_set_gene_phone"), check = switchOn(k)))
         out.add(Row("Light lists", "Light Belle look for list apps (Settings, Files, Notes...)", icon = g.get("qgn_menu_theme"), check = styles.getBoolean("light", false)))
+        out.add(Row("Button hints", "Gamepad letters beside the toolbar buttons (the E6 has none)", icon = g.get("qgn_prop_set_gene_phone"), check = styles.getBoolean("hints", true)))
         return out
     }
 
@@ -133,6 +134,13 @@ class RootScreen(private val act: StylesActivity) : Screen() {
                 ThemeStore.apply(act, styles.getInt("accent", 0).let { if (it == 0) Belle.DEFAULT_BLUE else it }, soundsOn(), on)
                 if (styles.getInt("accent", 0) == 0) styles.edit().remove("accent").apply()
                 shell.toast(if (on) "Light lists on - other apps update when you open them" else "Light lists off")
+            }
+            i == 10 -> {
+                val on = !styles.getBoolean("hints", true)
+                styles.edit().putBoolean("hints", on).apply()
+                ThemeStore.apply(act, styles.getInt("accent", 0).let { if (it == 0) Belle.DEFAULT_BLUE else it }, soundsOn(), hints = on)
+                if (styles.getInt("accent", 0) == 0) styles.edit().remove("accent").apply()
+                shell.toast(if (on) "Button hints on" else "Button hints off - other apps update when you open them")
             }
             i in 3..5 -> shell.push(TonesScreen(act, types[i - 3], listOf("Ringtone", "Notification tone", "Alarm tone")[i - 3]))
             else -> {
@@ -288,7 +296,7 @@ class TonesScreen(private val act: StylesActivity, private val type: Int, privat
             } catch (_: Exception) {
             }
         }
-        shell.toast("Press A again to use it")
+        shell.toast(com.belleui.kit.Keys.hint("Press A again to use it"))
         shell.invalidate()
     }
 

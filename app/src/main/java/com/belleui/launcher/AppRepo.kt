@@ -392,13 +392,17 @@ class AppRepo(private val ctx: Context) {
         putList("order", l + rest)
     }
 
-    fun isHidden(key: String) = key in getList("hidden")
+    // asked for every icon on every frame, so the parsed list is kept
+    private var hiddenSet: Set<String>? = null
+
+    fun isHidden(key: String) = key in (hiddenSet ?: getList("hidden").toSet().also { hiddenSet = it })
 
     fun setHidden(key: String, hide: Boolean) {
         val l = getList("hidden")
         l.remove(key)
         if (hide) l.add(key)
         putList("hidden", l)
+        hiddenSet = null
     }
 
     // ---- favourites (home tiles, max 4) --------------------------------------

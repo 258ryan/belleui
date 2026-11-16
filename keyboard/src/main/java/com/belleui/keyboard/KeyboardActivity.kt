@@ -103,8 +103,8 @@ class SetupScreen(private val act: KeyboardActivity) : Screen() {
         val g = shell.ui.gfx
         val layout = if (act.prefs.getInt("layout", 0) == 1) "QWERTY" else "A to Z"
         return listOf(
-            Row("Turn on", if (act.enabled()) "Belle keyboard is switched on" else "Press A, then switch it on", iconKind = Ic.CHECK, check = act.enabled()),
-            Row("Use it", if (act.inUse()) "It is the keyboard in use" else "Press A to choose the keyboard", iconKind = Ic.GRID, check = act.inUse()),
+            Row("Turn on", if (act.enabled()) "Belle keyboard is switched on" else com.belleui.kit.Keys.hint("Press A, then switch it on"), iconKind = Ic.CHECK, check = act.enabled()),
+            Row("Use it", if (act.inUse()) "It is the keyboard in use" else com.belleui.kit.Keys.hint("Press A to choose the keyboard"), iconKind = Ic.GRID, check = act.inUse()),
             Row("Letter order", layout, iconKind = Ic.LIST, drill = true),
             Row("Capital after a full stop", "Starts sentences with a capital", iconKind = Ic.NOTE, check = flag("autocap", true)),
             Row("Word suggestions", "Suggests words as you type; up from the keys picks one", iconKind = Ic.SEARCH, check = flag("predict", true)),

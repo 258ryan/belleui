@@ -261,7 +261,7 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
 
         var y = topY + 116f * ui.sc
         if (zones.isEmpty()) {
-            ui.text(c, "Press Y to add a city", x, ui.baselineFor(y + 30f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to add a city"), x, ui.baselineFor(y + 30f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, face = ui.light)
         }
         for (z in zones.take(4)) {
             val tz = TimeZone.getTimeZone(z)
@@ -352,7 +352,7 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
     private fun drawAlarms(c: Canvas, ui: Ui, r: RectF) {
         if (alarms.isEmpty()) {
             ui.text(c, "No alarms", r.centerX(), ui.baselineFor(r.centerY() - 14f * ui.sc, 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
-            ui.text(c, "Press Y to add one", r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+            ui.text(c, com.belleui.kit.Keys.hint("Press Y to add one"), r.centerX(), ui.baselineFor(r.centerY() + 16f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
             return
         }
         alarmList.draw(c, ui, r, alarms.size) { i ->

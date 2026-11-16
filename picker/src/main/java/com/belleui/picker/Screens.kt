@@ -41,7 +41,7 @@ class StatusScreen(private val act: PickerActivity) : Screen() {
     private fun rows(): List<Row> {
         val g = shell.ui.gfx
         return listOf(
-            Row("Access to files", if (act.hasAccess()) "Allowed" else "Not allowed - press A to allow", icon = g.get("qgn_prop_fmgr_phone_memc_sub"), check = act.hasAccess()),
+            Row("Access to files", if (act.hasAccess()) "Allowed" else com.belleui.kit.Keys.hint("Not allowed - press A to allow"), icon = g.get("qgn_prop_fmgr_phone_memc_sub"), check = act.hasAccess()),
             Row("Picks for other apps", if (act.mode == Mode.NONE) "Folders and files, whenever an app asks" else "An app is waiting for your choice", icon = g.get("qgn_prop_folder_small")),
         )
     }

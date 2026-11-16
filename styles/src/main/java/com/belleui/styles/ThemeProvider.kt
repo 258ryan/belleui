@@ -15,8 +15,8 @@ class ThemeProvider : ContentProvider() {
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor {
         val p = context!!.getSharedPreferences("styles", android.content.Context.MODE_PRIVATE)
-        val c = MatrixCursor(arrayOf("accent", "sounds", "light"))
-        c.addRow(arrayOf<Any>(p.getInt("accent", 0), if (p.getBoolean("sounds", true)) 1 else 0, if (p.getBoolean("light", false)) 1 else 0))
+        val c = MatrixCursor(arrayOf("accent", "sounds", "light", "hints"))
+        c.addRow(arrayOf<Any>(p.getInt("accent", 0), if (p.getBoolean("sounds", true)) 1 else 0, if (p.getBoolean("light", false)) 1 else 0, if (p.getBoolean("hints", true)) 1 else 0))
         return c
     }
 

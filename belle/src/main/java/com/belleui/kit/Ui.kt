@@ -20,7 +20,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-/** Belle measurements (Qt Components nHD profile, 1 px = 1 device px) and colours. */
+/** Belle measurements and colours, on the 640x480 grid of the Nokia E6 (1 design px = 1 E6 px). */
 object Belle {
     const val DEFAULT_BLUE = 0xFF1080DD.toInt()
 
@@ -39,6 +39,9 @@ object Belle {
 
     /** Navigation sounds on or off (set in Styles). */
     @JvmField @Volatile var soundsOn = true
+
+    /** The small gamepad letters beside the toolbar buttons (set in Styles). The E6 toolbar has none: off is the real look. */
+    @JvmField @Volatile var keyHints = true
 
     fun setAccent(a: Int) {
         BLUE = a
@@ -644,7 +647,7 @@ class Ui(val ctx: Context) {
             val alpha = if (enabled[i]) 255 else 90
             glyph(c, kinds[i], xs[i], cy, 30f * sc, al(Color.WHITE, alpha))
             val l = letters[i]
-            if (l != null) {
+            if (l != null && Belle.keyHints) {
                 val dx = if (i == kinds.size - 1) -27f * sc else 27f * sc
                 text(c, l, xs[i] + dx, baselineFor(cy, 13f * sc, medium), 13f * sc, al(Color.WHITE, 110), Paint.Align.CENTER, face = medium)
             }
@@ -688,7 +691,7 @@ class Ui(val ctx: Context) {
 
     // ---- lists ---------------------------------------------------------------------------------
 
-    /** Belle ListItem: 70px, 12px inset, 50px icon, 22px title, 18px light subtitle, 1px separator. */
+    /** E6 list item: 94 px tall, 20 px inset, 64 px icon, 26 px title, 21 px light subtitle, 1 px separator. */
     fun listRow(c: Canvas, r: RectF, selected: Boolean, row: Row) {
         // the blue highlight keeps white text on a light page too
         if (selected) enterDark()

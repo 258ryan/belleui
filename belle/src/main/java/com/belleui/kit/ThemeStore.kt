@@ -31,6 +31,7 @@ object ThemeStore {
         }
         Belle.soundsOn = p.getBoolean("sounds", true)
         Belle.lightLists = p.getBoolean("light", false)
+        Belle.keyHints = p.getBoolean("hints", true)
     }
 
     /** Asks Styles for the current values on a worker thread; [onChange] runs on the main thread if they differ. */
@@ -44,9 +45,12 @@ object ThemeStore {
                         val sounds = c.getInt(1) != 0
                         val lightCol = c.getColumnIndex("light")
                         val light = if (lightCol >= 0) c.getInt(lightCol) != 0 else Belle.lightLists
-                        var changed = Belle.soundsOn != sounds || Belle.lightLists != light
+                        val hintsCol = c.getColumnIndex("hints")
+                        val hints = if (hintsCol >= 0) c.getInt(hintsCol) != 0 else Belle.keyHints
+                        var changed = Belle.soundsOn != sounds || Belle.lightLists != light || Belle.keyHints != hints
                         Belle.lightLists = light
-                        val e = prefs(app).edit().putBoolean("sounds", sounds).putBoolean("light", light)
+                        Belle.keyHints = hints
+                        val e = prefs(app).edit().putBoolean("sounds", sounds).putBoolean("light", light).putBoolean("hints", hints)
                         Belle.soundsOn = sounds
                         if (accent != 0 && accent != Belle.DEFAULT_BLUE) {
                             e.putInt("accent", accent)
@@ -67,9 +71,10 @@ object ThemeStore {
     }
 
     /** Used by Styles itself, so its own screens change at once. */
-    fun apply(ctx: Context, accent: Int, sounds: Boolean, light: Boolean = Belle.lightLists) {
-        prefs(ctx).edit().putInt("accent", accent).putBoolean("sounds", sounds).putBoolean("light", light).apply()
+    fun apply(ctx: Context, accent: Int, sounds: Boolean, light: Boolean = Belle.lightLists, hints: Boolean = Belle.keyHints) {
+        prefs(ctx).edit().putInt("accent", accent).putBoolean("sounds", sounds).putBoolean("light", light).putBoolean("hints", hints).apply()
         Belle.lightLists = light
+        Belle.keyHints = hints
         shared = accent
         Belle.soundsOn = sounds
         Belle.setAccent(accent)

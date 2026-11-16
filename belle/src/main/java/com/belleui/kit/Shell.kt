@@ -33,6 +33,16 @@ object Keys {
     /** How many times the key being handled has repeated (0 for the first press). */
     @Volatile @JvmField var repeat = 0
 
+    /** True with the Nintendo layout (B confirms, X is the first tool); kept up to date by the shell. */
+    @Volatile @JvmField var swap = false
+
+    private val pressKey = Regex("(?<=[Pp]ress )[ABXY]\\b")
+
+    /** A hint such as "Press A to allow", with the letter of the button that does it in the current layout. */
+    fun hint(text: String): String = if (!swap) text else pressKey.replace(text) {
+        when (it.value) { "A" -> "B"; "B" -> "A"; "X" -> "Y"; else -> "X" }
+    }
+
     fun actionFor(code: Int, swap: Boolean): Act? = when (code) {
         KeyEvent.KEYCODE_DPAD_UP -> Act.UP
         KeyEvent.KEYCODE_DPAD_DOWN -> Act.DOWN
@@ -329,6 +339,7 @@ class AlphaIndex {
         if (letters.size < 3 || x < r.right - 30f * ui.sc) return null
         val step = min((r.height() - 12f * ui.sc) / letters.size, 22f * ui.sc)
         val top = r.centerY() - step * letters.size / 2f
+        if (y < top) return null
         val i = ((y - top) / step).toInt()
         return letters.getOrNull(i)
     }
@@ -429,7 +440,7 @@ abstract class Overlay {
     }
 }
 
-/** Belle options Menu: slides up over the toolbar, 64px items, full-width Cancel button. */
+/** Belle options Menu: slides up over the toolbar, 80 px items (squeezed when many), full-width 67 px Cancel button. */
 class MenuOverlay(private val items: List<MenuItem>) : Overlay() {
     override val slideUp get() = true
     private var sel = 0
@@ -494,7 +505,7 @@ class MenuOverlay(private val items: List<MenuItem>) : Overlay() {
     }
 }
 
-/** SelectionDialog: blue heading with close icon, 64px items, the chosen one carries a tick. */
+/** E6 selection popup: blue title over a blue rule, 80 px items, the chosen one carries a tick, full-width Back button. */
 class ListDialog(
     private val title: String,
     private val items: List<String>,
@@ -512,6 +523,7 @@ class ListDialog(
         val rowH = Belle.MENU_ITEM_H * ui.sc
         vis = max(1, min(items.size, ((cBot - cTop - 70f * ui.sc) / rowH).toInt()))
         if (sel < top) top = sel else if (sel >= top + vis) top = sel - vis + 1
+        top = top.coerceIn(0, max(0, items.size - vis))
         val bw = min(504f * ui.sc, w - 16f * ui.sc)
         val backH = 67f * ui.sc
         val bh = 50f * ui.sc + rowH * vis + 6f * ui.sc + backH + 8f * ui.sc
@@ -562,7 +574,8 @@ class ListDialog(
             shell.closeOverlay()
             return true
         }
-        val row = ((y - box.top - 50f * sc) / (Belle.MENU_ITEM_H * sc)).toInt()
+        // the title bar is not a row (a plain toInt() would round a tap on it to row 0)
+        val row = Math.floor(((y - box.top - 50f * sc) / (Belle.MENU_ITEM_H * sc)).toDouble()).toInt()
         if (row in 0 until vis) {
             sel = top + row
             onAct(Act.OK, shell)
@@ -583,14 +596,36 @@ class QueryDialog(
     private val box = RectF()
     private val yesR = RectF()
     private val noR = RectF()
+    private var wrapped: List<String> = emptyList()
+    private var wrappedFor = 0f
+
+    /** The message broken into lines that fit the box, so a long sentence is never cut off with dots. */
+    private fun wrap(ui: Ui, maxW: Float, size: Float): List<String> {
+        if (wrappedFor == maxW && wrapped.isNotEmpty()) return wrapped
+        val out = ArrayList<String>()
+        for (para in message.split("\n")) {
+            var line = ""
+            for (word in para.split(' ')) {
+                val t = if (line.isEmpty()) word else "$line $word"
+                if (line.isEmpty() || ui.measure(t, size) <= maxW) line = t else {
+                    out.add(line)
+                    line = word
+                }
+            }
+            out.add(line)
+        }
+        wrapped = out
+        wrappedFor = maxW
+        return out
+    }
 
     /** The Belle dialog: dimmed screen, a box in the middle with its heading bar, the message and the buttons inside it. */
     override fun draw(c: Canvas, ui: Ui, w: Float, h: Float, cTop: Float, cBot: Float) {
         val sc = ui.sc
         ui.rf.set(0f, cTop, w, cBot)
         ui.fill(c, ui.rf, ui.al(Color.BLACK, 140))
-        val lines = message.split("\n")
         val bw = min(480f * sc, w - 24f * sc)
+        val lines = wrap(ui, bw - 52f * sc, 22f * sc)
         val head = 64f * sc
         val btnH = 67f * sc
         val bh = head + lines.size * 30f * sc + 22f * sc + btnH + 9f * sc
@@ -760,7 +795,10 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private val prefs = activity.getSharedPreferences("belle_shell", Context.MODE_PRIVATE)
     var swapPad: Boolean
         get() = prefs.getBoolean("swapPad", false)
-        set(v) = prefs.edit().putBoolean("swapPad", v).apply()
+        set(v) {
+            prefs.edit().putBoolean("swapPad", v).apply()
+            Keys.swap = v
+        }
 
     private val stack = ArrayList<Screen>()
     private var overlay: Overlay? = null
@@ -822,6 +860,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     init {
         isFocusable = true
         if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+        Keys.swap = swapPad
     }
 
     fun onContentChanged(l: () -> Unit) {
