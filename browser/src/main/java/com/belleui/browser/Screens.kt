@@ -99,12 +99,40 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
         // nothing: the WebView underneath is the content
     }
 
+    private val urlBar = RectF()
+
+    /** The E6 browser's address bar: a white field with the page address and the refresh key beside it. */
+    private fun drawAddressBar(c: Canvas, ui: Ui, r: RectF) {
+        val sc = ui.sc
+        val h = 53f * sc
+        ui.p.style = Paint.Style.FILL
+        ui.p.shader = null
+        ui.p.color = 0xFF101010.toInt()
+        c.drawRect(r.left, r.top, r.right, r.top + h, ui.p)
+        urlBar.set(r.left + 8f * sc, r.top + 4f * sc, r.right - 74f * sc, r.top + h - 4f * sc)
+        ui.p.color = Color.WHITE
+        c.drawRoundRect(urlBar, 5f * sc, 5f * sc, ui.p)
+        val addr = act.pageUrl.removePrefix("https://").removePrefix("http://").removePrefix("www.")
+        ui.text(c, addr, urlBar.left + 12f * sc, ui.baselineFor(urlBar.centerY(), 24f * sc), 24f * sc, 0xFF1B1B1B.toInt(), maxW = urlBar.width() - 24f * sc)
+        ui.glyph(c, if (act.loading) Ic.CLOSE else Ic.REFRESH, r.right - 36f * sc, r.top + h / 2f, 38f * sc)
+        ui.p.color = Belle.BLUE
+        c.drawRect(r.left, r.top + h - 2f * sc, r.right, r.top + h, ui.p)
+    }
+
+    override fun onTap(x: Float, y: Float): Boolean {
+        val h = 53f * shell.ui.sc
+        if (y < shell.contentTop || y > shell.contentTop + h) return false
+        if (x > shell.width - 74f * shell.ui.sc) { if (act.loading) act.web.stopLoading() else act.web.reload() } else act.showAddress()
+        return true
+    }
+
     override fun drawOver(c: Canvas, ui: Ui, r: RectF) {
+        if (!act.fullscreenVideo) drawAddressBar(c, ui, r)
         if (act.loading) {
             ui.p.style = Paint.Style.FILL
             ui.p.shader = null
             ui.p.color = Belle.BLUE_LIGHT
-            c.drawRect(r.left, r.top, r.left + r.width() * act.loadProgress / 100f, r.top + 4f * ui.sc, ui.p)
+            c.drawRect(r.left, r.top + 53f * ui.sc, r.left + r.width() * act.loadProgress / 100f, r.top + 57f * ui.sc, ui.p)
         }
         if (navMode != 1 || act.addressOpen || act.fullscreenVideo) return
         if (cx < 0) {

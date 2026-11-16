@@ -182,6 +182,14 @@ class CalcScreen(private val act: CalcActivity) : Screen() {
             ui.pushButton(cv, rect, k, selected)
             return
         }
+        // operators and clear wear the app's amber / red, so the keypad reads at a glance
+        val tint = when (k) { "÷", "×", "−", "+", "=" -> Belle.BLUE; "C" -> 0xFFD84545.toInt(); else -> 0 }
+        if (tint != 0) {
+            ui.p.style = Paint.Style.FILL
+            ui.p.shader = android.graphics.LinearGradient(0f, rect.top, 0f, rect.bottom, ui.al(Belle.BLUE_LIGHT.takeIf { tint == Belle.BLUE } ?: tint, 190), ui.al(tint, 190), android.graphics.Shader.TileMode.CLAMP)
+            cv.drawRoundRect(rect.left + 2f * sc, rect.top + 2f * sc, rect.right - 2f * sc, rect.bottom - 2f * sc, 8f * sc, 8f * sc, ui.p)
+            ui.p.shader = null
+        }
         val g = glyphs[k]
         if (g == null || !ui.gfx.glyph(cv, "qgn_indi_calc_$g", rect.centerX(), rect.centerY(), minOf(rect.height() * 0.62f, 40f * sc))) {
             ui.text(cv, k, rect.centerX(), ui.baselineFor(rect.centerY(), 26f * sc), 26f * sc, Color.WHITE, Paint.Align.CENTER)

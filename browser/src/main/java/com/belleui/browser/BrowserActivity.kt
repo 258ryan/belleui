@@ -91,7 +91,7 @@ class BrowserActivity : BelleActivity() {
 
     private fun layoutWeb() {
         val lp = web.layoutParams as FrameLayout.LayoutParams
-        val top = homeUi.contentTop.toInt()
+        val top = homeUi.contentTop.toInt() + (53f * homeUi.ui.sc).toInt() // the address bar sits above the page
         val bottom = (homeUi.height - homeUi.contentBottom).toInt()
         if (lp.topMargin != top || lp.bottomMargin != bottom) {
             lp.topMargin = top
