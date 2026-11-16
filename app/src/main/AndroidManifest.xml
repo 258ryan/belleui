@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
-    <!-- the Recent page lists what was used lately; without this the launcher is not offered under "Usage access" -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- do NOT request PACKAGE_USAGE_STATS (or any other signature|privileged permission) here: the module installs the
+         launcher in /system/priv-app, and a privileged app asking for one that is not in a privapp-permissions allowlist
+         stops the system server at boot. The module grants usage access through the GET_USAGE_STATS app-op instead. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
