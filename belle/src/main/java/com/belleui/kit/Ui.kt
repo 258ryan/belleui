@@ -356,11 +356,11 @@ class Ui(val ctx: Context) {
     /** Belle TextField: the one pale surface on a Belle screen. */
     fun textField(c: Canvas, r: RectF, text: String, hint: String, focused: Boolean) {
         nine(c, if (focused) "qtg_fr_textfield_highlighted" else "qtg_fr_textfield_editable", r, 40, 20f)
-        val pad = 12f * sc
+        val pad = 16f * sc
         if (text.isEmpty()) {
-            this.text(c, hint, r.left + pad, baselineFor(r.centerY(), 20f * sc), 20f * sc, 0xFF8A8A8A.toInt(), maxW = r.width() - 2 * pad)
+            this.text(c, hint, r.left + pad, baselineFor(r.centerY(), 26f * sc), 26f * sc, 0xFF8A8A8A.toInt(), maxW = r.width() - 2 * pad)
         } else {
-            this.text(c, text, r.left + pad, baselineFor(r.centerY(), 20f * sc), 20f * sc, 0xFF1B1B1B.toInt(), maxW = r.width() - 2 * pad)
+            this.text(c, text, r.left + pad, baselineFor(r.centerY(), 26f * sc), 26f * sc, 0xFF1B1B1B.toInt(), maxW = r.width() - 2 * pad)
         }
     }
 
@@ -812,19 +812,20 @@ class Ui(val ctx: Context) {
         if (selected) {
             nine(c, "qtg_fr_pushbutton_pressed", r, 40, 20f)
         } else {
-            // colours sampled from the real Belle Cancel / Yes / No buttons
+            // the E6 dialog button, sampled from the device: a lighter 1 px top edge, then dark grey fading to near black
             val rad = 6f * sc
             p.style = Paint.Style.FILL
-            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF585953.toInt(), 0xFF393A34.toInt(), Shader.TileMode.CLAMP)
+            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, intArrayOf(0xFF737373.toInt(), 0xFF404040.toInt(), 0xFF2E2E2E.toInt(), 0xFF1F1F1F.toInt()), floatArrayOf(0f, 0.03f, 0.5f, 1f), Shader.TileMode.CLAMP)
             c.drawRoundRect(r, rad, rad, p)
             p.shader = null
             p.style = Paint.Style.STROKE
             p.strokeWidth = 1f * sc
-            p.color = al(Color.BLACK, 170)
+            p.color = 0xFF000000.toInt()
             c.drawRoundRect(r, rad, rad, p)
             p.style = Paint.Style.FILL
         }
-        text(c, label, r.centerX(), baselineFor(r.centerY(), 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER, maxW = r.width() - 8f * sc)
+        val size = min(28f * sc, r.height() * 0.5f)
+        text(c, label, r.centerX(), baselineFor(r.centerY(), size), size, Color.WHITE, Paint.Align.CENTER, maxW = r.width() - 8f * sc)
     }
 
     fun banner(c: Canvas, w: Float, text: String, t: Float) = onDark { banner0(c, w, text, t) }

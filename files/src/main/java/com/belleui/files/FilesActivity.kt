@@ -87,11 +87,11 @@ class FilesActivity : BelleActivity() {
         val sc = homeUi.ui.sc
         val lp = field.layoutParams as FrameLayout.LayoutParams
         lp.topMargin = (homeUi.contentTop + 6f * sc).toInt()
-        lp.height = (46f * sc).toInt()
+        lp.height = (53f * sc).toInt()
         lp.leftMargin = (8f * sc).toInt()
         lp.rightMargin = (8f * sc).toInt()
         field.layoutParams = lp
-        field.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * sc)
+        field.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24f * sc)
         field.hint = hint
         field.setText(initial)
         textCb = cb

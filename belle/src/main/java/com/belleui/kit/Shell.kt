@@ -434,7 +434,7 @@ class MenuOverlay(private val items: List<MenuItem>) : Overlay() {
     override fun draw(c: Canvas, ui: Ui, w: Float, h: Float, cTop: Float, cBot: Float) {
         sc = ui.sc
         itemH = min(Belle.MENU_ITEM_H * ui.sc, (h - cTop - 90f * ui.sc) / max(1, items.size))
-        val bh = itemH * items.size + 4f * ui.sc + 6f * ui.sc + 50f * ui.sc + 8f * ui.sc
+        val bh = itemH * items.size + 4f * ui.sc + 6f * ui.sc + 67f * ui.sc + 8f * ui.sc
         box.set(0f, h - bh, w, h)
         ui.rf.set(box.left, box.top, box.right, box.bottom + 20f * ui.sc)
         ui.p.style = Paint.Style.FILL
@@ -457,7 +457,7 @@ class MenuOverlay(private val items: List<MenuItem>) : Overlay() {
             ui.text(c, items[i].label, box.left + 16f * ui.sc, ui.baselineFor(top + itemH / 2f, 22f * ui.sc), 22f * ui.sc, maxW = w - 40f * ui.sc)
         }
         val cy0 = top0 + itemH * items.size + 6f * ui.sc
-        ui.tmp.set(box.left + 8f * ui.sc, cy0, box.right - 8f * ui.sc, cy0 + 50f * ui.sc)
+        ui.tmp.set(box.left + 8f * ui.sc, cy0, box.right - 8f * ui.sc, cy0 + 67f * ui.sc)
         ui.pushButton(c, ui.tmp, "Cancel", sel == items.size)
     }
 
@@ -507,7 +507,8 @@ class ListDialog(
         vis = max(1, min(items.size, ((cBot - cTop - 70f * ui.sc) / rowH).toInt()))
         if (sel < top) top = sel else if (sel >= top + vis) top = sel - vis + 1
         val bw = min(504f * ui.sc, w - 16f * ui.sc)
-        val bh = 50f * ui.sc + rowH * vis + 6f * ui.sc
+        val backH = 67f * ui.sc
+        val bh = 50f * ui.sc + rowH * vis + 6f * ui.sc + backH + 8f * ui.sc
         val x = (w - bw) / 2f
         val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
         box.set(x, y, x + bw, y + bh)
@@ -526,7 +527,12 @@ class ListDialog(
             ui.text(c, items[i], box.left + 16f * ui.sc, ui.baselineFor(rt + rowH / 2f, 22f * ui.sc), 22f * ui.sc, maxW = bw - 90f * ui.sc)
             if (i == chosen) ui.glyph(c, Ic.CHECK, box.right - 34f * ui.sc, rt + rowH / 2f, 30f * ui.sc)
         }
+        // the full-width Back button of an E6 selection popup
+        backR.set(box.left + 9f * ui.sc, box.bottom - 8f * ui.sc - backH, box.right - 9f * ui.sc, box.bottom - 8f * ui.sc)
+        ui.pushButton(c, backR, "Back", false)
     }
+
+    private val backR = RectF()
 
     override fun onAct(a: Act, shell: BelleShell) {
         when (a) {
@@ -543,6 +549,10 @@ class ListDialog(
 
     override fun onTap(x: Float, y: Float, shell: BelleShell): Boolean {
         if (!box.contains(x, y)) {
+            shell.closeOverlay()
+            return true
+        }
+        if (backR.contains(x, y)) {
             shell.closeOverlay()
             return true
         }
@@ -574,9 +584,10 @@ class QueryDialog(
         ui.rf.set(0f, cTop, w, cBot)
         ui.fill(c, ui.rf, ui.al(Color.BLACK, 140))
         val lines = message.split("\n")
-        val bw = min(504f * sc, w - 24f * sc)
-        val head = 46f * sc
-        val bh = head + 18f * sc + lines.size * 28f * sc + 18f * sc + 46f * sc + 14f * sc
+        val bw = min(480f * sc, w - 24f * sc)
+        val head = 64f * sc
+        val btnH = 67f * sc
+        val bh = head + lines.size * 30f * sc + 22f * sc + btnH + 9f * sc
         val x = (w - bw) / 2f
         val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
         box.set(x, y, x + bw, y + bh)
@@ -584,16 +595,17 @@ class QueryDialog(
         // the heading is plain white text on the plate, as in the E6 query dialogs
         ui.text(c, title ?: (if (no == null) "Information" else "Confirm"), box.left + 26f * sc, ui.baselineFor(box.top + head / 2f + 4f * sc, 26f * sc), 26f * sc, maxW = bw - 52f * sc)
         for ((i, l) in lines.withIndex()) {
-            ui.text(c, l, box.left + 16f * sc, ui.baselineFor(box.top + head + 22f * sc + i * 28f * sc, 20f * sc), 20f * sc, maxW = bw - 32f * sc)
+            ui.text(c, l, box.left + 26f * sc, ui.baselineFor(box.top + head + 14f * sc + i * 30f * sc, 22f * sc), 22f * sc, maxW = bw - 52f * sc)
         }
-        val by = box.bottom - 14f * sc - 46f * sc
+        // the buttons run edge to edge along the bottom, 67 px tall with a 2 px gap (measured on the device)
+        val by = box.bottom - 9f * sc - btnH
+        val m = 9f * sc
         if (no == null) {
-            val bwid = 150f * sc
-            yesR.set(box.centerX() - bwid / 2f, by, box.centerX() + bwid / 2f, by + 46f * sc)
+            yesR.set(box.left + m, by, box.right - m, by + btnH)
         } else {
-            val half = (bw - 40f * sc) / 2f
-            yesR.set(box.left + 14f * sc, by, box.left + 14f * sc + half, by + 46f * sc)
-            noR.set(box.right - 14f * sc - half, by, box.right - 14f * sc, by + 46f * sc)
+            val half = (bw - 2 * m - 2f * sc) / 2f
+            yesR.set(box.left + m, by, box.left + m + half, by + btnH)
+            noR.set(box.right - m - half, by, box.right - m, by + btnH)
             ui.pushButton(c, noR, no, sel == 1)
         }
         ui.pushButton(c, yesR, yes, sel == 0)
