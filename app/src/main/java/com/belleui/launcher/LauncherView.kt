@@ -129,10 +129,10 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 40f
-    private var softH = 40f
-    private var cTop = 40f
-    private var cBot = 440f
+    private var statusH = 26f
+    private var softH = 60f
+    private var cTop = 30f
+    private var cBot = 436f
 
     // ---- paints ----------------------------------------------------------------------
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -463,20 +463,20 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> {
                 val n = menuApps.size
                 if (n == 0) {
-                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2)
+                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP) tabFocus = true
                     return
                 }
                 when (a) {
                     Act.LEFT -> if (menuSel % 4 == 0) setPage(0) else menuSel--
                     Act.RIGHT -> if (menuSel % 4 == 3 || menuSel == n - 1) setPage(2) else menuSel++
-                    Act.UP -> if (menuSel >= 4) menuSel -= 4
+                    Act.UP -> if (menuSel >= 4) menuSel -= 4 else tabFocus = true
                     Act.DOWN -> if (menuSel + 4 < n) menuSel += 4 else if (menuSel / 4 < (n - 1) / 4) menuSel = n - 1
                     Act.OK -> launch(menuApps[menuSel])
                     else -> {}
                 }
             }
             2 -> when (a) {
-                Act.UP -> if (recentSel > 0) recentSel--
+                Act.UP -> if (recentSel > 0) recentSel-- else tabFocus = true
                 Act.DOWN -> if (recentSel < recents.size - 1) recentSel++
                 Act.LEFT -> setPage(1)
                 Act.OK -> recents.getOrNull(recentSel)?.let { launch(it) }
@@ -555,9 +555,9 @@ class LauncherView(private val act: Activity) : View(act) {
                 }
             }
             1 -> {
-                val col = (0..3).lastOrNull { x >= gridOx() + (GRID_L + COL_X[it]) * sc } ?: 0
-                val row = ((y - menuAreaTop() - GRID_T * sc) / (ROW_PITCH * sc) + menuTop).toInt()
-                val idx = row * 4 + col
+                val cw = width / 4f
+                val ch = menuCellH()
+                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * 4 + (x / cw).toInt()
                 if (y > menuAreaTop() && idx in menuApps.indices) {
                     menuSel = idx
                     hit = true
@@ -769,8 +769,8 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = STATUS_H * sc
-        softH = SOFT_H * sc
+        statusH = 26f * sc
+        softH = 60f * sc
         cTop = statusH
         cBot = h - softH
         buildBackground()
@@ -787,9 +787,10 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun homeTileRect(i: Int, out: RectF): RectF {
-        // same footprint as an Applications grid cell (E6 cell_app_pane), so the highlight matches
-        val x = gridOx() + (GRID_L + COL_X[i]) * sc
-        out.set(x, cBot - 8f * sc - menuCellH(), x + CELL_W * sc, cBot - 8f * sc)
+        val cw = width / 4f
+        // same footprint as an Applications grid cell, so the highlight matches
+        val h = menuCellH() - 6f * sc
+        out.set(i * cw + 6f * sc, cBot - 12f * sc - h, (i + 1) * cw - 6f * sc, cBot - 12f * sc)
         return out
     }
 
@@ -797,14 +798,14 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun menuAreaBottom() = cBot
 
-    private fun menuCellH() = CELL_H * sc
-
-    private fun gridOx() = (width - 640f * sc) / 2f
+    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
-        val x = gridOx() + (GRID_L + COL_X[idx % 4]) * sc
-        val y = menuAreaTop() + GRID_T * sc + ((idx / 4) - top) * ROW_PITCH * sc
-        out.set(x, y, x + CELL_W * sc, y + CELL_H * sc)
+        val cw = width / 4f
+        val ch = menuCellH()
+        val x = (idx % 4) * cw
+        val y = menuAreaTop() + ((idx / 4) - top) * ch
+        out.set(x, y, x + cw, y + ch)
         return out
     }
 
@@ -1387,7 +1388,7 @@ class LauncherView(private val act: Activity) : View(act) {
             text(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
             drawFocus(c, menuFocus.cur, 12f * sc)
-            val cw = CELL_W * sc
+            val cw = w / 4f
             val ch = menuCellH()
             val isz = 70f * sc // graphicSizeLarge
             for (idx in menuApps.indices) {
@@ -1411,6 +1412,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
+        drawTabBar(c, 0)
     }
 
     /** Belle tab bar: right under the status bar, full width, theme tab frames. */
@@ -1496,6 +1498,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
+        drawTabBar(c, 1)
     }
 
     private fun mix(a: Int, b: Int, t: Float): Int {
@@ -1524,15 +1527,15 @@ class LauncherView(private val act: Activity) : View(act) {
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
 
         val cy = statusH / 2f
-        text(c, pageTitle(), 10f * sc, baselineFor(cy, 22f * sc), 22f * sc, Color.WHITE)
+        text(c, pageTitle(), 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 22f * sc
+        val csz = 18f * sc
         val tw = measure(time, csz)
-        text(c, time, w - 10f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
+        text(c, time, w - 8f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
 
-        val bw = 30f * sc
-        val bh = 22f * sc
-        val bLeft = w - 10f * sc - tw - 10f * sc - bw
+        val bw = 24f * sc
+        val bh = 18f * sc
+        val bLeft = w - 8f * sc - tw - 10f * sc - bw
         drawBattery(c, bLeft, cy - bh / 2f, bw, bh)
         if (wifi) drawWifi(c, bLeft - 18f * sc, statusH * 0.76f, 10f * sc)
     }
@@ -1757,18 +1760,8 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private companion object {
-        // E6 Belle (pql2_av_qvga2_lsc, 640x480 landscape): main_pane top/bottom 40, control_pane 40 high
-        const val STATUS_H = 40f
-        const val SOFT_H = 40f
-        const val TAB = 0f       // the E6 grid has no tab bar; Recent is reached by paging
-        const val HEADER = 0f
-        // grid_app_pane variety 3 / cell_app_pane variety 2: pane 608x396 at (4,2), cells 152x115
-        const val GRID_L = 4f
-        const val GRID_T = 2f
-        const val CELL_W = 152f
-        const val CELL_H = 115f
-        const val ROW_PITCH = 132f
-        val COL_X = floatArrayOf(0f, 142f, 304f, 456f)
+        const val TAB = 50f      // tab bar (landscape; 60 in portrait)
+        const val HEADER = 50f   // list starts under the tab bar
         const val ROW = 70f      // heightListItem
         const val POPUP_ROW = 64f // heightMenuItem
         const val WIDGET_CLOCK = 0
