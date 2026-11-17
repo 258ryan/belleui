@@ -14,10 +14,51 @@ n=$(cat $D/sysui_boots 2>/dev/null)
 [ -z "$n" ] && n=0
 n=$((n + 1))
 echo $n > $D/sysui_boots
-if [ "$n" -ge 3 ]; then
+# Boot guard. service.sh sets the counter back to 0 once the System UI is up, so every step below means "the last boot(s) did not get there".
+#   3rd unconfirmed boot: the framework overlay and the system font go (they act on the whole system) and stay off until $D/guard_tripped is deleted
+#   4th: the stock System UI too
+#   5th: the whole module is switched off (skip_mount): the phone boots as if it were not installed. Delete $MODDIR/skip_mount and $D/guard_tripped to try again.
+if [ "$n" -ge 3 ] && [ ! -f $D/guard_tripped ]; then
+  touch $D/guard_tripped
+  echo "$(date): $n unconfirmed boots: framework overlay and system font switched off" >> $D/sysui.log
+fi
+if [ "$n" -ge 4 ]; then
   variant=none
   echo "$(date): $n unconfirmed boots, using the stock System UI" >> $D/sysui.log
 fi
+if [ "$n" -ge 5 ]; then
+  touch $MODDIR/skip_mount
+  echo "$(date): $n unconfirmed boots, the whole module is switched off (skip_mount)" >> $D/sysui.log
+fi
+echo $variant > $D/variant
+
+# The Android framework in Belle dress: the colour/controls overlay (/product/overlay) and the Nokia Sans font. Rebuilt every boot from extra/,
+# so framework=0 / font=0 in $D/config (or the guard above) take effect on the next boot.
+rm -rf $MODDIR/system/product/overlay $MODDIR/system/fonts
+if [ ! -f $D/guard_tripped ]; then
+  if [ "$framework" != "0" ] && [ -f $MODDIR/extra/framework/BelleUIFramework.apk ]; then
+    mkdir -p $MODDIR/system/product/overlay
+    cp $MODDIR/extra/framework/BelleUIFramework.apk $MODDIR/system/product/overlay/BelleUIFramework.apk
+    chmod 755 $MODDIR/system/product $MODDIR/system/product/overlay
+    chmod 644 $MODDIR/system/product/overlay/BelleUIFramework.apk
+    chown -R 0:0 $MODDIR/system/product
+    chcon -R u:object_r:system_file:s0 $MODDIR/system/product 2>/dev/null
+  fi
+  if [ "$font" != "0" ] && [ -f $MODDIR/extra/fonts/nosnr60.ttf ]; then
+    mkdir -p $MODDIR/system/fonts
+    for f in Roboto-Thin Roboto-Light Roboto-Regular; do
+      [ -f /system/fonts/$f.ttf ] && cp $MODDIR/extra/fonts/nosnr60.ttf $MODDIR/system/fonts/$f.ttf
+    done
+    for f in Roboto-Medium Roboto-Bold Roboto-Black; do
+      [ -f /system/fonts/$f.ttf ] && cp $MODDIR/extra/fonts/nssb60.ttf $MODDIR/system/fonts/$f.ttf
+    done
+    chmod 755 $MODDIR/system/fonts
+    chmod 644 $MODDIR/system/fonts/*.ttf 2>/dev/null
+    chown -R 0:0 $MODDIR/system/fonts
+    chcon -R u:object_r:system_file:s0 $MODDIR/system/fonts 2>/dev/null
+  fi
+fi
+
 T=$MODDIR/system/system_ext/priv-app/SystemUI
 rm -rf $MODDIR/system/system_ext/priv-app
 case "$variant" in

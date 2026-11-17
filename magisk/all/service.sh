@@ -17,6 +17,10 @@ system_ui=belle
 install_system_ui=1
 # install the Belle Chooser (Vector) module APK once
 install_vector_module=1
+# the Android framework in Belle dress: 1 = on (default), 0 = off. They act on the whole system, so after three boots that
+# do not come up they are switched off by themselves (until you delete /data/adb/belleui/guard_tripped)
+framework=1
+font=1
 EOT
 fi
 . $CONF
@@ -75,25 +79,24 @@ if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f 
   pm install -r $MODDIR/extra/BelleUI-Chooser-Vector.apk >/dev/null 2>&1 && touch $DIR/vector_installed
 fi
 
-# System UI boot guard: once the chosen System UI is up, the "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
-variant=${system_ui:-belle}
-[ "$install_system_ui" = "0" ] && variant=none
-if [ "$variant" != "none" ]; then
-  sleep 30
-  ok=0
-  if [ "$variant" = "belle" ]; then
-    # the Belle System UI writes the boot number into a setting once it is the registered status bar
-    [ "$(settings get global belle_sysui_ok)" = "$(settings get global boot_count)" ] && ok=1
-  else
-    # the stock one: its process is running and the status bar window exists
-    if [ -n "$(pidof com.android.systemui)" ] && dumpsys window windows 2>/dev/null | grep -q "StatusBar"; then ok=1; fi
-  fi
-  {
-    echo "$(date): System UI check variant=$variant ok=$ok"
-    logcat -d -s BelleSysUi:V 2>&1 | tail -20
-  } >> $DIR/sysui.log
-  [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
+# Boot guard: once the System UI (the Belle one, or the stock one if the guard in post-fs-data.sh fell back to it) is up, the
+# "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
+variant=$(cat $DIR/variant 2>/dev/null)
+[ -z "$variant" ] && variant=${system_ui:-belle}
+sleep 20
+ok=0
+if [ "$variant" = "belle" ]; then
+  # the Belle System UI writes the boot number into a setting once it is the registered status bar
+  [ "$(settings get global belle_sysui_ok)" = "$(settings get global boot_count)" ] && ok=1
+else
+  # the stock one: its process is running and the status bar window exists
+  if [ -n "$(pidof com.android.systemui)" ] && dumpsys window windows 2>/dev/null | grep -q "StatusBar"; then ok=1; fi
 fi
+{
+  echo "$(date): System UI check variant=$variant ok=$ok"
+  logcat -d -s BelleSysUi:V 2>&1 | tail -20
+} >> $DIR/sysui.log
+[ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
 
 # Belle puts the clock at the right end of the status bar next to the battery (Lineage setting: 0 right, 1 centre, 2 left); set once
 if [ ! -f $DIR/clock_right_set ]; then

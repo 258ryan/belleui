@@ -22,32 +22,11 @@ if [ -f /data/adb/belleui/config ] && grep -q '^system_ui=restyled' /data/adb/be
 fi
 echo 0 > /data/adb/belleui/sysui_boots
 
-# --- the Android framework in Belle dress: colours and controls (a static overlay) and the Nokia Sans system font.
-# Both can be left out by putting framework=0 and/or font=0 in /data/adb/belleui/config before installing.
-CONF=/data/adb/belleui/config
-want() { ! grep -q "^$1=0" "$CONF" 2>/dev/null; }
-if want framework; then
-  ui_print "- Android framework: Belle colours and controls (overlay on android)"
-  set_perm_recursive "$MODPATH/system/product/overlay" 0 0 0755 0644
-else
-  ui_print "- Android framework overlay left out (framework=0 in $CONF)"
-  rm -rf "$MODPATH/system/product/overlay"
-fi
-if want font; then
-  mkdir -p "$MODPATH/system/fonts"
-  nf=0
-  for f in Roboto-Thin Roboto-Light Roboto-Regular; do
-    if [ -f "/system/fonts/$f.ttf" ]; then cp "$MODPATH/fonts/nosnr60.ttf" "$MODPATH/system/fonts/$f.ttf"; nf=$((nf+1)); fi
-  done
-  for f in Roboto-Medium Roboto-Bold Roboto-Black; do
-    if [ -f "/system/fonts/$f.ttf" ]; then cp "$MODPATH/fonts/nssb60.ttf" "$MODPATH/system/fonts/$f.ttf"; nf=$((nf+1)); fi
-  done
-  set_perm_recursive "$MODPATH/system/fonts" 0 0 0755 0644
-  ui_print "- System font: Nokia Sans S60 ($nf Roboto files replaced)"
-else
-  ui_print "- System font left unchanged (font=0 in $CONF)"
-fi
-rm -rf "$MODPATH/fonts"
-ui_print "    If a boot fails after installing: put framework=0 or font=0 in $CONF (or touch /data/adb/modules/belleui_all/disable), reboot."
+# --- the Android framework in Belle dress (colours and controls overlay, Nokia Sans font): placed at every boot by post-fs-data.sh
+ui_print "- Android framework overlay and Nokia Sans font: on (framework=0 / font=0 in /data/adb/belleui/config turn them off)"
+ui_print "    A boot guard switches them, then the stock System UI, then this whole module off if boots keep failing:"
+ui_print "    3 failed boots -> overlay and font off, 4 -> stock System UI, 5 -> module off (delete skip_mount in the module folder to retry)."
+rm -f /data/adb/belleui/guard_tripped
+rm -f "$MODPATH/skip_mount"
 ui_print "- Reboot. Settings live in /data/adb/belleui/config"
 ui_print "- To remove: remove the module in Magisk and reboot (the Vector module APK, if installed, stays: uninstall it like any app)."
