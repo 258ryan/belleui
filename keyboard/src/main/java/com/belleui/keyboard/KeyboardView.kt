@@ -43,8 +43,8 @@ class KeyboardView(ctx: Context) : View(ctx) {
 
     private val gfx = com.belleui.kit.BelleGfx(ctx)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.NORMAL); textAlign = Paint.Align.CENTER }
-    private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif-light", Typeface.NORMAL); textAlign = Paint.Align.CENTER; color = 0xFF8A8A8A.toInt() }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = com.belleui.kit.NokiaFonts.regular(context); textAlign = Paint.Align.CENTER }
+    private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = com.belleui.kit.NokiaFonts.regular(context); textAlign = Paint.Align.CENTER; color = 0xFF8A8A8A.toInt() }
     private val rect = RectF()
     private val path = Path()
     private var sc = 1f

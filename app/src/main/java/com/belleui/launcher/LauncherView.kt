@@ -158,8 +158,8 @@ class LauncherView(private val act: Activity) : View(act) {
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val rf = RectF()
     private val tmp = RectF()
-    private val light = Typeface.create("sans-serif-light", Typeface.NORMAL)
-    private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val light = com.belleui.kit.NokiaFonts.regular(context)
+    private val medium = com.belleui.kit.NokiaFonts.semibold(context)
     private var lastNs = System.nanoTime()
     private var scrollAccum = 0f
 
@@ -1274,7 +1274,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // drawing  (Symbian Belle / Anna: soft, glossy, dark, vivid squircle icons, icon toolbar)
     // =====================================================================================
 
-    private val sans = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val sans = com.belleui.kit.NokiaFonts.regular(context)
 
     private fun al(color: Int, a: Int) = (color and 0x00FFFFFF) or (a.coerceIn(0, 255) shl 24)
 

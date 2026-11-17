@@ -235,9 +235,10 @@ class Ui(val ctx: Context) {
     val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
     val rf = RectF()
     val tmp = RectF()
-    val sans: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-    val light: Typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
-    val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    // the firmware's own typeface, Nokia Sans S60 (see NokiaFonts); it has no Light weight, so Light is Regular
+    val sans: Typeface = NokiaFonts.regular(ctx)
+    val light: Typeface = sans
+    val medium: Typeface = NokiaFonts.semibold(ctx)
     private val path = Path()
     private val coverSrc = android.graphics.Rect()
 
