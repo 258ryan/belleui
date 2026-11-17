@@ -1,0 +1,37 @@
+name: Framework overlay graphics
+# Renders the Belle theme SVGs of the firmware dump (release "dump") into framework-overlay and commits the PNGs.
+on:
+  push:
+    branches: [e6-firmware-layout]
+    paths:
+      - tools/framework/**
+      - .github/workflows/framework-assets.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin python3-pil
+      - name: Get the dump
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download dump -p rm-609.zip
+      - name: Extract the theme SVGs
+        run: |
+          unzip -q rm-609.zip 'sys/bin/symbianplugin_1_1_2.dll'
+          python3 tools/e6-firmware/e32unpack.py sys/bin/symbianplugin_1_1_2.dll plugin.bin
+          python3 tools/belle-tokens/qrc_extract.py plugin.bin qrc
+          ls qrc/params/graphics_1_1_2 | wc -l
+      - name: Render
+        run: python3 tools/framework/make_assets.py qrc/params/graphics_1_1_2 framework-overlay/src/main/res/drawable-nodpi
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add framework-overlay/src/main/res/drawable-nodpi
+          if git diff --cached --quiet; then echo "no change"; else git commit -m "Framework overlay: Belle graphics rendered from the firmware's SVGs" && git push; fi

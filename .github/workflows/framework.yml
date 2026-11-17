@@ -2,6 +2,13 @@ name: Build the framework modules
 # Manual: the Belle colour overlay and the Nokia Sans font, each its own Magisk module (so either can be removed alone).
 on:
   workflow_dispatch:
+  push:
+    branches: [e6-firmware-layout]
+    paths:
+      - framework-overlay/**
+      - magisk/framework/**
+      - magisk/font/**
+      - .github/workflows/framework.yml
 
 permissions:
   contents: write
