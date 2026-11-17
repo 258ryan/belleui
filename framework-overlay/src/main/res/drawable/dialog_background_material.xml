@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle dialog plate (qtg_fr_popup) -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="10dp" android:drawable="@drawable/belle_popup" />
