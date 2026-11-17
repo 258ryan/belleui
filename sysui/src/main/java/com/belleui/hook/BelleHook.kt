@@ -131,7 +131,8 @@ object BelleHook {
                     val slop = 14f * ctx.resources.displayMetrics.density
                     if (!barOpened && e.rawY - barDownY > slop) {
                         barOpened = true
-                        status(ctx)
+                        // a pull down while the Status menu is already open must not toggle it shut
+                        if (!Hud.statusOpen) status(ctx)
                     }
                 }
             }
