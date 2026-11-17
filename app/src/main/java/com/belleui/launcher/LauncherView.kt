@@ -111,7 +111,11 @@ class LauncherView(private val act: Activity) : View(act) {
     private var tab = 1
     private var tabFocus = false
     private var homeSel = 0
-    private var homePage = 0 // which of the three home screens is showing
+    private var homePage = 0 // unused since the home views below; kept so old saved state still loads
+    private var homeView = 0 // which of the home views (up to six, the firmware's root configuration) is showing
+    private var viewShot: Bitmap? = null // the view that is sliding out
+    private var viewDir = 0
+    private var viewStartMs = 0L
     private var menuSel = 0
     private var menuTop = 0
     private var menuTopAnim = 0f
@@ -179,6 +183,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private val subRects = Array(3) { RectF() }
     private val media = MediaWidget(act) { postInvalidate() }
     private val calendar = CalendarWidget(act) { postInvalidate() }
+    private val contacts = ContactsWidget(act) { postInvalidate() }
     private var notesList: List<Pair<String, String>> = emptyList()
     private var noteIdx = 0
     private var notesLoadedAt = 0L
@@ -229,7 +234,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
             if (popup == null && !reorder && !homeEdit && abs(vx) > abs(vy) && abs(vx) > 600f) {
-                setPage(page + if (vx < 0) 1 else -1)
+                if (page == 0) {
+                    // between home views first, then on to the Menu (right) or the Hub (left)
+                    if (vx < 0) { if (homeView < repo.homeViewCount - 1) switchHomeView(1) else setPage(1) }
+                    else { if (homeView > 0) switchHomeView(-1) else setPage(-1) }
+                } else setPage(page + if (vx < 0) 1 else -1)
                 ensureVisible()
                 invalidate()
                 return true
@@ -1285,7 +1294,7 @@ class LauncherView(private val act: Activity) : View(act) {
             c.translate(d * w, 0f)
             when (i) {
                 -1 -> drawHub(c)
-                0 -> drawHome(c)
+                0 -> drawHomeView(c)
                 else -> if (tab == 2) drawRecent(c) else drawMenu(c)
             }
             c.restore()
@@ -1356,10 +1365,13 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5 -> 4 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5, 6 -> 4 to 2; 8 -> 2 to 2; else -> 4 to 1 }
+
+    /** Widgets with up to three buttons the focus steps through: music, quick switches, notes, favourite contacts. */
+    private fun hasSubs(t: Int) = t == 2 || t == 4 || t == 5 || t == 6
 
     /** The heights (in rows) each widget looks right at. */
-    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); else -> intArrayOf(1) }
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); 6 -> intArrayOf(2, 3); 8 -> intArrayOf(2, 3); else -> intArrayOf(1) }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1383,21 +1395,41 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun saveHome() {
-        repo.homeLayout = homeItems.joinToString(";") { "${if (it.widget) "w" else "a"},${it.id},${it.col},${it.row},${it.w},${it.h}" }
+        repo.setHomeLayoutOf(homeView, homeItems.joinToString(";") { "${if (it.widget) "w" else "a"},${it.id},${it.col},${it.row},${it.w},${it.h}" })
+    }
+
+    /** The ROM's default content of home views 2..6 (the views in rootconfiguration.xml), with Android's equivalents. */
+    private fun defaultView(v: Int) {
+        when (v) {
+            1 -> homeItems.add(HomeItem(true, "6", 0, 1, 4, 2))              // contactfavorites
+            2 -> {
+                homeItems.add(HomeItem(true, "3", 0, 0, 4, 2))                // emailwidget
+                homeItems.add(HomeItem(true, "7", 0, 2, 4, 1))                // profiles
+            }
+            3 -> homeItems.add(HomeItem(true, "1", 0, 0, 4, 2))              // organizer
+            4 -> {
+                homeItems.add(HomeItem(true, "2", 0, 0, 2, 3))                // musicwidget
+                var i = 0
+                for (app in repo.favoriteEntries().take(2)) { homeItems.add(HomeItem(false, app.key, 2 + i, 2)); i++ }
+            }
+            else -> {}                                                          // view 6 is empty
+        }
     }
 
     private fun loadHome() {
         homeItems.clear()
-        val raw = repo.homeLayout
+        val raw = repo.homeLayoutOf(homeView)
         if (raw == null) {
-            // first run: a flip clock on top and the old four shortcuts underneath
-            homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
-            var i = 0
-            for (app in repo.favoriteEntries()) {
-                homeItems.add(HomeItem(false, app.key, i % HC, 1 + i / HC))
-                i++
-                if (i >= HC * 2) break
-            }
+            if (homeView == 0) {
+                // first run: a flip clock on top and the old four shortcuts underneath
+                homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
+                var i = 0
+                for (app in repo.favoriteEntries()) {
+                    homeItems.add(HomeItem(false, app.key, i % HC, 1 + i / HC))
+                    i++
+                    if (i >= HC * 2) break
+                }
+            } else defaultView(homeView)
             saveHome()
         } else {
             for (rec in raw.split(';')) {
@@ -1438,6 +1470,7 @@ class LauncherView(private val act: Activity) : View(act) {
         if (hasWidget(2)) media.start()
         if (hasWidget(1)) calendar.refresh()
         if (hasWidget(5)) loadNotes()
+        if (hasWidget(6)) contacts.refresh()
     }
 
     private fun homeHas(key: String) = homeItems.any { !it.widget && it.id == key }
@@ -1465,10 +1498,11 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         homeItems.add(HomeItem(true, type.toString(), at.first, at.second, w, h))
         homeIdx = homeItems.size - 1
-        widgetSub = if (type == 2 || type == 4 || type == 5) 1 else 0
+        widgetSub = if (hasSubs(type)) 1 else 0
         saveHome()
         homeStart()
         if (type == 1 && !calendar.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 31)
+        if (type == 6 && !contacts.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 32)
     }
 
     private fun removeCurrent() {
@@ -1502,7 +1536,7 @@ class LauncherView(private val act: Activity) : View(act) {
             out.set(0f, 0f, 0f, 0f)
             return out
         }
-        val sub = if (it.widget && (it.type == 2 || it.type == 4 || it.type == 5) && widgetSub in 0..2 && !it.subs[widgetSub].isEmpty && !homeEdit) it.subs[widgetSub] else null
+        val sub = if (it.widget && hasSubs(it.type) && widgetSub in 0..2 && !it.subs[widgetSub].isEmpty && !homeEdit) it.subs[widgetSub] else null
         if (sub != null) {
             out.set(sub)
             out.inset(-5f * sc, -5f * sc)
@@ -1553,9 +1587,92 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
+    /** Nothing further that way on this view: the next home view, then the Hub to the left or the Menu to the right. */
+    private fun homeEdge(a: Act) {
+        if (homeEdit) return
+        if (a == Act.LEFT) { if (homeView > 0) switchHomeView(-1) else setPage(-1) }
+        else if (a == Act.RIGHT) { if (homeView < repo.homeViewCount - 1) switchHomeView(1) else setPage(1) }
+    }
+
+    /** Shows home view [homeView] + [d]: the old one slides out and the new one in (activeidle_viewswitch_*.fxml: 0.225 s out-quad). */
+    private fun switchHomeView(d: Int) {
+        val n = homeView + d
+        if (n < 0 || n >= repo.homeViewCount) return
+        viewShot = try {
+            val bw = width
+            val bh = (cBot - cTop).toInt()
+            if (bw > 0 && bh > 0) {
+                val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                val cv = Canvas(bmp)
+                cv.translate(0f, -cTop)
+                drawHome(cv)
+                bmp
+            } else null
+        } catch (_: Throwable) {
+            null
+        }
+        saveHome()
+        homeView = n
+        homeIdx = 0
+        carrying = false
+        widgetSub = 0
+        viewDir = d
+        viewStartMs = System.currentTimeMillis()
+        loadHome()
+        invalidate()
+    }
+
+    private fun drawHomeView(c: Canvas) {
+        val shot = viewShot
+        val t = ((System.currentTimeMillis() - viewStartMs) / 225f).coerceIn(0f, 1f)
+        if (shot == null || t >= 1f) {
+            viewShot = null
+            drawHome(c)
+            return
+        }
+        val e = 1f - (1f - t) * (1f - t)
+        val w = width.toFloat()
+        c.save()
+        c.translate(viewDir * w * (1f - e), 0f)
+        drawHome(c)
+        c.restore()
+        c.drawBitmap(shot, -viewDir * w * e, cTop, null)
+        postInvalidateOnAnimation()
+    }
+
+    private fun addHomeView() {
+        val n = repo.homeViewCount
+        if (n >= 6) return
+        saveHome()
+        repo.setHomeLayoutOf(n, "")      // an added view starts empty
+        repo.homeViewCount = n + 1
+        homeView = n
+        homeIdx = 0
+        loadHome()
+        showToast("Home screen ${n + 1} added")
+        invalidate()
+    }
+
+    private fun removeHomeView() {
+        val n = repo.homeViewCount
+        if (n <= 1) return
+        for (i in homeView until n - 1) repo.setHomeLayoutOf(i, repo.homeLayoutOf(i + 1) ?: "")
+        repo.setHomeLayoutOf(n - 1, "")
+        repo.homeViewCount = n - 1
+        homeView = homeView.coerceIn(0, n - 2)
+        homeIdx = 0
+        loadHome()
+        showToast("Home screen removed")
+        invalidate()
+    }
+
     private fun homeMove(a: Act) {
-        val cur = homeItems.getOrNull(homeIdx) ?: return
-        if (cur.widget && (a == Act.LEFT || a == Act.RIGHT) && (cur.type == 2 || cur.type == 4 || cur.type == 5) && !homeEdit) {
+        val cur = homeItems.getOrNull(homeIdx)
+        if (cur == null) {
+            homeEdge(a)
+            return
+        }
+        if (cur.widget && (a == Act.LEFT || a == Act.RIGHT) && hasSubs(cur.type) && !homeEdit) {
             val n = widgetSub + if (a == Act.LEFT) -1 else 1
             if (n in 0..2) {
                 widgetSub = n
@@ -1582,10 +1699,7 @@ class LauncherView(private val act: Activity) : View(act) {
         if (best >= 0) {
             homeIdx = best
             val n = homeItems[best]
-            widgetSub = if (n.widget && (n.type == 2 || n.type == 4 || n.type == 5)) (if (a == Act.LEFT) 2 else 0).let { if (a == Act.UP || a == Act.DOWN) 1 else it } else 0        } else if (!homeEdit) {
-            // nothing further that way: the Hub is to the left, the Menu to the right
-            if (a == Act.LEFT) setPage(-1) else if (a == Act.RIGHT) setPage(1)
-        }
+            widgetSub = if (n.widget && hasSubs(n.type)) (if (a == Act.LEFT) 2 else 0).let { if (a == Act.UP || a == Act.DOWN) 1 else it } else 0        } else homeEdge(a)
     }
 
     private fun homeTap(x: Float, y: Float, selectOnly: Boolean): Boolean {
@@ -1625,7 +1739,7 @@ class LauncherView(private val act: Activity) : View(act) {
         if (it.widget) {
             widgetSub = -1
             for (i in 0..2) if (it.subs[i].contains(x, y)) widgetSub = i
-            if (widgetSub < 0) widgetSub = if (it.type == 2 || it.type == 4 || it.type == 5) 1 else 0
+            if (widgetSub < 0) widgetSub = if (hasSubs(it.type)) 1 else 0
             if (!selectOnly) {
                 curWidget = it.type
                 widgetActivate()
@@ -1653,7 +1767,7 @@ class LauncherView(private val act: Activity) : View(act) {
             p.style = Paint.Style.FILL
         }
         val cur = homeItems.getOrNull(homeIdx)
-        val subFocus = !homeEdit && cur != null && cur.widget && (cur.type == 2 || cur.type == 4 || cur.type == 5) && widgetSub in 0..2 && !cur.subs[widgetSub].isEmpty
+        val subFocus = !homeEdit && cur != null && cur.widget && hasSubs(cur.type) && widgetSub in 0..2 && !cur.subs[widgetSub].isEmpty
         if (!subFocus) drawFocus(c, homeFocus.cur, 12f * sc)
         for (it in homeItems) {
             val lift = if (homeEdit && carrying && it === cur) 5f * sc else 0f
@@ -1768,10 +1882,12 @@ class LauncherView(private val act: Activity) : View(act) {
             items += PopupItem(if (cur.widget) "Remove widget" else "Remove shortcut") { removeCurrent() }
         }
         items += PopupItem("Add widget") {
-            val names = arrayOf("Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes")
-            val order = intArrayOf(0, 1, 2, 3, 4, 5)
+            val names = arrayOf("Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes", "Favourite contacts", "Profile", "Analogue clock")
+            val order = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
             popup = Popup("Add widget", order.map { t -> PopupItem(names[t]) { addWidget(t) } }, 0)
         }
+        if (repo.homeViewCount < 6) items += PopupItem("Add home screen") { addHomeView() }
+        if (repo.homeViewCount > 1) items += PopupItem("Remove this home screen") { removeHomeView() }
         items += PopupItem("Add shortcut") {
             setPage(1)
             showToast("Pick an app, then Options > Add to home")
@@ -1798,6 +1914,20 @@ class LauncherView(private val act: Activity) : View(act) {
                 else -> media.toggle()
             }
             3 -> setPage(-1)
+            6 -> {
+                if (!contacts.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 32)
+                else contacts.people.getOrNull(widgetSub.coerceAtLeast(0))?.let { pe ->
+                    tryStart(Intent(Intent.ACTION_VIEW, contacts.uri(pe)))
+                } ?: tryStart(Intent(Intent.ACTION_VIEW, android.provider.ContactsContract.Contacts.CONTENT_URI))
+            }
+            7 -> try {
+                val n = (com.belleui.kit.Profiles.current(act) + 1) % com.belleui.kit.Profiles.names.size
+                com.belleui.kit.Profiles.apply(act, n)
+                showToast("Profile: ${com.belleui.kit.Profiles.names[n]}")
+            } catch (_: Throwable) {
+                tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))
+            }
+            8 -> openOther("com.belleui.clock")
             5 -> when (widgetSub) {
                 0 -> if (noteIdx > 0) noteIdx--
                 2 -> if (noteIdx < notesList.size - 1) noteIdx++
@@ -1824,6 +1954,9 @@ class LauncherView(private val act: Activity) : View(act) {
             2 -> drawMusic(c, r)
             3 -> drawInbox(c, r)
             5 -> drawNotes(c, r)
+            6 -> drawContacts(c, r)
+            7 -> drawProfile(c, r)
+            8 -> drawAnalog(c, r)
             else -> drawSwitches(c, r)
         }
     }
@@ -1845,6 +1978,97 @@ class LauncherView(private val act: Activity) : View(act) {
             noteIdx = noteIdx.coerceIn(0, max(0, out.size - 1))
             postInvalidate()
         }.start()
+    }
+
+    /** The Favourite contacts widget: up to three starred contacts, their photo (or initials) and name; each is a button. */
+    private fun drawContacts(c: Canvas, r: RectF) {
+        contacts.refresh()
+        darkCard(c, r, 14f * sc)
+        val list = contacts.people.take(3)
+        if (!contacts.hasPermission() || list.isEmpty()) {
+            val msg = if (!contacts.hasPermission()) "Press ${okLetter()} to show your favourite contacts" else "No favourite contacts"
+            val sub = if (!contacts.hasPermission()) "Contacts access is needed" else "Star a contact in Contacts to see it here"
+            text(c, msg, r.centerX(), r.centerY() - 6f * sc, 20f * sc, Color.WHITE, Paint.Align.CENTER, r.width() - 40f * sc, face = medium)
+            text(c, sub, r.centerX(), r.centerY() + 22f * sc, 16f * sc, al(Color.WHITE, 170), Paint.Align.CENTER, r.width() - 40f * sc, face = light)
+            subRects[1].set(r)
+            return
+        }
+        val cw = r.width() / 3f
+        val ps = min(r.height() * 0.5f, 84f * sc)
+        for ((i, pe) in list.withIndex()) {
+            val cell = RectF(r.left + i * cw, r.top, r.left + (i + 1) * cw, r.bottom)
+            val cx = cell.centerX()
+            val cy = r.top + r.height() * 0.42f
+            val circle = RectF(cx - ps / 2f, cy - ps / 2f, cx + ps / 2f, cy + ps / 2f)
+            val photo = pe.photo
+            p.style = Paint.Style.FILL
+            if (photo != null) {
+                val clip = android.graphics.Path()
+                clip.addCircle(cx, cy, ps / 2f, android.graphics.Path.Direction.CW)
+                c.save()
+                c.clipPath(clip)
+                c.drawBitmap(photo, null, circle, iconPaint)
+                c.restore()
+            } else {
+                p.shader = LinearGradient(0f, circle.top, 0f, circle.bottom, theme.accentLight, theme.accent, Shader.TileMode.CLAMP)
+                c.drawCircle(cx, cy, ps / 2f, p)
+                p.shader = null
+                val initials = pe.name.split(' ').filter { it.isNotEmpty() }.take(2).joinToString("") { it.substring(0, 1).uppercase() }
+                text(c, initials, cx, baselineFor(cy, ps * 0.42f, medium), ps * 0.42f, Color.WHITE, Paint.Align.CENTER, face = medium)
+            }
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 2f * sc
+            p.color = al(Color.WHITE, 90)
+            c.drawCircle(cx, cy, ps / 2f, p)
+            p.style = Paint.Style.FILL
+            text(c, pe.name, cx, cell.bottom - 22f * sc, 18f * sc, Color.WHITE, Paint.Align.CENTER, cw - 12f * sc, face = light)
+            subRects[i].set(cell)
+        }
+    }
+
+    /** The Profile widget: the current profile and its icon; select cycles to the next. */
+    private fun drawProfile(c: Canvas, r: RectF) {
+        darkCard(c, r, 14f * sc)
+        val pi = try { com.belleui.kit.Profiles.current(act) } catch (_: Throwable) { 0 }
+        val icon = RectF(r.left + 14f * sc, r.centerY() - 28f * sc, r.left + 14f * sc + 56f * sc, r.centerY() + 28f * sc)
+        gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", icon)
+        val tx = icon.right + 16f * sc
+        text(c, "Profile", tx, r.centerY() - 8f * sc, 17f * sc, al(Color.WHITE, 170), face = light)
+        text(c, try { com.belleui.kit.Profiles.names[pi] } catch (_: Throwable) { "General" }, tx, r.centerY() + 24f * sc, 26f * sc, Color.WHITE, maxW = r.right - tx - 14f * sc, face = medium)
+    }
+
+    /** The analogue clock widget, with the theme's face and pointers (the same graphics the Clock app uses). */
+    private fun drawAnalog(c: Canvas, r: RectF) {
+        val rad = min(r.width(), r.height()) / 2f - 4f * sc
+        val cx = r.centerX()
+        val cy = r.centerY()
+        if (!gfx.drawPart(c, "qsn_cp_clock_analogue_face_1", android.graphics.Rect(0, 5, 306, 309), RectF(cx - rad, cy - rad, cx + rad, cy + rad))) {
+            p.style = Paint.Style.FILL
+            p.color = al(Color.BLACK, 190)
+            c.drawCircle(cx, cy, rad, p)
+        }
+        val cal = Calendar.getInstance()
+        val mins = cal.get(Calendar.MINUTE).toFloat()
+        val hour = (cal.get(Calendar.HOUR) % 12) + mins / 60f
+        val hand1 = gfx.get("qsn_cp_clock_analogue_pointer_hour")
+        val hand2 = gfx.get("qsn_cp_clock_analogue_pointer_minute")
+        val half = 96f * (2f * rad) / 306f
+        val box = RectF(cx - half, cy - half, cx + half, cy + half)
+        if (hand1 != null && hand2 != null) {
+            c.save(); c.rotate(hour * 30f, cx, cy); c.drawBitmap(hand1, null, box, iconPaint); c.restore()
+            c.save(); c.rotate(mins * 6f, cx, cy); c.drawBitmap(hand2, null, box, iconPaint); c.restore()
+        } else {
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.ROUND
+            p.color = Color.WHITE
+            p.strokeWidth = 5f * sc
+            val ah = hour * 30f * PI.toFloat() / 180f
+            c.drawLine(cx, cy, cx + sin(ah) * rad * 0.5f, cy - cos(ah) * rad * 0.5f, p)
+            p.strokeWidth = 3f * sc
+            val am = mins * 6f * PI.toFloat() / 180f
+            c.drawLine(cx, cy, cx + sin(am) * rad * 0.78f, cy - cos(am) * rad * 0.78f, p)
+            p.style = Paint.Style.FILL
+        }
     }
 
     /** The Belle notes widget: a yellow note with the latest note on it, a pen, and arrows to leaf through. */
@@ -2575,11 +2799,13 @@ class LauncherView(private val act: Activity) : View(act) {
             hintLetter(c, backLetter(), 60f * k + 26f * sc, cy)
             toolIcon(c, ICON_MENU, w - 57f * k, cy, s)
             hintLetter(c, optLetter(), w - 57f * k - 26f * sc, cy)
-            // page dots: Hub and Home, the current one lit
-            for (i in 0..1) {
+            // page dots: the Hub, then one per home view; the current one lit
+            val dots = 1 + repo.homeViewCount
+            val lit = if (page == -1) 0 else 1 + homeView
+            for (i in 0 until dots) {
                 p.style = Paint.Style.FILL
-                p.color = if (i == page + 1) Color.WHITE else al(Color.WHITE, 90)
-                c.drawCircle(w / 2f - 10f * sc + i * 20f * sc, cy, 4.5f * sc, p)
+                p.color = if (i == lit) Color.WHITE else al(Color.WHITE, 90)
+                c.drawCircle(w / 2f - (dots - 1) * 10f * sc + i * 20f * sc, cy, 4.5f * sc, p)
             }
             return
         }

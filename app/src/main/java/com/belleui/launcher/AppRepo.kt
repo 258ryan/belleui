@@ -421,6 +421,20 @@ class AppRepo(private val ctx: Context) {
             prefs.edit().putString("homeLayout", v).apply()
         }
 
+    /** How many home views there are: up to six, as in the firmware's root configuration (max_child="6"). */
+    var homeViewCount: Int
+        get() = prefs.getInt("homeViews", 6).coerceIn(1, 6)
+        set(v) {
+            prefs.edit().putInt("homeViews", v.coerceIn(1, 6)).apply()
+        }
+
+    /** The layout of home view [view]; view 0 keeps the key the single home screen always used. */
+    fun homeLayoutOf(view: Int): String? = prefs.getString(if (view == 0) "homeLayout" else "homeLayout$view", null)
+
+    fun setHomeLayoutOf(view: Int, s: String?) {
+        prefs.edit().putString(if (view == 0) "homeLayout" else "homeLayout$view", s).apply()
+    }
+
     fun isFavorite(key: String) = key in getList(pk("favs"))
 
     fun addFavorite(key: String): Boolean {

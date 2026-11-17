@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -12,6 +13,7 @@ import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
+import android.provider.ContactsContract
 import java.util.concurrent.Executors
 
 /** What the Music widget shows and controls: whichever app is playing, found through its media session. */
@@ -127,6 +129,53 @@ class CalendarWidget(private val ctx: Context, private val onChange: () -> Unit)
             } catch (_: Exception) {
             }
             events = out
+            Handler(Looper.getMainLooper()).post(onChange)
+        }
+    }
+}
+
+/** The starred contacts, for the Favourite contacts widget (the firmware's contactfavorites). Reading needs the contacts permission. */
+class ContactsWidget(private val ctx: Context, private val onChange: () -> Unit) {
+    class Person(val id: Long, val lookup: String, val name: String, val photo: Bitmap?)
+
+    @Volatile
+    var people: List<Person> = emptyList()
+        private set
+    var loadedAt = 0L
+        private set
+    private val io = Executors.newSingleThreadExecutor()
+
+    fun hasPermission() = ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+    fun uri(p: Person) = ContactsContract.Contacts.getLookupUri(p.id, p.lookup)
+
+    fun refresh(force: Boolean = false) {
+        if (!hasPermission()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - loadedAt < 5 * 60_000) return
+        loadedAt = now
+        io.execute {
+            val out = ArrayList<Person>()
+            try {
+                val c = ContactsContract.Contacts.CONTENT_URI
+                ctx.contentResolver.query(
+                    c, arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts.PHOTO_THUMBNAIL_URI),
+                    "${ContactsContract.Contacts.STARRED}=1", null, "${ContactsContract.Contacts.DISPLAY_NAME} COLLATE LOCALIZED ASC",
+                )?.use { cur ->
+                    while (cur.moveToNext() && out.size < 6) {
+                        val photo = cur.getString(3)?.let { u ->
+                            try {
+                                ctx.contentResolver.openInputStream(android.net.Uri.parse(u))?.use { s -> BitmapFactory.decodeStream(s) }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                        out.add(Person(cur.getLong(0), cur.getString(1) ?: "", cur.getString(2) ?: "", photo))
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            people = out
             Handler(Looper.getMainLooper()).post(onChange)
         }
     }
