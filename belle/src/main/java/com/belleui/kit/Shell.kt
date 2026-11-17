@@ -421,6 +421,9 @@ class GridState(val cols: Int, private val cellAspect: Float = 1f) {
 abstract class Overlay {
     /** Slides up from the bottom (options menu) instead of a short fade-in slide. */
     open val slideUp: Boolean get() = false
+
+    /** The rectangle the options-menu wipe is measured against (set by [draw]); null = the whole screen. */
+    open val wipeBox: RectF? get() = null
     abstract fun draw(c: Canvas, ui: Ui, w: Float, h: Float, cTop: Float, cBot: Float)
     abstract fun onAct(a: Act, shell: BelleShell)
     open fun onTap(x: Float, y: Float, shell: BelleShell): Boolean = false
@@ -443,6 +446,7 @@ abstract class Overlay {
 /** Belle options Menu: slides up over the toolbar, 80 px items (squeezed when many), full-width 67 px Cancel button. */
 class MenuOverlay(private val items: List<MenuItem>) : Overlay() {
     override val slideUp get() = true
+    override val wipeBox: RectF? get() = box.takeIf { !it.isEmpty }
     private var sel = 0
     private val box = RectF()
     private var itemH = 0f
@@ -806,6 +810,8 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private var overlayT = 0f
     private var overlayTarget = 0f
     private var overlayFrom = 0f
+    private var overlayLin = 0f      // linear progress (the fxml opacity / wipe time), overlayT is the eased one
+    private var overlayLinFrom = 0f
     private var overlayStartMs = 0L
     private var tabFocus = false
     private var banner = ""
@@ -1171,13 +1177,15 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         ui.toolbar(c, w, h - Belle.TOOL_H * ui.sc, kinds, enabled, letters)
 
         // overlay animation
-        // popups and menus use Nokia's own timings (resource/effects/*.fxml): notes and popups scale 0.9 -> 1 and fade over
-        // 0.25 s (out-quad in, in-quad out), the options menu is a 0.3 s linear reveal
+        // popups and menus use Nokia's own effects (resource/effects/*.fxml, see Fx): notes and popups scale 0.9 -> 1
+        // (out-quad in, in-quad out) while the opacity fades LINEARLY over 0.25 s; the options menu is a 0.3 s linear
+        // soft wipe from its bottom edge, not a slide
         val target = if (overlay != null) 1f else 0f
         val animNow = System.currentTimeMillis()
         if (target != overlayTarget) {
             overlayTarget = target
             overlayFrom = overlayT
+            overlayLinFrom = overlayLin
             overlayStartMs = animNow
         }
         val menuLike = (shownOverlay ?: overlay)?.slideUp == true
@@ -1185,20 +1193,22 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         val tt = ((animNow - overlayStartMs) / durMs).coerceIn(0f, 1f)
         val ease = if (menuLike) tt else if (target == 1f) 1f - (1f - tt) * (1f - tt) else tt * tt
         overlayT = overlayFrom + (target - overlayFrom) * ease
-        if (tt < 1f) ui.busy = true else overlayT = target
+        overlayLin = overlayLinFrom + (target - overlayLinFrom) * tt
+        if (tt < 1f) ui.busy = true else { overlayT = target; overlayLin = target }
         if (overlayT <= 0f && overlay == null) shownOverlay = null
         shownOverlay?.let { o ->
-            val box = h * 0.9f
             c.save()
             if (o.slideUp) {
-                c.translate(0f, (1f - overlayT) * box)
+                c.saveLayer(0f, 0f, w, h, null)
+                o.draw(c, ui, w, h, statusH, h - Belle.TOOL_H * ui.sc)
+                Fx.endWipe(c, o.wipeBox ?: RectF(0f, 0f, w, h), Fx.menuTime(overlayLin, target == 1f))
             } else {
-                val sca = 0.9f + 0.1f * overlayT
+                val sca = Fx.popupScale(overlayLin, target == 1f)
                 c.scale(sca, sca, w / 2f, h / 2f)
-                c.saveLayerAlpha(0f, 0f, w, h, (overlayT * 255).toInt().coerceIn(0, 255))
+                c.saveLayerAlpha(0f, 0f, w, h, (overlayLin * 255).toInt().coerceIn(0, 255))
+                o.draw(c, ui, w, h, statusH, h - Belle.TOOL_H * ui.sc)
+                c.restore()
             }
-            o.draw(c, ui, w, h, statusH, h - Belle.TOOL_H * ui.sc)
-            if (!o.slideUp) c.restore()
             c.restore()
         }
 

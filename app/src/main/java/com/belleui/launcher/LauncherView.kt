@@ -123,7 +123,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private var toast = ""
     private var toastUntil = 0L
     private var toastStart = 0L
-    private var popupT = 0f
+    private var popupT = 0f // linear 0..1 progress of the popup effect
+    private var popupGoal = 0f
+    private var popupFrom = 0f
+    private var popupStartMs = 0L
     private var popupShown: Popup? = null
     private val homeFocus = AnimRect()
     private val menuFocus = AnimRect()
@@ -1297,8 +1300,17 @@ class LauncherView(private val act: Activity) : View(act) {
         drawToolbar(c, w, h)
         if (popup != null) popupShown = popup
         val popupTarget = if (popup != null) 1f else 0f
-        popupT += (popupTarget - popupT) * k
-        if (abs(popupTarget - popupT) < 0.01f) popupT = popupTarget else busy = true
+        val animMs = System.currentTimeMillis()
+        if (popupTarget != popupGoal) {
+            popupGoal = popupTarget
+            popupFrom = popupT
+            popupStartMs = animMs
+        }
+        // linear progress over the fxml duration (0.25 s popups, 0.3 s options menu); Fx applies the easing per property
+        val popupDur = if (popupShown?.menu == true) com.belleui.kit.Fx.MENU_MS else com.belleui.kit.Fx.POPUP_MS
+        val popupTt = ((animMs - popupStartMs) / popupDur).coerceIn(0f, 1f)
+        popupT = popupFrom + (popupGoal - popupFrom) * popupTt
+        if (popupTt < 1f) busy = true else popupT = popupGoal
         if (popupT <= 0f && popup == null) popupShown = null
         popupShown?.let { drawPopup(c, it, w) }
 
@@ -2684,12 +2696,20 @@ class LauncherView(private val act: Activity) : View(act) {
         val box = popupRect(pu, RectF())
         val titleH = popupTitleH(pu)
         val itemH = popupItemH(pu)
-        val slide = if (pu.menu) (1f - popupT) * box.height() else (1f - popupT) * 28f * sc
+        // the E6's own effects (see kit Fx / resource/effects): a popup scales 0.9 -> 1 and fades linearly, the options
+        // menu is a soft wipe from its bottom edge instead of a slide
+        val appearing = popup != null
         c.save()
-        c.translate(0f, slide)
+        if (pu.menu) {
+            c.saveLayer(0f, 0f, w, height.toFloat(), null)
+        } else {
+            val sca = com.belleui.kit.Fx.popupScale(popupT, appearing)
+            c.scale(sca, sca, box.centerX(), box.centerY())
+            c.saveLayerAlpha(0f, 0f, w, height.toFloat(), (popupT * 255).toInt().coerceIn(0, 255))
+        }
 
         if (pu.menu) {
-            // options Menu: slides up from the bottom edge over the toolbar
+            // options Menu: revealed from the bottom edge over the toolbar
             rf.set(box.left, box.top, box.right, box.bottom + 20f * sc)
             p.style = Paint.Style.FILL
             p.shader = null
@@ -2743,6 +2763,12 @@ class LauncherView(private val act: Activity) : View(act) {
         val cy0 = top0 + itemH * vis + 6f * sc
         tmp.set(box.left + 8f * sc, cy0, box.right - 8f * sc, cy0 + POPUP_BTN * sc)
         kit.pushButton(c, tmp, if (pu.menu) "Cancel" else "Back", pu.menu && pu.sel == pu.items.size)
+        if (pu.menu) {
+            rf.set(box.left, box.top, box.right, box.bottom + 20f * sc)
+            com.belleui.kit.Fx.endWipe(c, rf, com.belleui.kit.Fx.menuTime(popupT, appearing))
+        } else {
+            c.restore()
+        }
         c.restore()
     }
 
