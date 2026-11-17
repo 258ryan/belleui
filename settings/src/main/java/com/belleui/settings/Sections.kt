@@ -486,12 +486,22 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
         val t = timeouts.indexOfFirst { it >= timeout() }.let { if (it < 0) timeouts.size - 1 else it }
         out.add(Row("Screen timeout", timeoutNames[t], drill = true, dim = !canWrite))
         out.add(Row("Auto-rotate", check = rotation(), dim = !canWrite))
+        out.add(Row("Font size", fontName(), drill = true, dim = !canWrite))
         out.add(Row("Wallpaper", "Choose a wallpaper", drill = true))
-        out.add(Row("More in Android settings", "Font size, dark theme", drill = true))
+        out.add(Row("More in Android settings", "Dark theme", drill = true))
         return out
     }
 
     private fun offset() = if (act.canWriteSettings()) 0 else 1
+
+    /** Font size (gsdisplaypluginrsc.r01: Large, Normal, Small) is Android's font scale. */
+    private val fontNames = listOf("Large", "Normal", "Small")
+    private val fontScales = floatArrayOf(1.15f, 1.0f, 0.85f)
+    private fun fontIndex(): Int {
+        val s = try { Settings.System.getFloat(act.contentResolver, Settings.System.FONT_SCALE, 1f) } catch (_: Throwable) { 1f }
+        return if (s > 1.05f) 0 else if (s < 0.95f) 2 else 1
+    }
+    private fun fontName() = fontNames[fontIndex()]
 
     override fun bar(i: Int): Float? = if (i == offset()) brightness() / 255f else null
 
@@ -520,8 +530,13 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
                 shell.showOverlay(ListDialog("Screen timeout", timeoutNames, cur) { k -> Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, timeouts[k]) })
             } else act.askWriteSettings()
             3 -> if (act.canWriteSettings()) Settings.System.putInt(act.contentResolver, Settings.System.ACCELEROMETER_ROTATION, if (rotation()) 0 else 1) else act.askWriteSettings()
-            4 -> if (!act.tryStart(Intent(Intent.ACTION_SET_WALLPAPER))) shell.toast("Not available")
-            5 -> if (!act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
+            4 -> if (act.canWriteSettings()) {
+                shell.showOverlay(ListDialog("Font size", fontNames, fontIndex()) { k ->
+                    try { Settings.System.putFloat(act.contentResolver, Settings.System.FONT_SCALE, fontScales[k]) } catch (_: Throwable) { shell.toast("Couldn't change it") }
+                })
+            } else act.askWriteSettings()
+            5 -> if (!act.tryStart(Intent(Intent.ACTION_SET_WALLPAPER))) shell.toast("Not available")
+            6 -> if (!act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
         }
     }
 }
