@@ -98,6 +98,57 @@ fi
 } >> $DIR/sysui.log
 [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
 
+# --- control and diagnostics you can reach from adb without root ---------------------------------------------------------
+# /sdcard/Download/belleui.conf (framework=0|1, font=0|1, system_ui=..., reset_guard=1) is merged into /data/adb/belleui/config here,
+# then deleted; the settings that act on boot (framework, font) apply from the next boot on.
+SD=/sdcard/Download
+CF=$SD/belleui.conf
+if [ -f $CF ]; then
+  for k in framework font system_ui set_default_home set_default_keyboard install_system_ui; do
+    v=$(grep -E "^$k=" $CF | tail -1 | cut -d= -f2 | tr -d '\r ')
+    if [ -n "$v" ]; then
+      sed -i "/^$k=/d" $CONF
+      echo "$k=$v" >> $CONF
+      echo "$(date): config $k=$v (from belleui.conf)" >> $DIR/sysui.log
+    fi
+  done
+  if grep -q '^reset_guard=1' $CF; then
+    rm -f $DIR/guard_tripped $MODDIR/skip_mount
+    echo 0 > $DIR/sysui_boots
+    echo "$(date): guard reset (from belleui.conf)" >> $DIR/sysui.log
+  fi
+  rm -f $CF
+fi
+# when the guard has switched things off, keep what the system recorded about the failed boots where adb can read it
+if [ -f $DIR/guard_tripped ] && [ ! -f $DIR/crash_collected ]; then
+  OUT=$SD/belleui-crash
+  mkdir -p $OUT
+  cp -r /data/system/dropbox $OUT/dropbox 2>/dev/null
+  cp -r /data/tombstones $OUT/tombstones 2>/dev/null
+  cp $DIR/*.log $OUT/ 2>/dev/null
+  logcat -b crash -d > $OUT/logcat-crash.txt 2>&1
+  dmesg > $OUT/dmesg.txt 2>&1
+  chmod -R a+rX $OUT 2>/dev/null
+  touch $DIR/crash_collected
+  echo "$(date): crash logs copied to $OUT" >> $DIR/sysui.log
+fi
+rm -f $DIR/crash_collected_stale 2>/dev/null
+[ ! -f $DIR/guard_tripped ] && rm -f $DIR/crash_collected
+# a status file to read with adb pull /sdcard/Download/belleui-status.txt
+{
+  echo "date: $(date)"
+  echo "module: $(grep '^version=' $MODDIR/module.prop)"
+  echo "variant: $(cat $DIR/variant 2>/dev/null)   boots unconfirmed: $(cat $DIR/sysui_boots 2>/dev/null)"
+  echo "guard_tripped: $([ -f $DIR/guard_tripped ] && echo yes || echo no)   skip_mount: $([ -f $MODDIR/skip_mount ] && echo yes || echo no)"
+  echo "--- config"; cat $CONF
+  echo "--- overlay in module:"; ls -la $MODDIR/system/product/overlay 2>&1
+  echo "--- fonts in module:"; ls -la $MODDIR/system/fonts 2>&1
+  echo "--- Roboto-Regular now:"; ls -la /system/fonts/Roboto-Regular.ttf 2>&1
+  echo "--- overlays:"; cmd overlay list 2>&1 | grep -i -B1 belle
+  echo "--- sysui.log (tail)"; tail -15 $DIR/sysui.log 2>&1
+} > $SD/belleui-status.txt 2>&1
+chmod 666 $SD/belleui-status.txt 2>/dev/null
+
 # Belle puts the clock at the right end of the status bar next to the battery (Lineage setting: 0 right, 1 centre, 2 left); set once
 if [ ! -f $DIR/clock_right_set ]; then
   settings put system status_bar_clock 0 2>/dev/null
