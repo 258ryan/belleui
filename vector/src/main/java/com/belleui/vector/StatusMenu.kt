@@ -48,7 +48,8 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
     private val cam = try { sys.getSystemService(Context.CAMERA_SERVICE) as CameraManager } catch (_: Throwable) { null }
     private var torchId: String? = null
 
-    // focus: zone 0 = quick settings (0..6 tiles, 7 profile, 8 brightness), zone 1 = the right column (0 = Clear, 1.. = rows)
+    // focus: zone 0 = the switches (0..3), the More row (9) and, when open, extras (4..6 tiles, 7 profile, 8 brightness);
+    // zone 1 = the notification list (0 = Clear, 1.. = rows)
     private var zone = 0
     private var leftSel = 1
     private var rightSel = 1
@@ -66,6 +67,9 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
     private var dragMoved = false
     private var anim: android.animation.ValueAnimator? = null
     private var closing = false
+    private var extras = false            // the "More" panel: rotation, torch, settings, profile, brightness
+    private val moreRect = RectF()
+    private var listTopPx = 0f
 
     private val torchCb = object : CameraManager.TorchCallback() {
         override fun onTorchModeChanged(id: String, enabled: Boolean) {
@@ -317,13 +321,30 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
         u.text(c, names[i], rc.centerX(), rc.bottom + 19f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, face = u.light, maxW = rc.width() + 18f * sc)
     }
 
+    private val switchNames = arrayOf("signal", "wlan", "bt", "audio")
+
+    /** The Belle panel switch: the theme's own key graphic (qtg_graf_panel_switch_*), blue when on, no label. */
+    private fun switchTile(c: Canvas, u: Ui, i: Int, rc: RectF) {
+        val name = "qtg_graf_panel_switch_${switchNames[i]}_${if (on(i)) "on" else "off"}"
+        if (!u.gfx.draw(c, name, rc)) { tile(c, u, i, rc); return }
+        if (zone == 0 && leftSel == i) {
+            val sc = u.sc
+            u.p.style = Paint.Style.STROKE
+            u.p.strokeWidth = 3f * sc
+            u.p.color = Color.WHITE
+            c.drawRoundRect(rc.left - 3f * sc, rc.top - 3f * sc, rc.right + 3f * sc, rc.bottom + 3f * sc, 16f * sc, 16f * sc, u.p)
+            u.p.style = Paint.Style.FILL
+        }
+    }
+
+    /** A list row: transparent with a 1 px line at 15 % white under it (qtg_fr_list_normal); the focused row is Belle blue (qtg_fr_list_pressed). */
     private fun listBg(c: Canvas, u: Ui, rc: RectF, focus: Boolean) {
         if (focus) {
             u.p.shader = LinearGradient(0f, rc.top, 0f, rc.bottom, Belle.BLUE_LIGHT, Belle.BLUE, Shader.TileMode.CLAMP)
             c.drawRect(rc, u.p)
             u.p.shader = null
         } else {
-            u.p.color = 0xFF3A3A3A.toInt()
+            u.p.color = 0x26FFFFFF
             c.drawRect(rc.left, rc.bottom - 1f, rc.right, rc.bottom, u.p)
         }
     }
@@ -339,9 +360,9 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
         c.translate(0f, off)
         c.clipRect(0f, 0f, w, panelH)
         u.p.style = Paint.Style.FILL
-        u.p.shader = LinearGradient(0f, 0f, 0f, panelH, 0xFF1E1E1E.toInt(), 0xFF080808.toInt(), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w, panelH, u.p)
         u.p.shader = null
+        u.p.color = 0xFF0C0C0C.toInt()
+        c.drawRect(0f, 0f, w, panelH, u.p)
 
         // the title bar
         val top = Belle.STATUS_H * sc
@@ -354,105 +375,126 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
 
         val handleH = 26f * sc
         val bottom = panelH - handleH
-        val leftW = w * 0.47f
-        // ---- left column: quick settings ----
-        u.p.color = 0xFF0C0C0C.toInt()
-        c.drawRect(0f, top, leftW, bottom, u.p)
-        val ts = min(66f * sc, (leftW - 5 * 12f * sc) / 4f)
-        val gapX = (leftW - 4 * ts) / 5f
-        for (i in 0 until 7) {
-            val col = i % 4
-            val row = i / 4
-            val x = gapX + col * (ts + gapX)
-            val y = top + 12f * sc + row * (ts + 34f * sc)
-            tileRects[i].set(x, y, x + ts, y + ts)
-            tile(c, u, i, tileRects[i])
-        }
-        var y = top + 12f * sc + 2 * (ts + 34f * sc) + 4f * sc
-        // profile
-        val rowH = 94f * sc
-        profileRect.set(0f, y, leftW, y + rowH)
-        listBg(c, u, profileRect, zone == 0 && leftSel == 7)
-        val pi = Profiles.current(sys)
-        r.set(14f * sc, y + 19f * sc, 14f * sc + 56f * sc, y + 19f * sc + 56f * sc)
-        u.gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", r)
-        val focusP = zone == 0 && leftSel == 7
-        u.text(c, "Profile", 84f * sc, y + 38f * sc, 24f * sc, Color.WHITE, face = u.medium)
-        u.text(c, Profiles.names[pi], 84f * sc, y + 70f * sc, 20f * sc, if (focusP) Color.WHITE else Belle.TEXT_MID, face = u.light)
-        y += rowH
-        // brightness
-        brightRect.set(0f, y, leftW, y + rowH)
-        listBg(c, u, brightRect, zone == 0 && leftSel == 8)
-        u.text(c, "Brightness", 16f * sc, y + 38f * sc, 24f * sc, Color.WHITE, face = u.medium)
-        barRect.set(16f * sc, y + 54f * sc, leftW - 20f * sc, y + 74f * sc)
-        u.progressBar(c, barRect, brightness() / 255f)
 
-        // the divider
-        u.p.color = 0xFF000000.toInt()
-        c.drawRect(leftW, top, leftW + 2f * sc, bottom, u.p)
+        // the four switches (the original's Mobile data, Wi-Fi, Bluetooth, Silent), each the 54 x 62 key from the theme
+        val kw = 54f * sc
+        val kh = 62f * sc
+        val rowTop = top + 8f * sc
+        val cellW = w / 4f
+        for (i in 0 until 4) {
+            val x = i * cellW + (cellW - kw) / 2f
+            tileRects[i].set(x, rowTop, x + kw, rowTop + kh)
+            switchTile(c, u, i, tileRects[i])
+        }
+        var y = rowTop + kh + 8f * sc
 
-        // ---- right column: notifications and activities ----
-        val rx = leftW + 2f * sc
-        val rw = w - rx
-        c.save()
-        c.clipRect(rx, top, w, bottom)
-        val all = rows()
-        val nCount = normal().size
-        var yy = top - scroll
-        var selTop = 0f
-        var selBottom = 0f
-        fun header(title: String, button: String?, focusIdx: Int) {
-            val h = 40f * sc
-            u.p.shader = LinearGradient(0f, yy, 0f, yy + h, 0xFF4A4A4A.toInt(), 0xFF383838.toInt(), Shader.TileMode.CLAMP)
-            c.drawRect(rx, yy, w, yy + h, u.p)
-            u.p.shader = null
-            u.text(c, title, rx + 14f * sc, u.baselineFor(yy + h / 2f, 21f * sc, u.medium), 21f * sc, Color.WHITE, face = u.medium)
-            if (button != null) {
-                clearRect.set(w - 106f * sc, yy + 4f * sc, w - 10f * sc, yy + h - 4f * sc)
-                u.pushButton(c, clearRect, button, zone == 1 && rightSel == focusIdx)
-                if (zone == 1 && rightSel == focusIdx) { selTop = yy + scroll; selBottom = yy + h + scroll }
-            } else clearRect.setEmpty()
-            yy += h
-        }
-        header("Notifications", if (nCount > 0) "Clear" else null, 0)
-        if (nCount == 0) {
-            u.text(c, noteProblem ?: "No notifications", rx + 20f * sc, u.baselineFor(yy + 30f * sc, 22f * sc), 22f * sc, if (noteProblem != null) 0xFFE8A33D.toInt() else Belle.TEXT_MID, maxW = rw - 36f * sc, face = u.light)
-            yy += 62f * sc
-        }
-        var shownActs = false
-        for ((idx, n) in all.withIndex()) {
-            if (n.ongoing && !shownActs) { shownActs = true; header("Activities", null, -1) }
-            val h = 94f * sc
-            val focus = zone == 1 && rightSel == idx + 1
-            val rc = RectF(rx, yy, w, yy + h)
-            if (focus) { selTop = yy + scroll; selBottom = yy + h + scroll }
-            if (yy + h > top && yy < bottom) {
-                listBg(c, u, rc, focus)
-                val ic = icon(n.pkg)
-                r.set(rx + 14f * sc, yy + 19f * sc, rx + 14f * sc + 56f * sc, yy + 19f * sc + 56f * sc)
-                if (ic != null) c.drawBitmap(ic, null, r, null)
-                if (!n.ongoing && System.currentTimeMillis() - n.postTime < 10 * 60_000L) {
-                    u.p.color = 0xFFE23B3B.toInt()
-                    c.drawCircle(rx + 66f * sc, yy + 21f * sc, 6f * sc, u.p)
-                }
-                val tx = rx + 84f * sc
-                val time = android.text.format.DateFormat.format(if (android.text.format.DateFormat.is24HourFormat(sys)) "HH:mm" else "h:mm a", n.postTime).toString()
-                u.text(c, time, w - 14f * sc, yy + 36f * sc, 18f * sc, if (focus) Color.WHITE else Belle.BLUE_LIGHT, Paint.Align.RIGHT, face = u.light)
-                u.text(c, n.title, tx, yy + 38f * sc, 24f * sc, Color.WHITE, maxW = w - tx - 72f * sc, face = u.medium)
-                if (n.progress != null) u.progressBar(c, RectF(tx, yy + 54f * sc, w - 18f * sc, yy + 74f * sc), n.progress)
-                else if (!n.text.isNullOrBlank()) u.text(c, n.text, tx, yy + 70f * sc, 20f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 16f * sc, face = u.light)
+        // the More row opens the extras (rotation, torch, settings, profile, brightness) in place of the notifications
+        val moreH = 34f * sc
+        moreRect.set(0f, y, w, y + moreH)
+        u.p.color = 0x26FFFFFF
+        c.drawRect(0f, y, w, y + 1f, u.p)
+        if (zone == 0 && leftSel == 9) listBg(c, u, moreRect, true)
+        u.text(c, if (extras) "Less" else "More", w / 2f, u.baselineFor(y + moreH / 2f, 18f * sc, u.light), 18f * sc,
+            if (zone == 0 && leftSel == 9) Color.WHITE else Belle.TEXT_MID, Paint.Align.CENTER, face = u.light)
+        y += moreH
+        val listTop = y
+        listTopPx = listTop
+
+        if (extras) {
+            for (i in 4..6) tileRects[i].setEmpty()
+            clearRect.setEmpty()
+            val ts = 56f * sc
+            val ey0 = listTop + 8f * sc
+            for (i in 4..6) {
+                val x = (i - 4) * cellW + (cellW - ts) / 2f
+                tileRects[i].set(x, ey0, x + ts, ey0 + ts)
+                tile(c, u, i, tileRects[i])
             }
-            rowRects.add((idx + 1) to RectF(rx, yy + off, w, yy + h + off))
-            yy += h
+            var yy = ey0 + ts + 32f * sc
+            val rowH = 70f * sc
+            profileRect.set(0f, yy, w, yy + rowH)
+            listBg(c, u, profileRect, zone == 0 && leftSel == 7)
+            val pi = Profiles.current(sys)
+            r.set(14f * sc, yy + 7f * sc, 14f * sc + 56f * sc, yy + 7f * sc + 56f * sc)
+            u.gfx.draw(c, if (pi == 1) "qgn_indi_home_profile_silent" else if (pi == 2) "qgn_indi_home_profile_timed" else "qgn_indi_home_profile_general", r)
+            val focusP = zone == 0 && leftSel == 7
+            u.text(c, "Profile", 84f * sc, yy + 28f * sc, 24f * sc, Color.WHITE, face = u.medium)
+            u.text(c, Profiles.names[pi], 84f * sc, yy + 56f * sc, 20f * sc, if (focusP) Color.WHITE else Belle.TEXT_MID, face = u.light)
+            yy += rowH
+            brightRect.set(0f, yy, w, yy + rowH)
+            listBg(c, u, brightRect, zone == 0 && leftSel == 8)
+            u.text(c, "Brightness", 16f * sc, yy + 28f * sc, 24f * sc, Color.WHITE, face = u.medium)
+            barRect.set(16f * sc, yy + 40f * sc, w - 20f * sc, yy + 58f * sc)
+            u.progressBar(c, barRect, brightness() / 255f)
+        } else {
+            for (i in 4..6) tileRects[i].setEmpty()
+            profileRect.setEmpty()
+            brightRect.setEmpty()
+            barRect.setEmpty()
+
+            // ---- notifications and activities ----
+            c.save()
+            c.clipRect(0f, listTop, w, bottom)
+            val all = rows()
+            val nCount = normal().size
+            var yy = listTop - scroll
+            var selTop = 0f
+            var selBottom = 0f
+            fun header(title: String, button: String?, focusIdx: Int) {
+                // qtg_fr_list_heading_normal: flat #191919, a 15 % white line on top; ListHeading is graphicSizeSmall (40) high
+                val h = 40f * sc
+                u.p.color = 0xFF191919.toInt()
+                c.drawRect(0f, yy, w, yy + h, u.p)
+                u.p.color = 0x26FFFFFF
+                c.drawRect(0f, yy, w, yy + 1f, u.p)
+                u.text(c, title, 18f * sc, u.baselineFor(yy + h / 2f, 21f * sc, u.medium), 21f * sc, Color.WHITE, face = u.medium)
+                if (button != null) {
+                    clearRect.set(w - 106f * sc, yy + 4f * sc, w - 10f * sc, yy + h - 4f * sc)
+                    u.pushButton(c, clearRect, button, zone == 1 && rightSel == focusIdx)
+                    if (zone == 1 && rightSel == focusIdx) { selTop = yy + scroll; selBottom = yy + h + scroll }
+                } else clearRect.setEmpty()
+                yy += h
+            }
+            header("Notifications", if (nCount > 0) "Clear" else null, 0)
+            if (nCount == 0) {
+                u.text(c, noteProblem ?: "No notifications", 20f * sc, u.baselineFor(yy + 30f * sc, 22f * sc), 22f * sc, if (noteProblem != null) 0xFFE8A33D.toInt() else Belle.TEXT_MID, maxW = w - 36f * sc, face = u.light)
+                yy += 62f * sc
+            }
+            var shownActs = false
+            for ((idx, n) in all.withIndex()) {
+                if (n.ongoing && !shownActs) { shownActs = true; header("Activities", null, -1) }
+                val h = 94f * sc
+                val focus = zone == 1 && rightSel == idx + 1
+                val rc = RectF(0f, yy, w, yy + h)
+                if (focus) { selTop = yy + scroll; selBottom = yy + h + scroll }
+                if (yy + h > listTop && yy < bottom) {
+                    listBg(c, u, rc, focus)
+                    val ic = icon(n.pkg)
+                    r.set(14f * sc, yy + 19f * sc, 14f * sc + 56f * sc, yy + 19f * sc + 56f * sc)
+                    if (ic != null) c.drawBitmap(ic, null, r, null)
+                    if (!n.ongoing && System.currentTimeMillis() - n.postTime < 10 * 60_000L) {
+                        u.p.color = 0xFFE23B3B.toInt()
+                        c.drawCircle(66f * sc, yy + 21f * sc, 6f * sc, u.p)
+                    }
+                    val tx = 84f * sc
+                    val time = android.text.format.DateFormat.format(if (android.text.format.DateFormat.is24HourFormat(sys)) "HH:mm" else "h:mm a", n.postTime).toString()
+                    u.text(c, time, w - 14f * sc, yy + 36f * sc, 18f * sc, if (focus) Color.WHITE else Belle.BLUE_LIGHT, Paint.Align.RIGHT, face = u.light)
+                    u.text(c, n.title, tx, yy + 38f * sc, 24f * sc, Color.WHITE, maxW = w - tx - 72f * sc, face = u.medium)
+                    if (n.progress != null) u.progressBar(c, RectF(tx, yy + 54f * sc, w - 18f * sc, yy + 74f * sc), n.progress)
+                    else if (!n.text.isNullOrBlank()) u.text(c, n.text, tx, yy + 70f * sc, 20f * sc, if (focus) Color.WHITE else Belle.TEXT_MID, maxW = w - tx - 16f * sc, face = u.light)
+                }
+                rowRects.add((idx + 1) to RectF(0f, yy + off, w, yy + h + off))
+                yy += h
+            }
+            c.restore()
+            val contentH = yy + scroll - listTop
+            // keep the focused row on screen
+            if (zone == 1) {
+                if (selBottom - scroll > bottom - listTop) scroll = selBottom - (bottom - listTop)
+                if (selTop - scroll < 0f) scroll = selTop
+            }
+            scroll = scroll.coerceIn(0f, max(0f, contentH - (bottom - listTop)))
         }
-        c.restore()
-        val contentH = yy + scroll - top
-        // keep the focused row on screen
-        if (zone == 1) {
-            if (selBottom - scroll > bottom - top) scroll = selBottom - (bottom - top)
-            if (selTop - scroll < 0f) scroll = selTop
-        }
-        scroll = scroll.coerceIn(0f, max(0f, contentH - (bottom - top)))
 
         // the pull handle
         u.p.color = 0xFF1A1A1A.toInt()
@@ -472,6 +514,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
             when (leftSel) {
                 in 0..6 -> toggle(leftSel)
                 7 -> Profiles.apply(sys, (Profiles.current(sys) + 1) % Profiles.names.size)
+                9 -> { extras = !extras; scroll = 0f }
                 else -> {}
             }
             return
@@ -490,31 +533,34 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
         if (ev.action != KeyEvent.ACTION_DOWN) return true
         when (code) {
             KeyEvent.KEYCODE_DPAD_UP -> if (zone == 0) {
-                leftSel = when {
-                    leftSel in 4..6 -> leftSel - 4
-                    leftSel in 0..3 -> leftSel
-                    else -> if (leftSel == 8) 7 else 4
+                leftSel = when (leftSel) {
+                    9 -> 0
+                    in 4..6 -> 9
+                    7 -> 4
+                    8 -> 7
+                    else -> leftSel
                 }
-            } else rightSel = max(0, rightSel - 1)
+            } else if (rightSel > 0) rightSel-- else { zone = 0; leftSel = 9 }
             KeyEvent.KEYCODE_DPAD_DOWN -> if (zone == 0) {
-                leftSel = when {
-                    leftSel in 0..3 -> min(leftSel + 4, 6)
-                    leftSel in 4..6 -> 7
-                    else -> 8
+                when (leftSel) {
+                    in 0..3 -> leftSel = 9
+                    9 -> if (extras) leftSel = 4 else { zone = 1; rightSel = if (normal().isEmpty()) min(1, rows().size) else 0 }
+                    in 4..6 -> leftSel = 7
+                    7 -> leftSel = 8
+                    else -> {}
                 }
             } else rightSel = min(rows().size, rightSel + 1)
             KeyEvent.KEYCODE_DPAD_LEFT -> if (zone == 0) {
                 when (leftSel) {
                     8 -> setBrightness(brightness() - 16)
-                    in 1..6 -> leftSel--
+                    in 1..3, in 5..6 -> leftSel--
                     else -> {}
                 }
-            } else zone = 0
+            }
             KeyEvent.KEYCODE_DPAD_RIGHT -> if (zone == 0) {
                 when (leftSel) {
                     8 -> setBrightness(brightness() + 16)
-                    3, 6, 7 -> { zone = 1; rightSel = rightSel.coerceIn(0, rows().size) }
-                    in 0..5 -> leftSel++
+                    in 0..2, in 4..5 -> leftSel++
                     else -> {}
                 }
             }
@@ -560,7 +606,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
                 if (dragBright) { setBrightnessFromX(ex); invalidate(); return true }
                 val d = dragY - e.y
                 if (Math.abs(d) > 10f * sc) dragMoved = true
-                if (dragMoved && ex > panelH * 0f + (width * 0.47f)) {
+                if (dragMoved && !extras && downY > listTopPx + off) {
                     scroll += d
                     dragY = e.y
                     invalidate()
@@ -574,11 +620,14 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
                     return true
                 }
                 if (ey > panelH - 26f * sc) { dismiss(); return true }
-                // the list scrolls under the title bar and the handle: a tap there must not hit a row that is only partly visible
-                val listTop = Belle.STATUS_H * sc
-                val listBottom = panelH - 26f * sc
-                if (ey < listTop || ey > listBottom) return true
-                for (i in 0 until 7) if (tileRects[i].contains(ex, ey)) { zone = 0; leftSel = i; toggle(i); invalidate(); return true }
+                if (ey < Belle.STATUS_H * sc || ey > panelH - 26f * sc) return true
+                for (i in 0 until 7) if (!tileRects[i].isEmpty && tileRects[i].contains(ex, ey)) { zone = 0; leftSel = i; toggle(i); invalidate(); return true }
+                if (moreRect.contains(ex, ey)) { zone = 0; leftSel = 9; activate(); invalidate(); return true }
+                // the list scrolls under the More row and the handle: a tap there must not hit a row that is only partly visible
+                if (extras || ey < listTopPx) {
+                    if (!profileRect.isEmpty && profileRect.contains(ex, ey)) { zone = 0; leftSel = 7; activate(); invalidate() }
+                    return true
+                }
                 if (profileRect.contains(ex, ey)) { zone = 0; leftSel = 7; activate(); invalidate(); return true }
                 if (!clearRect.isEmpty && clearRect.contains(ex, ey + 0f)) { zone = 1; rightSel = 0; activate(); invalidate(); return true }
                 for ((i, rc) in rowRects) if (rc.contains(ex, e.y)) { zone = 1; rightSel = i; activate(); invalidate(); return true }
