@@ -197,6 +197,8 @@ private fun startGame(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: 
 
 class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
+    // the Ovi / Nokia Store client is a light page
+    override val lightOk: Boolean get() = true
     override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Library", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
@@ -562,11 +564,13 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
         private fun drawShelf(c: Canvas, ui: Ui, r: RectF, si: Int, top: Float, shelf: Shelf) {
             val sc = ui.sc
-            ui.text(c, shelf.title, r.left + 16f * sc, top + 26f * sc, 20f * sc, face = ui.medium)
+            // the store's section bar: a full-width grey gradient strip with the heading in it
             ui.p.style = Paint.Style.FILL
+            ui.p.shader = android.graphics.LinearGradient(0f, top + 4f * sc, 0f, top + 36f * sc,
+                if (ui.lightOn) 0xFFE6E6E6.toInt() else 0xFF3A3A3A.toInt(), if (ui.lightOn) 0xFFCFCFCF.toInt() else 0xFF262626.toInt(), android.graphics.Shader.TileMode.CLAMP)
+            c.drawRect(r.left, top + 4f * sc, r.right, top + 36f * sc, ui.p)
             ui.p.shader = null
-            ui.p.color = Belle.SEPARATOR
-            c.drawRect(r.left + 14f * sc, top + 34f * sc, r.right - 14f * sc, top + 35f * sc, ui.p)
+            ui.text(c, shelf.title, r.left + 12f * sc, ui.baselineFor(top + 20f * sc, 20f * sc), 20f * sc, face = ui.medium)
             val tile = 112f * sc
             val pitch = 128f * sc
             val vis = max(1, ((r.width() - 28f * sc) / pitch).toInt())
