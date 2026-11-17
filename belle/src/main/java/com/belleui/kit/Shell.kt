@@ -912,7 +912,8 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     fun toast(text: String) {
         banner = text
         bannerStart = System.currentTimeMillis()
-        bannerUntil = bannerStart + 2800
+        // Qt Components InfoBanner: 200 ms slide in, held 3000 ms (INFOBANNER_DISMISS_TIMER), 200 ms slide out
+        bannerUntil = bannerStart + 3400
         invalidate()
     }
 
@@ -1205,9 +1206,10 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
 
         val nowMs = System.currentTimeMillis()
         if (nowMs < bannerUntil) {
-            val tin = ((nowMs - bannerStart) / 220f).coerceIn(0f, 1f)
-            val tout = ((bannerUntil - nowMs) / 220f).coerceIn(0f, 1f)
-            ui.banner(c, w, banner, min(tin, tout))
+            val tin = ((nowMs - bannerStart) / 200f).coerceIn(0f, 1f)
+            val tout = ((bannerUntil - nowMs) / 200f).coerceIn(0f, 1f)
+            val slide = min(tin, tout)
+            ui.banner(c, w, banner, 1f - (1f - slide) * (1f - slide)) // Easing.OutQuad, as in infobanner.qml
             ui.busy = true
         }
         if (ui.busy) postInvalidateOnAnimation() else if (s.tickMs > 0) postInvalidateDelayed(s.tickMs)
