@@ -1217,7 +1217,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
     private fun menuCellW() = 151f * sc
     // grid_app_pane (640x480, 604x363 = 4x3 cells): l=11, t=7 (the 25 px on the right are the scroll bar's)
-    private fun menuGridLeft() = 24f * sc
+    private fun menuGridLeft() = max(0f, (width - COLS * menuCellW()) / 2f) // centred: equal air left and right
     private fun menuGridTop() = menuAreaTop()
     private fun menuCellH() = 121f * sc // cell_app_pane variety 2: 151x121
 
@@ -1893,13 +1893,17 @@ class LauncherView(private val act: Activity) : View(act) {
                 val app = appFor(it)
                 if (app != null) {
                     val r = it.rect
-                    val isz = 88f * sc
-                    val iconCy = r.bottom - 111f * sc
+                    // icon and label plate form one stack, centred in the cell (the reference's 88 + 34 px, shrunk only if the cell is shorter)
+                    val fit = min(1f, (r.height() - 6f * sc) / (126f * sc))
+                    val isz = 88f * sc * fit
+                    val plateH = 34f * sc * fit
+                    val stackTop = r.centerY() - (isz + 4f * sc * fit + plateH) / 2f
+                    val iconCy = stackTop + isz / 2f
                     drawIcon(c, app.icon, r.centerX(), iconCy, isz)
                     // the home screen label: a dark translucent plate, 107 x 34
-                    val tsz = 22f * sc
+                    val tsz = 22f * sc * fit
                     val tw = min(107f * sc, r.width() - 2f * sc)
-                    rf.set(r.centerX() - tw / 2f, r.bottom - 65f * sc, r.centerX() + tw / 2f, r.bottom - 31f * sc)
+                    rf.set(r.centerX() - tw / 2f, stackTop + isz + 4f * sc * fit, r.centerX() + tw / 2f, stackTop + isz + 4f * sc * fit + plateH)
                     p.style = Paint.Style.FILL
                     p.shader = null
                     p.color = 0x99000000.toInt()
