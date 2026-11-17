@@ -133,12 +133,16 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
         shell.invalidate()
     }
 
+    private var vt: android.view.VelocityTracker? = null
+
     override fun onTouch(e: android.view.MotionEvent): Boolean {
+        vt?.addMovement(e)
         refresh()
         val r = area()
         when (e.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
                 downY = e.y; lastY = e.y; tapX = e.x; moved = false; scrollAcc = 0f; dragBar = -1
+                vt?.recycle(); vt = android.view.VelocityTracker.obtain()
                 val i = list.hit(shell.ui, r, e.y, rowsCache.size)
                 if (i >= 0 && barsCache.getOrNull(i) != null && adjustable(i)) {
                     val rr = list.rowRect(shell.ui, r, i, rowRect)
@@ -156,13 +160,10 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
                 } else {
                     if (Math.abs(downY - e.y) > 12f * shell.ui.sc) moved = true
                     if (moved) {
-                        scrollAcc += lastY - e.y
-                        val step = 60f * shell.ui.sc
-                        while (Math.abs(scrollAcc) > step) {
-                            val d = if (scrollAcc > 0) 1 else -1
-                            scrollAcc -= d * step
-                            list.scrollBy(d, rowsCache.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
-                        }
+                        // follow the finger in pixels (the shared list keeps the momentum)
+                        Scroll.dy = lastY - e.y
+                        Scroll.last = null
+                        try { list.scrollBy(0, rowsCache.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop)) } finally { Scroll.dy = 0f }
                         shell.invalidate()
                     }
                     lastY = e.y
@@ -171,7 +172,13 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
             android.view.MotionEvent.ACTION_UP -> {
                 val was = dragBar
                 dragBar = -1
-                if (was < 0 && !moved) onTap(tapX, e.y) else shell.invalidate()
+                vt?.computeCurrentVelocity(1000)
+                val vy = vt?.yVelocity ?: 0f
+                vt?.recycle(); vt = null
+                if (was < 0 && !moved) onTap(tapX, e.y) else {
+                    if (was < 0 && Math.abs(vy) > 300f * shell.ui.sc) list.fling(vy)
+                    shell.invalidate()
+                }
             }
             android.view.MotionEvent.ACTION_CANCEL -> { dragBar = -1; shell.invalidate() }
         }
