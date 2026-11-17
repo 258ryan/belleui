@@ -50,6 +50,10 @@ jobs:
           # both System UIs ride along in extra/; post-fs-data.sh puts the chosen one in place at boot
           cp sysui/build/outputs/apk/debug/sysui-debug.apk module/extra/SystemUI-belle.apk
           cp SystemUI-restyled.apk module/extra/SystemUI-restyled.apk
+          # the Android framework in Belle dress: the overlay (/product/overlay) and the Nokia Sans font files (customize.sh places them)
+          mkdir -p module/system/product/overlay module/fonts
+          cp framework-overlay/build/outputs/apk/debug/framework-overlay-debug.apk module/system/product/overlay/BelleUIFramework.apk
+          cp belle/src/main/assets/fonts/nosnr60.ttf belle/src/main/assets/fonts/nssb60.ttf module/fonts/
           mkdir -p module/system/system_ext/etc/permissions
           cp magisk/sysui/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml module/system/system_ext/etc/permissions/
           rm -f module/README.md
