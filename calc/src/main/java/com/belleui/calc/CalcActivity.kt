@@ -139,6 +139,64 @@ class CalcScreen(private val act: CalcActivity) : Screen() {
     }
 
     override fun draw(cv: Canvas, ui: Ui, area: RectF) {
+        if (area.width() >= area.height) drawLandscape(cv, ui, area) else drawPortrait(cv, ui, area)
+    }
+
+    /**
+     * The E6 landscape calculator, from the firmware's Apps layout pack (variety 3 of the calc lines, 640x480):
+     * the paper tape (calc_paper_pane l=9 t=14 r=322 b=92) and the display (calc_display_pane l=9 r=322 b=13 H=70)
+     * on the left, the keypad (grid_calc_pane r=9 t=14, 304x350 = 4x5 cells of 76x70, cell_calc_pane) on the right.
+     * Paper rows are 39 px (list_calc_item_pane); the key sits in its cell 12 px in and 9 px down, 52 px tall (cell_calc_pane_g2).
+     */
+    private fun drawLandscape(cv: Canvas, ui: Ui, area: RectF) {
+        val sc = ui.sc
+        val paper = RectF(area.left + 9f * sc, area.top + 14f * sc, area.right - 322f * sc, area.bottom - 92f * sc)
+        val disp = RectF(area.left + 9f * sc, area.bottom - 83f * sc, area.right - 322f * sc, area.bottom - 13f * sc)
+        if (!ui.gfx.nine(cv, "qgn_graf_calc_paper", paper, 12, 12f * sc)) {
+            ui.p.style = Paint.Style.FILL
+            ui.p.shader = null
+            ui.p.color = 0xFFE9E9E5.toInt()
+            cv.drawRoundRect(paper, 12f * sc, 12f * sc, ui.p)
+        }
+        if (!ui.gfx.nine(cv, "qgn_graf_calc_paper", disp, 12, 12f * sc)) {
+            ui.p.style = Paint.Style.FILL
+            ui.p.shader = null
+            ui.p.color = 0xFFE9E9E5.toInt()
+            cv.drawRoundRect(disp, 12f * sc, 12f * sc, ui.p)
+        }
+        val ink = 0xFF1B1B1B.toInt()
+        // the tape: the latest finished sums, newest at the bottom, one 39 px row each
+        val rowH = 39f * sc
+        val rows = maxOf(1, ((paper.height() - 12f * sc) / rowH).toInt())
+        val live = if (result == null && expr.isNotEmpty()) Eval.value(autoClose(expr))?.takeIf { !it.isNaN() && !it.isInfinite() }?.let { Eval.format(it) } else null
+        val lines = ArrayList<Pair<String, Int>>()
+        for (h in act.history.take(rows).reversed()) lines.add("${h.first} = ${h.second}" to ink)
+        if (live != null) lines.add("= $live" to 0xFF777777.toInt())
+        val shown = lines.takeLast(rows)
+        var y = paper.bottom - 6f * sc - shown.size * rowH
+        for ((s, col) in shown) {
+            ui.text(cv, s, paper.right - 17f * sc, ui.baselineFor(y + rowH / 2f, 22f * sc, ui.light), 22f * sc, col, Paint.Align.RIGHT, maxW = paper.width() - 34f * sc, face = ui.light)
+            y += rowH
+        }
+        // the display: the entry being typed (calc_display_pane_t1, digital font, 51 px pane, right aligned, 18 px in)
+        val big = result ?: if (expr.isEmpty()) "0" else expr
+        ui.text(cv, big, disp.right - 18f * sc, ui.baselineFor(disp.centerY(), 40f * sc), 40f * sc, ink, Paint.Align.RIGHT, maxW = disp.width() - 36f * sc)
+
+        // the keypad
+        val gridRight = area.right - 9f * sc
+        val gridTop = area.top + 14f * sc
+        val cw = 76f * sc
+        val ch = 70f * sc
+        for (ri in keys.indices) for (ci in keys[ri].indices) {
+            val cx = gridRight - 4 * cw + ci * cw
+            val cy = gridTop + ri * ch
+            val rect = rects[ri][ci]
+            rect.set(cx + 12f * sc, cy + 9f * sc, cx + cw - 12f * sc, cy + 9f * sc + 52f * sc)
+            drawKey(cv, ui, rect, keys[ri][ci], ri == r && ci == c)
+        }
+    }
+
+    private fun drawPortrait(cv: Canvas, ui: Ui, area: RectF) {
         val sc = ui.sc
         // display
         val disp = RectF(area.left + 12f * sc, area.top + 8f * sc, area.right - 12f * sc, area.top + 100f * sc)
