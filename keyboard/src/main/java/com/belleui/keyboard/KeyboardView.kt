@@ -1,0 +1,310 @@
+package com.belleui.keyboard
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.view.MotionEvent
+import android.view.View
+import com.belleui.kit.Belle
+import kotlin.math.max
+
+/** Two rows of keys in the Belle style. The selected key is blue; the game pad moves it, A presses it. */
+class KeyboardView(ctx: Context) : View(ctx) {
+    var rows: List<List<Key>> = Layouts.rows(0, false)
+        private set
+    var selRow = 0
+    var selCol = 0
+    var shift = 0 // 0 off, 1 next letter, 2 caps lock
+    var page = 0
+    var listener: ((Key) -> Unit)? = null
+    var onSuggestion: ((String) -> Unit)? = null
+
+    /** Word suggestions shown in the bar above the keys; selRow -1 means the bar has the highlight. */
+    var suggestions: List<String> = emptyList()
+        private set
+
+    fun setSuggestions(list: List<String>) {
+        suggestions = list
+        if (list.isEmpty() && selRow < 0) {
+            selRow = 0
+            selCol = selCol.coerceIn(0, rows[0].size - 1)
+        }
+        if (selRow < 0) selCol = selCol.coerceIn(0, list.size - 1)
+        invalidate()
+    }
+
+    fun selectedSuggestion(): String? = if (selRow < 0) suggestions.getOrNull(selCol) else null
+
+    private val gfx = com.belleui.kit.BelleGfx(ctx)
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.NORMAL); textAlign = Paint.Align.CENTER }
+    private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif-light", Typeface.NORMAL); textAlign = Paint.Align.CENTER; color = 0xFF8A8A8A.toInt() }
+    private val rect = RectF()
+    private val path = Path()
+    private var sc = 1f
+    private var pressedUntil = 0L
+    private val keyRects = ArrayList<Pair<RectF, Pair<Int, Int>>>()
+
+    fun setLayout(page: Int, qwerty: Boolean) {
+        this.page = page
+        rows = Layouts.rows(page, qwerty)
+        selRow = selRow.coerceIn(0, 1)
+        selCol = selCol.coerceIn(0, rows[selRow].size - 1)
+        invalidate()
+    }
+
+    fun selected(): Key = rows[selRow.coerceAtLeast(0)][selCol.coerceIn(0, rows[selRow.coerceAtLeast(0)].size - 1)]
+
+    /** Moves the highlight; up and down keep the same spot along the row. */
+    fun move(dx: Int, dy: Int) {
+        if (selRow < 0) {
+            // in the suggestion bar: left and right pick a word, down goes back to the keys
+            if (dy > 0) {
+                selRow = 0
+                selCol = 0
+            } else if (dx != 0) {
+                selCol = (selCol + dx).coerceIn(0, max(0, suggestions.size - 1))
+            }
+        } else if (dy != 0) {
+            if (dy < 0 && selRow == 0 && suggestions.isNotEmpty()) {
+                selRow = -1
+                selCol = 0
+            } else {
+                val here = centreOf(selRow, selCol)
+                selRow = (selRow + dy).coerceIn(0, 1)
+                selCol = nearest(selRow, here)
+            }
+        } else if (dx != 0) {
+            val n = rows[selRow].size
+            selCol = (selCol + dx + n) % n
+        }
+        invalidate()
+    }
+
+    private fun centreOf(row: Int, col: Int): Float {
+        var x = 0f
+        for (i in 0 until col) x += rows[row][i].w
+        return x + rows[row][col].w / 2f
+    }
+
+    private fun nearest(row: Int, x: Float): Int {
+        var best = 0
+        var bd = Float.MAX_VALUE
+        for (i in rows[row].indices) {
+            val d = kotlin.math.abs(centreOf(row, i) - x)
+            if (d < bd) {
+                bd = d
+                best = i
+            }
+        }
+        return best
+    }
+
+    fun flash() {
+        pressedUntil = System.currentTimeMillis() + 90
+        invalidate()
+        postInvalidateDelayed(110)
+    }
+
+    override fun onMeasure(w: Int, h: Int) {
+        val width = MeasureSpec.getSize(w)
+        sc = width / 640f
+        setMeasuredDimension(width, (160f * sc).toInt())
+    }
+
+    private fun label(k: Key): String {
+        if (k.kind != K_CHAR) return k.label
+        return if (page == 0 && shift > 0) k.label.uppercase() else k.label
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        c.drawColor(0xFF1B1B1B.toInt())
+        // the input panel background of the Belle theme
+        rect.set(0f, 0f, w, h)
+        gfx.draw(c, "qgn_graf_input_bg", rect)
+        p.shader = null
+        p.style = Paint.Style.FILL
+        p.color = 0xFF3A3A3A.toInt()
+        c.drawRect(0f, 0f, w, 1.5f * sc, p)
+        if (suggestions.isEmpty()) {
+            hint.textSize = 13f * sc
+            c.drawText("A press   B delete   X space   Y shift   L1 R1 cursor   R2 enter   L2 123   Up = words", w / 2f, 19f * sc, hint)
+        } else {
+            drawSuggestions(c, w)
+        }
+
+        keyRects.clear()
+        val top = 28f * sc
+        val rowH = (h - top - 6f * sc) / 2f
+        val unit = (w - 12f * sc) / 18f
+        for ((ri, row) in rows.withIndex()) {
+            var x = 6f * sc
+            for ((ci, k) in row.withIndex()) {
+                rect.set(x + 1.5f * sc, top + ri * rowH + 1.5f * sc, x + k.w * unit - 1.5f * sc, top + (ri + 1) * rowH - 1.5f * sc)
+                keyRects.add(RectF(rect) to (ri to ci))
+                val sel = ri == selRow && ci == selCol
+                val down = sel && System.currentTimeMillis() < pressedUntil
+                drawKey(c, rect, k, sel, down)
+                x += k.w * unit
+            }
+        }
+    }
+
+    private fun drawSuggestions(c: Canvas, w: Float) {
+        val n = suggestions.size
+        val slot = (w - 12f * sc) / 3f
+        for (i in 0 until n) {
+            rect.set(6f * sc + i * slot + 2f * sc, 4f * sc, 6f * sc + (i + 1) * slot - 2f * sc, 27f * sc)
+            sugRects[i].set(rect)
+            val sel = selRow < 0 && selCol == i
+            if (sel) {
+                p.style = Paint.Style.FILL
+                p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, Belle.BLUE_LIGHT, Belle.BLUE, Shader.TileMode.CLAMP)
+                c.drawRoundRect(rect, 6f * sc, 6f * sc, p)
+                p.shader = null
+            }
+            text.color = if (sel) Color.WHITE else if (i == 0) 0xFFFFFFFF.toInt() else 0xFFC8C8C8.toInt()
+            text.textSize = 18f * sc
+            c.drawText(suggestions[i], rect.centerX(), rect.centerY() - (text.ascent() + text.descent()) / 2f, text)
+        }
+    }
+
+    private val sugRects = Array(3) { RectF() }
+
+    private fun drawKey(c: Canvas, r: RectF, k: Key, sel: Boolean, down: Boolean) {
+        val special = k.kind != K_CHAR
+        val topCol: Int
+        val botCol: Int
+        when {
+            down -> { topCol = Belle.BLUE; botCol = Color.rgb(Color.red(Belle.BLUE) * 6 / 10, Color.green(Belle.BLUE) * 6 / 10, Color.blue(Belle.BLUE) * 6 / 10) }
+            sel -> { topCol = Belle.BLUE_LIGHT; botCol = Belle.BLUE }
+            special -> { topCol = 0xFF4A5560.toInt(); botCol = 0xFF2E363E.toInt() }
+            else -> { topCol = 0xFF4A4A4A.toInt(); botCol = 0xFF2C2C2C.toInt() }
+        }
+        p.style = Paint.Style.FILL
+        // keys that are not highlighted wear the theme's real key frame; the highlighted one is drawn in the accent colour
+        val framed = !sel && !down && gfx.nine(c, if (special) "qsn_fr_keypad_button2_normal" else "qsn_fr_keypad_button_normal", r, 24, 9f * sc)
+        if (!framed) {
+            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, topCol, botCol, Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, 7f * sc, 7f * sc, p)
+            p.shader = null
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = if (sel) Belle.BLUE_LIGHT else 0xFF5A5A5A.toInt()
+            c.drawRoundRect(r, 7f * sc, 7f * sc, p)
+            p.style = Paint.Style.FILL
+        }
+        p.color = Color.WHITE
+        val cx = r.centerX()
+        val cy = r.centerY()
+        val s = r.height() * 0.3f
+        // the theme's own input glyphs where it has them (backspace, shift, enter, the 123 / ABC switches, the space bracket)
+        fun gl(name: String, size: Float) = gfx.glyphTinted(c, name, cx, cy, size, Color.WHITE)
+        val glyph = when (k.kind) {
+            K_BACKSPACE -> gl("qgn_indi_input_backspace", 34f * sc)
+            K_ENTER -> gl("qgn_indi_input_enter", 28f * sc)
+            K_SHIFT -> gl("qgn_indi_input_shift", 28f * sc).also { if (it && shift == 2) c.drawRect(cx - s, cy + s + 3f * sc, cx + s, cy + s + 6f * sc, p) }
+            K_PAGE -> gl(when (k.text) { "1" -> "qgn_indi_input_case_numeric"; "2" -> "qgn_indi_input_case_special"; else -> "qgn_indi_input_case_capital" }, 30f * sc)
+            K_SPACE -> {
+                // the bracket: left end, stretched middle, right end
+                val hh = 22f * sc
+                val half = r.width() * 0.22f
+                val ok = gfx.draw(c, "qgn_indi_input_space_l", RectF(cx - half - 8.5f * sc, cy - hh / 2f, cx - half + 8.5f * sc, cy + hh / 2f), 255) &&
+                    gfx.draw(c, "qgn_indi_input_space_middle", RectF(cx - half + 8.5f * sc, cy - hh / 2f, cx + half - 8.5f * sc, cy + hh / 2f), 255) &&
+                    gfx.draw(c, "qgn_indi_input_space_r", RectF(cx + half - 8.5f * sc, cy - hh / 2f, cx + half + 8.5f * sc, cy + hh / 2f), 255)
+                ok
+            }
+            else -> false
+        }
+        if (!glyph) when (k.kind) {
+            K_CHAR, K_PAGE -> {
+                text.color = Color.WHITE
+                text.textSize = (if (k.kind == K_PAGE) 17f else 25f) * sc
+                c.drawText(label(k), cx, cy - (text.ascent() + text.descent()) / 2f, text)
+            }
+            K_SHIFT -> {
+                path.reset()
+                path.moveTo(cx, cy - s)
+                path.lineTo(cx + s, cy)
+                path.lineTo(cx + s * 0.4f, cy)
+                path.lineTo(cx + s * 0.4f, cy + s)
+                path.lineTo(cx - s * 0.4f, cy + s)
+                path.lineTo(cx - s * 0.4f, cy)
+                path.lineTo(cx - s, cy)
+                path.close()
+                if (shift == 0) {
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 2f * sc
+                }
+                c.drawPath(path, p)
+                if (shift == 2) c.drawRect(cx - s, cy + s + 3f * sc, cx + s, cy + s + 6f * sc, p)
+            }
+            K_BACKSPACE -> {
+                path.reset()
+                path.moveTo(cx - s * 1.5f, cy)
+                path.lineTo(cx - s * 0.5f, cy - s)
+                path.lineTo(cx + s * 1.5f, cy - s)
+                path.lineTo(cx + s * 1.5f, cy + s)
+                path.lineTo(cx - s * 0.5f, cy + s)
+                path.close()
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 2f * sc
+                c.drawPath(path, p)
+                c.drawLine(cx, cy - s * 0.4f, cx + s * 0.8f, cy + s * 0.4f, p)
+                c.drawLine(cx + s * 0.8f, cy - s * 0.4f, cx, cy + s * 0.4f, p)
+            }
+            K_ENTER -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 2.4f * sc
+                path.reset()
+                path.moveTo(cx + s, cy - s)
+                path.lineTo(cx + s, cy + s * 0.2f)
+                path.lineTo(cx - s, cy + s * 0.2f)
+                c.drawPath(path, p)
+                path.reset()
+                path.moveTo(cx - s * 0.2f, cy - s * 0.5f)
+                path.lineTo(cx - s, cy + s * 0.2f)
+                path.lineTo(cx - s * 0.2f, cy + s * 0.9f)
+                c.drawPath(path, p)
+            }
+            K_SPACE -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 2.4f * sc
+                path.reset()
+                path.moveTo(cx - s * 1.6f, cy - s * 0.2f)
+                path.lineTo(cx - s * 1.6f, cy + s * 0.5f)
+                path.lineTo(cx + s * 1.6f, cy + s * 0.5f)
+                path.lineTo(cx + s * 1.6f, cy - s * 0.2f)
+                c.drawPath(path, p)
+            }
+        }
+        p.style = Paint.Style.FILL
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked != MotionEvent.ACTION_DOWN) return true
+        for (i in suggestions.indices) if (sugRects[i].contains(e.x, e.y)) {
+            selRow = -1
+            selCol = i
+            invalidate()
+            onSuggestion?.invoke(suggestions[i])
+            return true
+        }
+        for ((r, rc) in keyRects) if (r.contains(e.x, e.y)) {
+            selRow = rc.first
+            selCol = rc.second
+            flash()
+            listener?.invoke(rows[rc.first][rc.second])
+            return true
+        }
+        return true
+    }
+}

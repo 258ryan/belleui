@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sharedUserId="android.uid.systemui">
+
+    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.MANAGE_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.BATTERY_STATS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.DEVICE_POWER" />
+    <uses-permission android:name="android.permission.REAL_GET_TASKS" />
+    <uses-permission android:name="android.permission.START_TASKS_FROM_RECENTS" />
+    <uses-permission android:name="android.permission.REMOVE_TASKS" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
+    <uses-permission android:name="android.permission.CONTROL_DISPLAY_BRIGHTNESS" />
+    <uses-permission android:name="android.permission.REBOOT" />
+    <uses-permission android:name="android.permission.SHUTDOWN" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.READ_FRAME_BUFFER" />
+    <uses-permission android:name="android.permission.MANAGE_DEBUGGING" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:persistent="true"
+        android:process="com.android.systemui"
+        android:defaultToDeviceProtectedStorage="true"
+        android:directBootAware="true"
+        android:supportsRtl="false">
+
+        <!-- the system starts this one by name (config_systemUIServiceComponent), exactly as it starts the stock one -->
+        <service
+            android:name="com.android.systemui.SystemUIService"
+            android:exported="true"
+            android:directBootAware="true" />
+
+        <!-- the wallpaper the system draws behind everything (the stock name, so existing wallpaper settings keep working) -->
+        <service
+            android:name="com.android.systemui.ImageWallpaper"
+            android:exported="true"
+            android:permission="android.permission.BIND_WALLPAPER"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/wallpaper" />
+        </service>
+
+        <!-- screenshots: the system binds this one by name (config_screenshotServiceComponent) -->
+        <service
+            android:name="com.android.systemui.screenshot.TakeScreenshotService"
+            android:exported="true"
+            android:process=":screenshot"
+            android:directBootAware="true" />
+
+        <!-- the "Allow USB debugging?" question, started by name by the system -->
+        <activity
+            android:name="com.android.systemui.usb.UsbDebuggingActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:permission="android.permission.MANAGE_DEBUGGING" />
+    </application>
+</manifest>

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<<<<<<< HEAD
 <!-- Belle notification plate: dark glossy panel, light top edge, thin dark line underneath (replaces the flat Android card) -->
 <ripple android:color="#401080dd"
   xmlns:android="http://schemas.android.com/apk/res/android">
@@ -16,5 +17,14 @@
                 <shape android:shape="rectangle"><solid android:color="#ff000000" /></shape>
             </item>
         </layer-list>
+=======
+<!-- Belle notification plate. The System UI casts the first layer to a GradientDrawable, so it must stay ripple > one shape. -->
+<ripple android:color="#401080dd"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:startColor="#ff343434" android:endColor="#ff1c1c1c" android:angle="270" android:type="linear" />
+        </shape>
+>>>>>>> origin/belle/all
     </item>
 </ripple>

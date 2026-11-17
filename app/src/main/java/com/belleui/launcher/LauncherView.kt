@@ -3,6 +3,7 @@ package com.belleui.launcher
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.graphics.Path
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
@@ -47,17 +48,22 @@ import kotlin.math.sin
  * The whole launcher UI, drawn on one canvas and driven by gamepad keys.
  *
  * Pages (L1/R1 or D-pad past the edge to switch):
- *   0  Home    – Belle-style clock + battery widget, 4 favourite tiles
- *   1  Menu    – Symbian-style 4x3 app grid
- *   2  Recent  – Asha-style list of recently opened apps
+ *  -1  Hub     – the notification history
+ *   0  Home    – the Belle home screen: widgets and shortcuts on a 4x3 grid you arrange yourself
+ *   1  Menu    – the E6 application grid, four icons across
+ *   2  Recent  – the open / recently used apps
  */
 class LauncherView(private val act: Activity) : View(act) {
+    /** The E6 application grid is four icons across, three rows to a screen (ApplicationGrid.xml of the E6 Belle theme). */
+    private val COLS = 4
 
     private enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, SETTINGS, MENU, PREV, NEXT }
 
     private class PopupItem(val label: String, val action: () -> Unit)
     /** menu = S60 options menu popping up from the bottom-left; otherwise a titled dialog. */
-    private class Popup(val title: String, val items: List<PopupItem>, var sel: Int = 0, val menu: Boolean = false)
+    private class Popup(val title: String, val items: List<PopupItem>, var sel: Int = 0, val menu: Boolean = false) {
+        var top = 0 // first visible row when the list is taller than the screen
+    }
 
     private class AnimRect {
         val cur = RectF()
@@ -86,7 +92,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- data ------------------------------------------------------------------
     private val repo = AppRepo(act)
-    private var theme = Themes.all[repo.themeIndex]
+    private var theme: Theme = run {
+        com.belleui.kit.ThemeStore.load(context)
+        com.belleui.kit.Sounds.init(context)
+        com.belleui.kit.ThemeStore.shared?.let { Themes.fromAccent(it) } ?: Themes.all[repo.themeIndex]
+    }
     private var menuApps: List<AppEntry> = emptyList()
     private var favs: List<AppEntry> = emptyList()
     private var recents: List<AppEntry> = emptyList()
@@ -95,9 +105,13 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- ui state ----------------------------------------------------------------
     private var page = 0
     private var pageAnim = 0f
+    private var pageTarget = 0f
+    private var pageFrom = 0f
+    private var pageStartMs = 0L
     private var tab = 1
     private var tabFocus = false
     private var homeSel = 0
+    private var homePage = 0 // which of the three home screens is showing
     private var menuSel = 0
     private var menuTop = 0
     private var menuTopAnim = 0f
@@ -129,8 +143,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 26f
-    private var softH = 60f
+    private var statusH = 36f
+    private var softH = 67f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -142,7 +156,6 @@ class LauncherView(private val act: Activity) : View(act) {
     private val tmp = RectF()
     private val light = Typeface.create("sans-serif-light", Typeface.NORMAL)
     private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    private var bgShader: Shader? = null
     private var lastNs = System.nanoTime()
     private var scrollAccum = 0f
 
@@ -162,9 +175,20 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- home widgets ----
     private val homeWidgetRects = arrayOf(RectF(), RectF())
+    private var widgetSub = 0 // which button of a large widget, or which small widget, has the focus
+    private val subRects = Array(3) { RectF() }
+    private val media = MediaWidget(act) { postInvalidate() }
+    private val calendar = CalendarWidget(act) { postInvalidate() }
+    private var notesList: List<Pair<String, String>> = emptyList()
+    private var noteIdx = 0
+    private var notesLoadedAt = 0L
+    private var dateShort = ""
+    private var dateShortFor = ""
     private var storageFree = 0L
     private var storageTotal = 1L
-    private val gfx = BelleGfx(act)
+    /** The kit's drawing helpers: popups, buttons and the highlight look exactly as in the Belle apps. */
+    private val kit = com.belleui.kit.Ui(act)
+    private val gfx = kit.gfx
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -190,12 +214,24 @@ class LauncherView(private val act: Activity) : View(act) {
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (popup == null && onTap(e.x, e.y, selectOnly = true)) perform(Act.OPTIONS)
+            // only on the page itself: holding a toolbar button must not pick anything up
+            if (popup != null || e.y < cTop || e.y > cBot) return
+            if (!onTap(e.x, e.y, selectOnly = true)) return
+            if (page == 0 && !homeEdit && homeItems.isNotEmpty()) {
+                // hold on an icon or widget: pick it up, then drag
+                homeEdit = true
+                carrying = true
+                dragging = true
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                invalidate()
+            } else perform(Act.OPTIONS)
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-            if (popup == null && abs(vx) > abs(vy) && abs(vx) > 600f) {
+            if (popup == null && !reorder && !homeEdit && abs(vx) > abs(vy) && abs(vx) > 600f) {
                 setPage(page + if (vx < 0) 1 else -1)
+                ensureVisible()
+                invalidate()
                 return true
             }
             return false
@@ -209,7 +245,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 val d = if (scrollAccum > 0) 1 else -1
                 scrollAccum -= d * step
                 if (page == 1) {
-                    menuTop = (menuTop + d).coerceIn(0, max(0, (menuApps.size + 3) / 4 - 3))
+                    menuTop = (menuTop + d).coerceIn(0, max(0, (menuApps.size + COLS - 1) / COLS - 3))
                 } else if (page == 2) {
                     recentTop = (recentTop + d).coerceIn(0, max(0, recents.size - recentVisible()))
                 }
@@ -256,14 +292,21 @@ class LauncherView(private val act: Activity) : View(act) {
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        try {
-            act.unregisterReceiver(statusReceiver)
-            act.unregisterReceiver(packageReceiver)
-        } catch (_: IllegalArgumentException) {
+        for (r in arrayOf(statusReceiver, packageReceiver)) {
+            try {
+                act.unregisterReceiver(r)
+            } catch (_: IllegalArgumentException) {
+            }
         }
     }
 
     fun onResumed() {
+        // pick up the theme colour, sounds and button hints chosen in Styles
+        com.belleui.kit.ThemeStore.refresh(act) {
+            com.belleui.kit.ThemeStore.shared?.let { theme = Themes.fromAccent(it) }
+            invalidate()
+        }
+        homeStart()
         readStorage()
         refreshClock()
         readWifi()
@@ -271,7 +314,31 @@ class LauncherView(private val act: Activity) : View(act) {
         invalidate()
     }
 
+    /** The Status menu's Notifications button: the Hub page. */
+    fun openHub() {
+        popup = null
+        reorder = false
+        setPage(-1)
+        invalidate()
+    }
+
+    /** The recent-apps key (through the Belle Chooser module): the Recent tab, ready to pick from. */
+    fun openRecents() {
+        popup = null
+        reorder = false
+        setPage(2)
+        tabFocus = false
+        recentSel = 0
+        if (loaded) refreshLists()
+        invalidate()
+    }
+
     fun goHome() {
+        if (homePage != 0) {
+            homePage = 0
+            repo.homePage = 0
+            refreshLists()
+        }
         popup = null
         reorder = false
         page = 0
@@ -291,11 +358,76 @@ class LauncherView(private val act: Activity) : View(act) {
         }.start()
     }
 
+    // ---- search (the Menu's toolbar magnifier) ----------------------------------------------------
+    private var searchQuery = ""
+    private var searchBox: android.widget.EditText? = null
+    private var searchEditing = false
+
+    private fun searching() = searchBox?.visibility == View.VISIBLE
+
+    private fun openSearch() {
+        popup = null
+        val box = searchBox ?: android.widget.EditText(act).also { b ->
+            b.setBackgroundColor(0xE6101010.toInt())
+            b.setTextColor(Color.WHITE)
+            b.setHintTextColor(0xFF8A8A8A.toInt())
+            b.hint = "Search"
+            b.setSingleLine()
+            b.textSize = 18f
+            b.setPadding((16f * sc).toInt(), 0, (16f * sc).toInt(), 0)
+            b.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            b.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchQuery = s?.toString()?.trim() ?: ""
+                    menuSel = 0
+                    menuTop = 0
+                    refreshLists()
+                    invalidate()
+                }
+            })
+            b.setOnEditorActionListener { _, _, _ ->
+                // keep the results, hand the keys back to the grid
+                searchEditing = false
+                (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(b.windowToken, 0)
+                b.clearFocus()
+                invalidate()
+                true
+            }
+            val lp = android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, (SEARCH_H * sc).toInt())
+            lp.topMargin = statusH.toInt()
+            act.addContentView(b, lp)
+            searchBox = b
+        }
+        box.setText("")
+        box.visibility = View.VISIBLE
+        searchEditing = true
+        box.requestFocus()
+        box.post { (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(box, 0) }
+        invalidate()
+    }
+
+    private fun closeSearch() {
+        val b = searchBox ?: return
+        (act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(b.windowToken, 0)
+        b.visibility = View.GONE
+        b.clearFocus()
+        searchEditing = false
+        searchQuery = ""
+        refreshLists()
+        invalidate()
+    }
+
     private fun refreshLists() {
-        menuApps = repo.menuApps(repo.showHidden)
+        menuApps = repo.menuApps(repo.showHidden).let { l -> if (searchQuery.isEmpty()) l else l.filter { it.label.contains(searchQuery, true) } }
         // hidden apps disappear everywhere (menu, home shortcuts, recents) unless "show hidden" is on
         favs = repo.favoriteEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
         recents = repo.recentEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
+        if (loaded && !homeLoaded) {
+            homeLoaded = true
+            loadHome()
+        }
         menuSel = menuSel.coerceIn(0, max(0, menuApps.size - 1))
         recentSel = recentSel.coerceIn(0, max(0, recents.size - 1))
         ensureVisible()
@@ -358,7 +490,37 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun handleKeyEvent(e: KeyEvent): Boolean {
+        if (e.keyCode == KeyEvent.KEYCODE_APP_SWITCH && !searching()) {
+            // the recents key, when the system lets it through to the launcher
+            if (e.action == KeyEvent.ACTION_UP) openRecents()
+            return true
+        }
+        if (searching()) {
+            if (e.keyCode == KeyEvent.KEYCODE_BACK || e.keyCode == KeyEvent.KEYCODE_ESCAPE || (e.keyCode == KeyEvent.KEYCODE_BUTTON_B && !searchEditing)) {
+                if (e.action == KeyEvent.ACTION_UP) closeSearch()
+                return true
+            }
+            if (searchEditing) return false // the text box gets the keys
+        }
         val a = actionFor(e.keyCode) ?: return false
+        if (a == Act.OK && page == 0 && popup == null && !homeEdit && homeItems.isNotEmpty()) {
+            // press A = open; hold A = pick the item up to move it
+            if (e.action == KeyEvent.ACTION_DOWN) {
+                if (e.repeatCount == 0) okLong = false
+                else if (!okLong) {
+                    okLong = true
+                    homeEdit = true
+                    carrying = true
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    showToast("D-pad moves, ${okLetter()} drops")
+                    invalidate()
+                }
+            } else if (e.action == KeyEvent.ACTION_UP) {
+                if (!okLong) perform(Act.OK)
+                okLong = false
+            }
+            return true
+        }
         if (e.action == KeyEvent.ACTION_DOWN) {
             val directional = a == Act.UP || a == Act.DOWN || a == Act.LEFT || a == Act.RIGHT
             if (e.repeatCount == 0 || directional) perform(a)
@@ -366,10 +528,38 @@ class LauncherView(private val act: Activity) : View(act) {
         return true
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean =
-        gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (page == 0 && homeEdit && carrying && dragging) {
+            val cur = homeItems.getOrNull(homeIdx)
+            if (cur != null && (event.action == MotionEvent.ACTION_MOVE || event.action == MotionEvent.ACTION_UP)) {
+                val cw = width / HC.toFloat()
+                val ch = (cBot - cTop - 12f * sc) / HR
+                val nc = (event.x / cw).toInt().coerceIn(0, HC - cur.w)
+                val nr = ((event.y - cTop - 6f * sc) / ch).toInt().coerceIn(0, HR - cur.h)
+                if ((nc != cur.col || nr != cur.row) && !occupied(nc, nr, cur.w, cur.h, cur)) {
+                    cur.col = nc
+                    cur.row = nr
+                }
+                if (event.action == MotionEvent.ACTION_UP) {
+                    dragging = false
+                    carrying = false
+                    saveHome()
+                    showToast("Dropped - press ${backLetter()} when done")
+                }
+                invalidate()
+                return true
+            }
+        }
+        return gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    }
 
     private fun perform(a: Act) {
+        com.belleui.kit.Sounds.play(when (a) {
+            Act.OK -> com.belleui.kit.Sounds.SELECT
+            Act.BACK -> com.belleui.kit.Sounds.BACK
+            Act.OPTIONS, Act.SETTINGS, Act.MENU -> com.belleui.kit.Sounds.OPEN
+            else -> com.belleui.kit.Sounds.TICK
+        })
         if (a == Act.OK || a == Act.OPTIONS) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         val pu = popup
         if (pu != null) {
@@ -392,14 +582,19 @@ class LauncherView(private val act: Activity) : View(act) {
             when (a) {
                 Act.LEFT -> moveBy(-1)
                 Act.RIGHT -> moveBy(1)
-                Act.UP -> moveBy(-4)
-                Act.DOWN -> moveBy(4)
+                Act.UP -> moveBy(-COLS)
+                Act.DOWN -> moveBy(COLS)
                 Act.OK, Act.BACK, Act.OPTIONS -> {
                     reorder = false
                     showToast("Order saved")
                 }
                 else -> {}
             }
+            invalidate()
+            return
+        }
+        if (page == 0 && homeEdit && (a == Act.BACK || a == Act.SETTINGS)) {
+            homeKey(a)
             invalidate()
             return
         }
@@ -414,10 +609,16 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
         when (a) {
-            Act.PREV -> setPage(page - 1)
+            Act.PREV -> setPage(page - 1) // L1 on Home opens the Hub
             Act.NEXT -> setPage(page + 1)
             Act.MENU -> setPage(if (page != 0) 0 else 1)
-            Act.SETTINGS -> openQuick(0)
+            Act.SETTINGS -> if (page == 1) openSearch() else if (page == 2) {
+                recents.getOrNull(recentSel)?.let {
+                    closeApp(listOf(it))
+                    refreshLists()
+                    showToast("${it.label} closed")
+                }
+            } else openQuick(0)
             Act.OPTIONS -> openOptions()
             Act.BACK -> setPage(if (page == 0) 1 else 0)
             else -> navigate(a)
@@ -446,40 +647,28 @@ class LauncherView(private val act: Activity) : View(act) {
                 }
                 else -> {}
             }
-            0 -> when (a) {
-                Act.LEFT -> if (homeSel > 0) homeSel-- else setPage(-1)
-                Act.RIGHT -> if (homeSel < 3) homeSel++ else setPage(1)
-                Act.OK -> {
-                    val app = favs.getOrNull(homeSel)
-                    if (app != null) {
-                        launch(app)
-                    } else {
-                        setPage(1)
-                        showToast("Pick an app, then Options > Add to home")
-                    }
-                }
-                else -> {}
-            }
+            0 -> homeKey(a)
             1 -> {
                 val n = menuApps.size
                 if (n == 0) {
-                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) else if (a == Act.UP) tabFocus = true
+                    if (a == Act.LEFT) setPage(0) else if (a == Act.RIGHT) setPage(2) 
                     return
                 }
                 when (a) {
-                    Act.LEFT -> if (menuSel % 4 == 0) setPage(0) else menuSel--
-                    Act.RIGHT -> if (menuSel % 4 == 3 || menuSel == n - 1) setPage(2) else menuSel++
-                    Act.UP -> if (menuSel >= 4) menuSel -= 4 else tabFocus = true
-                    Act.DOWN -> if (menuSel + 4 < n) menuSel += 4 else if (menuSel / 4 < (n - 1) / 4) menuSel = n - 1
+                    Act.LEFT -> if (menuSel % COLS == 0) setPage(0) else menuSel--
+                    Act.RIGHT -> if (menuSel % COLS == COLS - 1 || menuSel == n - 1) setPage(2) else menuSel++
+                    Act.UP -> if (menuSel >= COLS) menuSel -= COLS
+                    Act.DOWN -> if (menuSel + COLS < n) menuSel += COLS else if (menuSel / COLS < (n - 1) / COLS) menuSel = n - 1
                     Act.OK -> launch(menuApps[menuSel])
                     else -> {}
                 }
             }
             2 -> when (a) {
-                Act.UP -> if (recentSel > 0) recentSel-- else tabFocus = true
+                Act.UP -> if (recentSel > 0) recentSel--
                 Act.DOWN -> if (recentSel < recents.size - 1) recentSel++
                 Act.LEFT -> setPage(1)
                 Act.OK -> recents.getOrNull(recentSel)?.let { launch(it) }
+                Act.RIGHT -> {}
                 else -> {}
             }
         }
@@ -497,9 +686,9 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun ensureVisible() {
-        val row = menuSel / 4
+        val row = menuSel / COLS
         if (row < menuTop) menuTop = row else if (row > menuTop + 2) menuTop = row - 2
-        menuTop = menuTop.coerceIn(0, max(0, (menuApps.size + 3) / 4 - 3))
+        menuTop = menuTop.coerceIn(0, max(0, (menuApps.size + COLS - 1) / COLS - 3))
         val vis = recentVisible()
         if (recentSel < recentTop) recentTop = recentSel else if (recentSel >= recentTop + vis) recentTop = recentSel - vis + 1
         recentTop = recentTop.coerceIn(0, max(0, recents.size - vis))
@@ -513,10 +702,18 @@ class LauncherView(private val act: Activity) : View(act) {
             if (!tmp.contains(x, y)) {
                 popup = null
             } else {
-                val row = ((y - tmp.top - popupTitleH(pu) - (if (pu.menu) 4f * sc else 0f)) / popupItemH(pu)).toInt()
-                if (row in pu.items.indices || (pu.menu && row >= pu.items.size)) {
-                    pu.sel = min(row, pu.items.size)
+                val ih = popupItemH(pu)
+                val vis = popupVis(pu)
+                val listTop = tmp.top + popupTitleH(pu) + (if (pu.menu) 4f * sc else 0f)
+                // floor, not toInt(): a tap on the title must not count as the first row
+                val row = Math.floor(((y - listTop) / ih).toDouble()).toInt()
+                if (row in 0 until vis && pu.top + row < pu.items.size) {
+                    pu.sel = pu.top + row
                     perform(Act.OK)
+                } else if (y >= listTop + ih * vis) {
+                    // the Cancel / Back button under the list
+                    popup = null
+                    com.belleui.kit.Sounds.play(com.belleui.kit.Sounds.BACK)
                 }
             }
             invalidate()
@@ -524,15 +721,19 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         if (abs(pageAnim - pagePos()) > 0.05f) return false
         if (y > cBot) { // soft-key bar
-            if (!selectOnly) perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
+            if (!selectOnly) {
+                if (page == 0 && popup == null && !reorder) {
+                    val f = x / width
+                    when {
+                        f < 0.25f -> perform(Act.BACK)
+                        f > 0.75f -> perform(Act.OPTIONS)
+                    }
+                } else if (page == 1 || page == 0 || page == 2) perform(if (x < width / 3f) Act.BACK else if (x < width * 2f / 3f) (if (page == 0) Act.OK else Act.SETTINGS) else Act.OPTIONS)
+                else perform(if (x < width / 4f) Act.BACK else if (x < width / 2f) Act.OK else if (x < width * 3f / 4f) Act.SETTINGS else Act.OPTIONS)
+            }
             return true
         }
         if (y < cTop) return false
-        if ((page == 1 || page == 2) && y < cTop + TAB * sc) {
-            setPage(if (x < width / 2f) 1 else 2)
-            invalidate()
-            return true
-        }
         var hit = false
         when (page) {
             -1 -> for ((rect, idx) in hubHits) if (rect.contains(x, y)) {
@@ -541,23 +742,11 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (!selectOnly) perform(Act.OK)
                 break
             }
-            0 -> {
-                var onWidget = false
-                for (k in 0..1) if (!selectOnly && homeWidgetRects[k].contains(x, y)) {
-                    widgetTap(if (k == 0) repo.widgetLeft else repo.widgetRight)
-                    onWidget = true
-                }
-                if (!onWidget) for (i in 0..3) if (homeTileRect(i, tmp).contains(x, y)) {
-                    homeSel = i
-                    hit = favs.getOrNull(i) != null
-                    if (!selectOnly) perform(Act.OK)
-                    break
-                }
-            }
+            0 -> hit = homeTap(x, y, selectOnly)
             1 -> {
-                val cw = width / 4f
+                val cw = menuCellW()
                 val ch = menuCellH()
-                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * 4 + (x / cw).toInt()
+                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * COLS + ((x - menuGridLeft()) / cw).toInt().coerceIn(0, COLS - 1)
                 if (y > menuAreaTop() && idx in menuApps.indices) {
                     menuSel = idx
                     hit = true
@@ -569,7 +758,13 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (idx in recents.indices && y > cTop + HEADER * sc) {
                     recentSel = idx
                     hit = true
-                    if (!selectOnly) perform(Act.OK)
+                    if (!selectOnly) {
+                        // the cross at the right closes the app, anywhere else opens it
+                        if (x > width - 64f * sc) {
+                            closeApp(listOf(recents[idx]))
+                            refreshLists()
+                        } else perform(Act.OK)
+                    }
                 }
             }
         }
@@ -586,10 +781,11 @@ class LauncherView(private val act: Activity) : View(act) {
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(app.component)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        app.extras?.let { i.putExtras(it).setAction("emu.launch").removeCategory(Intent.CATEGORY_LAUNCHER) }
         try {
             act.startActivity(i)
             repo.pushRecent(app.key)
-            recents = repo.recentEntries()
+            recents = repo.recentEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
         } catch (_: Exception) {
             showToast("Can't open ${app.label}")
         }
@@ -605,7 +801,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun selectedApp(): AppEntry? = when (page) {
         -1 -> null
-        0 -> favs.getOrNull(homeSel)
+        0 -> homeItems.getOrNull(homeIdx)?.let { appFor(it) }
         1 -> menuApps.getOrNull(menuSel)
         else -> recents.getOrNull(recentSel)
     }
@@ -620,23 +816,41 @@ class LauncherView(private val act: Activity) : View(act) {
             openHubOptions()
             return
         }
+        if (page == 0) {
+            openHomeMenu()
+            return
+        }
         val app = selectedApp()
         if (app == null) {
-            if (page == 0) openHomeMenu() else openQuick(0)
+            openQuick(0)
             return
         }
         val items = ArrayList<PopupItem>()
         items += PopupItem("Open") { launch(app) }
-        if (page == 0) items += PopupItem("Edit widgets") { openWidgetEditor(0) }
-        if (page == 1) items += PopupItem("Move") {
+        if (page == 2) {
+            items += PopupItem("Close app") { closeApp(listOf(app)) }
+            if (app.extras == null) items += PopupItem("Force stop") { forceStop(app) }
+            items += PopupItem("Remove from list") {
+                repo.removeRecent(app.key)
+                refreshLists()
+                showToast("${app.label} removed from Recent")
+            }
+            items += PopupItem("Close all and clear") { closeApp(recents.toList(), clear = true) }
+            items += PopupItem("Clear list") {
+                repo.clearRecents()
+                refreshLists()
+                showToast("Recent list cleared")
+            }
+        }
+        if (page == 1 && searchQuery.isEmpty()) items += PopupItem("Move") {
             reorder = true
             showToast("D-pad moves, ${okLetter()} drops")
         }
-        val fav = repo.isFavorite(app.key)
+        val fav = homeHas(app.key)
         items += PopupItem(if (fav) "Remove from home" else "Add to home") {
-            if (fav) repo.removeFavorite(app.key)
-            else if (!repo.addFavorite(app.key)) showToast("Home is full (${AppRepo.MAX_FAVS} tiles)")
-            refreshLists()
+            if (fav) removeHomeApp(app.key)
+            else if (!addHomeApp(app.key)) showToast("No room on the home screen")
+            else showToast("${app.label} added to home")
         }
         val hidden = repo.isHidden(app.key)
         items += PopupItem(if (hidden) "Unhide" else "Hide from launcher") {
@@ -644,13 +858,60 @@ class LauncherView(private val act: Activity) : View(act) {
             refreshLists()
             showToast(if (hidden) "${app.label} is visible again" else "${app.label} hidden - restore it in Settings")
         }
-        items += PopupItem("App info") {
-            tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.component.packageName}")))
-        }
-        items += PopupItem("Uninstall") {
-            tryStart(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.component.packageName}")))
+        // a Symbian app lives inside the emulator: its package is the emulator's, which these would act on
+        if (app.extras == null) {
+            items += PopupItem("App info") {
+                tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.component.packageName}")))
+            }
+            items += PopupItem("Uninstall") {
+                tryStart(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.component.packageName}")))
+            }
         }
         popup = Popup(app.label, items, 0, menu = true)
+    }
+
+    /** Ends the background processes of these apps (a normal permission, so no root needed); the launcher itself is never touched. */
+    private fun closeApp(apps: List<AppEntry>, clear: Boolean = false) {
+        val am = act.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        var n = 0
+        for (a in apps) {
+            val pkg = a.component.packageName
+            if (pkg == act.packageName) continue
+            try {
+                am.killBackgroundProcesses(pkg)
+                n++
+            } catch (_: Exception) {
+            }
+        }
+        if (clear) repo.clearRecents()
+        refreshLists()
+        showToast(if (clear) "Closed $n app${if (n == 1) "" else "s"} and cleared the list" else if (n == 1) "${apps[0].label} closed" else "Closed $n apps")
+    }
+
+    /**
+     * Stops the app completely. Android only lets the system or root do that, so this asks root (Magisk shows
+     * its question the first time) and falls back to the app's info page, where the Force stop button is.
+     */
+    private fun forceStop(app: AppEntry) {
+        val pkg = app.component.packageName
+        if (pkg == act.packageName) return
+        showToast("Stopping ${app.label}...")
+        Thread {
+            var ok = false
+            try {
+                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $pkg"))
+                ok = p.waitFor() == 0
+            } catch (_: Exception) {
+            }
+            post {
+                if (ok) {
+                    showToast("${app.label} stopped")
+                } else {
+                    showToast("No root - tap Force stop on the next page")
+                    tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+                }
+            }
+        }.start()
     }
 
     private fun audio() = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -672,11 +933,58 @@ class LauncherView(private val act: Activity) : View(act) {
         false
     }
 
+    private fun btOn(): Boolean = try {
+        @Suppress("DEPRECATION")
+        android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun airplaneOn(): Boolean = try {
+        Settings.Global.getInt(act.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Switches a radio with root when it is there; otherwise (or if root says no) the normal panel opens. */
+    private fun radio(kind: String, nowOn: Boolean, sel: Int, fallback: () -> Unit) {
+        showToast("Switching...")
+        Thread {
+            val cmd = if (kind == "airplane") "cmd connectivity airplane-mode ${if (nowOn) "disable" else "enable"}" else "svc $kind ${if (nowOn) "disable" else "enable"}"
+            val ok = com.belleui.kit.Root.run(cmd) != null
+            post {
+                if (ok) {
+                    showToast("Done")
+                    postDelayed({ if (popup != null) openQuick(sel); invalidate() }, 900)
+                } else {
+                    popup = null
+                    fallback()
+                }
+            }
+        }.start()
+    }
+
     /** Y: the Quick settings panel. */
     private fun openQuick(sel: Int) {
         val items = listOf(
             PopupItem("Wi-Fi: " + if (wifiOn()) "on" else "off") {
-                tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
+                radio("wifi", wifiOn(), 0) { tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS)) }
+            },
+            PopupItem("Bluetooth: " + if (btOn()) "on" else "off") {
+                radio("bluetooth", btOn(), 1) { tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            },
+            PopupItem("Airplane mode: " + if (airplaneOn()) "on" else "off") {
+                radio("airplane", airplaneOn(), 2) { tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)) }
+            },
+            PopupItem("Profile: " + com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)]) {
+                val next = (com.belleui.kit.Profiles.current(act) + 1) % com.belleui.kit.Profiles.names.size
+                if (!Settings.System.canWrite(act)) {
+                    tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
+                } else {
+                    val ok = com.belleui.kit.Profiles.apply(act, next)
+                    showToast(com.belleui.kit.Profiles.names[next] + if (ok) "" else " (partly - allow do-not-disturb access for Silent)")
+                    openQuick(3)
+                }
             },
             PopupItem("Volume: ${volumePct()}%") {
                 val next = if (volumePct() >= 100) 0 else (volumePct() / 20 + 1) * 20
@@ -685,7 +993,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * next / 100.0).roundToInt(), 0)
                 } catch (_: SecurityException) {
                 }
-                openQuick(1)
+                openQuick(4)
             },
             PopupItem("Brightness: " + (brightnessPct().takeIf { it >= 0 }?.let { "$it%" } ?: "-")) {
                 if (Settings.System.canWrite(act)) {
@@ -693,7 +1001,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     val next = if (b < 25) 25 else if (b < 50) 50 else if (b < 75) 75 else if (b < 100) 100 else 25
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                     Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 255 * next / 100)
-                    openQuick(2)
+                    openQuick(5)
                 } else {
                     tryStart(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${act.packageName}")))
                 }
@@ -709,12 +1017,17 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun openSettings(sel: Int) {
         val items = listOf(
-            PopupItem("Theme: ${theme.name}") {
-                val next = (repo.themeIndex + 1) % Themes.all.size
-                repo.themeIndex = next
-                theme = Themes.all[next]
-                buildBackground()
-                openSettings(0)
+            PopupItem(if (com.belleui.kit.ThemeStore.shared != null) "Theme colour: set in Styles" else "Theme: ${theme.name}") {
+                if (com.belleui.kit.ThemeStore.shared != null) {
+                    val i = context.packageManager.getLaunchIntentForPackage("com.belleui.styles")
+                    if (i != null) context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    popup = null
+                } else {
+                    val next = (repo.themeIndex + 1) % Themes.all.size
+                    repo.themeIndex = next
+                    theme = Themes.all[next]
+                                openSettings(0)
+                }
             },
             PopupItem("Buttons: " + if (repo.swapPad) "Nintendo (B = OK)" else "Xbox (A = OK)") {
                 repo.swapPad = !repo.swapPad
@@ -769,42 +1082,28 @@ class LauncherView(private val act: Activity) : View(act) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
-        statusH = 26f * sc
-        softH = 60f * sc
+        kit.sc = sc
+        statusH = (if (com.belleui.kit.Belle.sysBar) 0f else 36f) * sc
+        softH = 67f * sc
         cTop = statusH
         cBot = h - softH
-        buildBackground()
         ensureVisible()
     }
 
-    private fun buildBackground() {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        bgShader = LinearGradient(0f, 0f, 0f, h, theme.bgTop, theme.bgBottom, Shader.TileMode.CLAMP)
-        spotShader = RadialGradient(w * 0.5f, h * 0.36f, w * 0.75f, al(theme.accent, 95), al(theme.accent, 0), Shader.TileMode.CLAMP)
-        vigShader = RadialGradient(w * 0.5f, h * 0.5f, w * 0.78f, intArrayOf(al(Color.BLACK, 0), al(Color.BLACK, 0), al(Color.BLACK, 185)), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-    }
-
-    private fun homeTileRect(i: Int, out: RectF): RectF {
-        val cw = width / 4f
-        // same footprint as an Applications grid cell, so the highlight matches
-        val h = menuCellH() - 6f * sc
-        out.set(i * cw + 6f * sc, cBot - 12f * sc - h, (i + 1) * cw - 6f * sc, cBot - 12f * sc)
-        return out
-    }
-
-    private fun menuAreaTop() = cTop + TAB * sc
+    private fun menuAreaTop() = cTop + (if (searching()) SEARCH_H * sc else 0f)
 
     private fun menuAreaBottom() = cBot
 
-    private fun menuCellH() = (menuAreaBottom() - menuAreaTop()) / 3f
+    // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
+    private fun menuCellW() = 151f * sc
+    private fun menuGridLeft() = (width - menuCellW() * COLS) / 2f
+    private fun menuCellH() = 122f * sc
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
-        val cw = width / 4f
+        val cw = menuCellW()
         val ch = menuCellH()
-        val x = (idx % 4) * cw
-        val y = menuAreaTop() + ((idx / 4) - top) * ch
+        val x = menuGridLeft() + (idx % COLS) * cw
+        val y = menuAreaTop() + ((idx / COLS) - top) * ch
         out.set(x, y, x + cw, y + ch)
         return out
     }
@@ -819,20 +1118,31 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun popupTitleH(pu: Popup) = if (pu.menu) 0f else 50f * sc
 
+    /** Under the rows: 6 px of air, the full-width Cancel (menu) or Back (popup) button, 8 px to the edge. */
+    private fun popupFootH() = (6f + POPUP_BTN + 8f) * sc
+
+    /** Room for the rows. The options menu may cover the page up to the status bar; a popup stays between the bars. */
+    private fun popupAvail(pu: Popup) = if (pu.menu) height - cTop - 90f * sc else (cBot - cTop) - popupTitleH(pu) - popupFootH()
+
+    /** E6 rows are 80 px. A long options menu is squeezed the way the apps' menu is (to 48 px at most), then scrolls. */
     private fun popupItemH(pu: Popup): Float {
         val full = POPUP_ROW * sc
         if (!pu.menu) return full
-        return min(full, (height - statusH - 90f * sc) / pu.items.size)
+        return (popupAvail(pu) / max(1, pu.items.size)).coerceIn(48f * sc, full)
     }
+
+    /** How many rows fit: a long list scrolls instead of running off the screen. */
+    private fun popupVis(pu: Popup): Int = max(1, min(pu.items.size, (popupAvail(pu) / popupItemH(pu) + 0.01f).toInt()))
 
     private fun popupRect(pu: Popup, out: RectF): RectF {
         val ih = popupItemH(pu)
+        val vis = popupVis(pu)
         if (pu.menu) {
-            val bh = ih * pu.items.size + 4f * sc + 6f * sc + 50f * sc + 8f * sc
+            val bh = ih * vis + 4f * sc + popupFootH()
             out.set(0f, height - bh, width.toFloat(), height.toFloat())
         } else {
             val bw = min(504f * sc, width - 16f * sc) // sizeDialogMax
-            val bh = popupTitleH(pu) + ih * pu.items.size + 6f * sc
+            val bh = popupTitleH(pu) + ih * vis + popupFootH()
             val x = (width - bw) / 2f
             val y = cTop + max(0f, (cBot - cTop - bh) / 2f)
             out.set(x, y, x + bw, y + bh)
@@ -845,8 +1155,6 @@ class LauncherView(private val act: Activity) : View(act) {
     // =====================================================================================
 
     private val sans = Typeface.create("sans-serif", Typeface.NORMAL)
-    private var spotShader: Shader? = null
-    private var vigShader: Shader? = null
 
     private fun al(color: Int, a: Int) = (color and 0x00FFFFFF) or (a.coerceIn(0, 255) shl 24)
 
@@ -895,18 +1203,6 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawBitmap(bmp, null, rf, iconPaint)
     }
 
-    /** Soft shadow/glow from stacked, growing, faint rounded rects (no blur needed, works on every API). */
-    private fun softShadow(c: Canvas, r: RectF, radius: Float, color: Int = Color.BLACK, dy: Float = 4f, alpha: Int = 20, steps: Int = 6) {
-        p.style = Paint.Style.FILL
-        p.shader = null
-        for (i in steps downTo 1) {
-            val g = i * 1.6f * sc
-            rf.set(r.left - g, r.top - g + dy * sc, r.right + g, r.bottom + g + dy * sc)
-            p.color = al(color, alpha)
-            c.drawRoundRect(rf, radius + g, radius + g, p)
-        }
-    }
-
     /** Belle highlight: the theme's blue pressed frame (qtg_fr_list_pressed). */
     private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
         if (nine(c, "qtg_fr_list_pressed", r, 40, radius / sc)) return
@@ -915,7 +1211,27 @@ class LauncherView(private val act: Activity) : View(act) {
         c.drawRoundRect(r, radius, radius, p)
     }
 
+    private var drawFaults = 0
+    private var titleSent = ""
+
     override fun onDraw(c: Canvas) {
+        val mark = c.save()
+        try {
+            drawAll(c)
+            drawFaults = 0
+        } catch (t: Throwable) {
+            // one bad widget or page must never crash the home screen: log it and keep the wallpaper and chrome
+            c.restoreToCount(mark)
+            android.util.Log.e("BelleLauncher", "draw failed", t)
+            drawFaults++
+            c.drawColor(Color.BLACK)
+            text(c, "Home screen problem", width / 2f, height / 2f, 24f * sc, Color.WHITE, Paint.Align.CENTER)
+            if (drawFaults < 30) postInvalidateDelayed(500)
+        }
+        c.restoreToCount(mark)
+    }
+
+    private fun drawAll(c: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
         val now = System.nanoTime()
@@ -926,14 +1242,23 @@ class LauncherView(private val act: Activity) : View(act) {
         frameK = k
         var busy = false
 
-        pageAnim += (pagePos() - pageAnim) * k
-        if (abs(pagePos() - pageAnim) < 0.004f) pageAnim = pagePos().toFloat() else busy = true
+        // switching home views: a 0.225 s out-quad slide (activeidle_viewswitch_*.fxml on the E6)
+        val pageGoal = pagePos().toFloat()
+        val nowMs = System.currentTimeMillis()
+        if (pageGoal != pageTarget) {
+            pageTarget = pageGoal
+            pageFrom = pageAnim
+            pageStartMs = nowMs
+        }
+        val pt = ((nowMs - pageStartMs) / 225f).coerceIn(0f, 1f)
+        pageAnim = pageFrom + (pageGoal - pageFrom) * (1f - (1f - pt) * (1f - pt))
+        if (pt < 1f) busy = true else pageAnim = pageGoal
         menuTopAnim += (menuTop - menuTopAnim) * k
         if (abs(menuTop - menuTopAnim) < 0.004f) menuTopAnim = menuTop.toFloat() else busy = true
         recentTopAnim += (recentTop - recentTopAnim) * k
         if (abs(recentTop - recentTopAnim) < 0.004f) recentTopAnim = recentTop.toFloat() else busy = true
 
-        homeTileRect(homeSel, tmp)
+        homeFocusRect(tmp)
         homeFocus.target(tmp)
         menuCellRect(menuSel, menuTop.toFloat(), tmp)
         tmp.inset(6f * sc, 3f * sc)
@@ -962,7 +1287,13 @@ class LauncherView(private val act: Activity) : View(act) {
             c.restore()
         }
 
-        drawStatusBar(c, w)
+        if (com.belleui.kit.Belle.sysBar) {
+            val t = pageTitle()
+            if (t != titleSent) {
+                titleSent = t
+                com.belleui.kit.Belle.publishTitle(act, t)
+            }
+        } else drawStatusBar(c, w)
         drawToolbar(c, w, h)
         if (popup != null) popupShown = popup
         val popupTarget = if (popup != null) 1f else 0f
@@ -983,16 +1314,7 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- page 0: home ----------------------------------------------------------------------
 
-    /** One-row Belle home screen widget plate (widget_belle00 from the Symbian HomeScreen widget template). */
-    private fun widgetPlate(c: Canvas, r: RectF) {
-        if (!nine(c, "widget_plate", r, 20, 14f)) {
-            p.style = Paint.Style.FILL
-            p.color = 0xFF1A1A1A.toInt()
-            c.drawRoundRect(r, 12f * sc, 12f * sc, p)
-        }
-    }
-
-    /** 24x18 Belle battery meter, filled to [pct]. */
+    /** The Belle battery meter, filled to the charge level. */
     private fun drawBattery(c: Canvas, left: Float, top: Float, bw: Float, bh: Float) {
         rf.set(left, top, left + bw, top + bh)
         val bg = gfx.get("qtg_graf_battery_level_bg")
@@ -1006,50 +1328,387 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    private fun drawHome(c: Canvas) {
-        val w = width.toFloat()
-        // light scrims behind text only, so any wallpaper stays readable
-        p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, cTop + 140f * sc, 0f, cBot, al(Color.BLACK, 0), al(Color.BLACK, 150), Shader.TileMode.CLAMP)
-        c.drawRect(0f, cTop + 150f * sc, w, cBot, p)
-        p.shader = null
-        val m = 14f * sc
-        val gap = 12f * sc
-        val ww = (w - 2 * m - gap) / 2f
-        val top = cTop + 14f * sc
-        val wh = 92f * sc
-        homeWidgetRects[0].set(m, top, m + ww, top + wh)
-        homeWidgetRects[1].set(m + ww + gap, top, w - m, top + wh)
-        drawWidget(c, repo.widgetLeft, homeWidgetRects[0])
-        drawWidget(c, repo.widgetRight, homeWidgetRects[1])
+    // =====================================================================================
+    // the Belle home screen: a grid of shortcuts and widgets you arrange yourself
+    // =====================================================================================
 
-        // shortcuts straight on the wallpaper
-        drawFocus(c, homeFocus.cur, 12f * sc)
-        for (i in 0..3) {
-            homeTileRect(i, tmp)
-            val app = favs.getOrNull(i)
-            if (app != null) {
-                val isz = 70f * sc
-                val iconTop = tmp.top + (tmp.height() + 6f * sc - (isz + 26f * sc)) / 2f
-                drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f, isz)
-                shadowText(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, Color.WHITE, Paint.Align.CENTER, width / 4f - 8f * sc)
-            } else {
-                p.style = Paint.Style.STROKE
-                p.strokeWidth = 1.5f * sc
-                p.color = al(Color.WHITE, 80)
-                val isz = 70f * sc
-                val iconTop = tmp.top + (tmp.height() + 6f * sc - (isz + 26f * sc)) / 2f
-                rf.set(tmp.centerX() - 30f * sc, iconTop + 5f * sc, tmp.centerX() + 30f * sc, iconTop + isz - 5f * sc)
-                c.drawRoundRect(rf, 18f * sc, 18f * sc, p)
-                p.style = Paint.Style.FILL
-                text(c, "+", tmp.centerX(), baselineFor(rf.centerY(), 40f * sc, light), 40f * sc, al(Color.WHITE, 90), Paint.Align.CENTER, face = light)
+    private class HomeItem(val widget: Boolean, val id: String, var col: Int, var row: Int, var w: Int = 1, var h: Int = 1) {
+        val rect = RectF()
+        val subs = Array(3) { RectF() }
+        val type get() = id.toIntOrNull() ?: -1
+    }
+
+    private val homeItems = ArrayList<HomeItem>()
+    private var homeIdx = 0
+    private var homeEdit = false
+    private var carrying = false
+    private var okLong = false
+    private var dragging = false
+    private var homeLoaded = false
+    private var curWidget = -1
+    private val HC = 4
+    private val HR = 3
+    private var appMap: Map<String, AppEntry> = emptyMap()
+
+    private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
+
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5 -> 4 to 2; else -> 4 to 1 }
+
+    /** The heights (in rows) each widget looks right at. */
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); else -> intArrayOf(1) }
+
+    private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
+        val top = cTop + 6f * sc
+        val bot = cBot - 6f * sc
+        val cw = width / HC.toFloat()
+        val ch = (bot - top) / HR
+        out.set(col * cw + 5f * sc, top + row * ch + 3f * sc, (col + w) * cw - 5f * sc, top + (row + h) * ch - 3f * sc)
+        return out
+    }
+
+    private fun layoutHome() {
+        for (it in homeItems) homeCell(it.col, it.row, it.w, it.h, it.rect)
+    }
+
+    private fun occupied(col: Int, row: Int, w: Int, h: Int, ignore: HomeItem?): Boolean =
+        homeItems.any { it !== ignore && col < it.col + it.w && col + w > it.col && row < it.row + it.h && row + h > it.row }
+
+    private fun findFree(w: Int, h: Int): Pair<Int, Int>? {
+        for (r in 0..HR - h) for (c in 0..HC - w) if (!occupied(c, r, w, h, null)) return c to r
+        return null
+    }
+
+    private fun saveHome() {
+        repo.homeLayout = homeItems.joinToString(";") { "${if (it.widget) "w" else "a"},${it.id},${it.col},${it.row},${it.w},${it.h}" }
+    }
+
+    private fun loadHome() {
+        homeItems.clear()
+        val raw = repo.homeLayout
+        if (raw == null) {
+            // first run: a flip clock on top and the old four shortcuts underneath
+            homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
+            var i = 0
+            for (app in repo.favoriteEntries()) {
+                homeItems.add(HomeItem(false, app.key, i % HC, 1 + i / HC))
+                i++
+                if (i >= HC * 2) break
             }
+            saveHome()
+        } else {
+            for (rec in raw.split(';')) {
+                val f = rec.split(',')
+                if (f.size != 6) continue
+                try {
+                    homeItems.add(HomeItem(f[0] == "w", f[1], f[2].toInt(), f[3].toInt(), f[4].toInt(), f[5].toInt()))
+                } catch (_: NumberFormatException) {
+                }
+            }
+            // shortcuts whose app is gone disappear
+            homeItems.removeAll { !it.widget && repo.apps.none { a -> a.key == it.id } }
+            // a layout saved for a taller grid is packed again into this one
+            val keep = ArrayList<HomeItem>()
+            val again = ArrayList<HomeItem>()
+            for (it in homeItems) {
+                if (it.col + it.w <= HC && it.row + it.h <= HR && keep.none { o -> it.col < o.col + o.w && it.col + it.w > o.col && it.row < o.row + o.h && it.row + it.h > o.row }) keep.add(it) else again.add(it)
+            }
+            homeItems.clear()
+            homeItems.addAll(keep)
+            for (it in again) {
+                val at = findFree(it.w, min(it.h, HR)) ?: continue
+                it.col = at.first
+                it.row = at.second
+                it.h = min(it.h, HR)
+                homeItems.add(it)
+            }
+        }
+        homeIdx = homeIdx.coerceIn(0, max(0, homeItems.size - 1))
+        homeStart()
+    }
+
+    private fun hasWidget(t: Int) = homeItems.any { it.widget && it.type == t }
+
+    /** Starts what the widgets on screen need: the music listener, the calendar, the notes. */
+    private fun homeStart() {
+        media.stop()
+        if (hasWidget(2)) media.start()
+        if (hasWidget(1)) calendar.refresh()
+        if (hasWidget(5)) loadNotes()
+    }
+
+    private fun homeHas(key: String) = homeItems.any { !it.widget && it.id == key }
+
+    private fun addHomeApp(key: String): Boolean {
+        if (homeHas(key)) return true
+        val at = findFree(1, 1) ?: return false
+        homeItems.add(HomeItem(false, key, at.first, at.second))
+        saveHome()
+        return true
+    }
+
+    private fun removeHomeApp(key: String) {
+        homeItems.removeAll { !it.widget && it.id == key }
+        homeIdx = homeIdx.coerceIn(0, max(0, homeItems.size - 1))
+        saveHome()
+    }
+
+    private fun addWidget(type: Int) {
+        val (w, h) = widgetSizeOf(type)
+        val at = findFree(w, h)
+        if (at == null) {
+            showToast("No room - remove or shrink something first")
+            return
+        }
+        homeItems.add(HomeItem(true, type.toString(), at.first, at.second, w, h))
+        homeIdx = homeItems.size - 1
+        widgetSub = if (type == 2 || type == 4 || type == 5) 1 else 0
+        saveHome()
+        homeStart()
+        if (type == 1 && !calendar.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 31)
+    }
+
+    private fun removeCurrent() {
+        if (homeItems.isEmpty()) return
+        homeItems.removeAt(homeIdx.coerceIn(0, homeItems.size - 1))
+        homeIdx = homeIdx.coerceIn(0, max(0, homeItems.size - 1))
+        carrying = false
+        saveHome()
+        homeStart()
+    }
+
+    private fun resizeCurrent() {
+        val it = homeItems.getOrNull(homeIdx) ?: return
+        if (!it.widget) return
+        val hs = widgetHeights(it.type)
+        for (step in 1..hs.size) {
+            val nh = hs[(hs.indexOf(it.h).let { k -> if (k < 0) 0 else k } + step) % hs.size]
+            if (nh != it.h && it.row + nh <= HR && !occupied(it.col, it.row, it.w, nh, it)) {
+                it.h = nh
+                saveHome()
+                return
+            }
+        }
+        showToast("No room to resize")
+    }
+
+    private fun homeFocusRect(out: RectF): RectF {
+        layoutHome()
+        val it = homeItems.getOrNull(homeIdx)
+        if (it == null) {
+            out.set(0f, 0f, 0f, 0f)
+            return out
+        }
+        val sub = if (it.widget && (it.type == 2 || it.type == 4 || it.type == 5) && widgetSub in 0..2 && !it.subs[widgetSub].isEmpty && !homeEdit) it.subs[widgetSub] else null
+        if (sub != null) {
+            out.set(sub)
+            out.inset(-5f * sc, -5f * sc)
+        } else {
+            out.set(it.rect)
+            out.inset(-4f * sc, -3f * sc)
+        }
+        return out
+    }
+
+    private fun homeKey(a: Act) {
+        layoutHome()
+        val cur = homeItems.getOrNull(homeIdx)
+        if (homeEdit) {
+            when (a) {
+                Act.OK -> {
+                    carrying = !carrying
+                    if (!carrying) saveHome()
+                }
+                Act.BACK, Act.SETTINGS -> {
+                    homeEdit = false
+                    carrying = false
+                    saveHome()
+                    showToast("Home saved")
+                }
+                Act.OPTIONS -> openHomeMenu()
+                Act.LEFT, Act.RIGHT, Act.UP, Act.DOWN -> if (carrying && cur != null) {
+                    val nc = cur.col + if (a == Act.LEFT) -1 else if (a == Act.RIGHT) 1 else 0
+                    val nr = cur.row + if (a == Act.UP) -1 else if (a == Act.DOWN) 1 else 0
+                    if (nc in 0..HC - cur.w && nr in 0..HR - cur.h && !occupied(nc, nr, cur.w, cur.h, cur)) {
+                        cur.col = nc
+                        cur.row = nr
+                    }
+                } else homeMove(a)
+                else -> {}
+            }
+            return
+        }
+        when (a) {
+            Act.OK -> if (cur != null) {
+                if (cur.widget) {
+                    curWidget = cur.type
+                    widgetActivate()
+                } else appFor(cur)?.let { launch(it) }
+            } else openHomeMenu()
+            Act.LEFT, Act.RIGHT, Act.UP, Act.DOWN -> homeMove(a)
+            else -> {}
         }
     }
 
-    // ---- home widgets ----------------------------------------------------------------------------
+    private fun homeMove(a: Act) {
+        val cur = homeItems.getOrNull(homeIdx) ?: return
+        if (cur.widget && (a == Act.LEFT || a == Act.RIGHT) && (cur.type == 2 || cur.type == 4 || cur.type == 5) && !homeEdit) {
+            val n = widgetSub + if (a == Act.LEFT) -1 else 1
+            if (n in 0..2) {
+                widgetSub = n
+                return
+            }
+        }
+        val cx = cur.rect.centerX()
+        val cy = cur.rect.centerY()
+        var best = -1
+        var bestScore = Float.MAX_VALUE
+        for ((i, o) in homeItems.withIndex()) {
+            if (o === cur) continue
+            val dx = o.rect.centerX() - cx
+            val dy = o.rect.centerY() - cy
+            val ok = when (a) { Act.LEFT -> dx < -1f; Act.RIGHT -> dx > 1f; Act.UP -> dy < -1f; else -> dy > 1f }
+            if (!ok) continue
+            val horiz = a == Act.LEFT || a == Act.RIGHT
+            val score = (if (horiz) abs(dx) else abs(dy)) + 2.5f * (if (horiz) abs(dy) else abs(dx))
+            if (score < bestScore) {
+                bestScore = score
+                best = i
+            }
+        }
+        if (best >= 0) {
+            homeIdx = best
+            val n = homeItems[best]
+            widgetSub = if (n.widget && (n.type == 2 || n.type == 4 || n.type == 5)) (if (a == Act.LEFT) 2 else 0).let { if (a == Act.UP || a == Act.DOWN) 1 else it } else 0        } else if (!homeEdit) {
+            // nothing further that way: the Hub is to the left, the Menu to the right
+            if (a == Act.LEFT) setPage(-1) else if (a == Act.RIGHT) setPage(1)
+        }
+    }
 
-    private val widgetNames = arrayOf("Clock", "Date", "Battery", "Storage", "Notifications")
+    private fun homeTap(x: Float, y: Float, selectOnly: Boolean): Boolean {
+        layoutHome()
+        val idx = homeItems.indexOfLast { it.rect.contains(x, y) }
+        if (homeEdit) {
+            val cur = homeItems.getOrNull(homeIdx)
+            if (idx >= 0) {
+                val it = homeItems[idx]
+                // the corner cross removes
+                if (!selectOnly && x > it.rect.right - 30f * sc && y < it.rect.top + 30f * sc) {
+                    homeIdx = idx
+                    removeCurrent()
+                    return true
+                }
+                homeIdx = idx
+                if (!selectOnly) carrying = !carrying
+                if (!carrying) saveHome()
+                return true
+            }
+            if (carrying && cur != null && !selectOnly) {
+                val cw = width / HC.toFloat()
+                val ch = (cBot - cTop - 12f * sc) / HR
+                val nc = (x / cw).toInt().coerceIn(0, HC - cur.w)
+                val nr = ((y - cTop - 6f * sc) / ch).toInt().coerceIn(0, HR - cur.h)
+                if (!occupied(nc, nr, cur.w, cur.h, cur)) {
+                    cur.col = nc
+                    cur.row = nr
+                }
+                return true
+            }
+            return false
+        }
+        if (idx < 0) return false
+        homeIdx = idx
+        val it = homeItems[idx]
+        if (it.widget) {
+            widgetSub = -1
+            for (i in 0..2) if (it.subs[i].contains(x, y)) widgetSub = i
+            if (widgetSub < 0) widgetSub = if (it.type == 2 || it.type == 4 || it.type == 5) 1 else 0
+            if (!selectOnly) {
+                curWidget = it.type
+                widgetActivate()
+            }
+        } else if (!selectOnly) appFor(it)?.let { a -> launch(a) }
+        return true
+    }
+
+    private fun drawHome(c: Canvas) {
+        val w = width.toFloat()
+        layoutHome()
+        p.style = Paint.Style.FILL
+        p.shader = null
+        if (homeEdit) {
+            // the arranging grid, as in the Belle guidelines
+            p.color = al(Color.BLACK, 110)
+            c.drawRect(0f, cTop, w, cBot, p)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1f * sc
+            p.color = al(Color.WHITE, 60)
+            for (cc in 0 until HC) for (rr in 0 until HR) {
+                homeCell(cc, rr, 1, 1, rf)
+                c.drawRect(rf, p)
+            }
+            p.style = Paint.Style.FILL
+        }
+        val cur = homeItems.getOrNull(homeIdx)
+        val subFocus = !homeEdit && cur != null && cur.widget && (cur.type == 2 || cur.type == 4 || cur.type == 5) && widgetSub in 0..2 && !cur.subs[widgetSub].isEmpty
+        if (!subFocus) drawFocus(c, homeFocus.cur, 12f * sc)
+        for (it in homeItems) {
+            val lift = if (homeEdit && carrying && it === cur) 5f * sc else 0f
+            c.save()
+            c.translate(0f, -lift)
+            if (it.widget) {
+                for (k in subRects) k.setEmpty()
+                drawLarge(c, it.type, it.rect)
+                for (k in 0..2) it.subs[k].set(subRects[k])
+            } else {
+                val app = appFor(it)
+                if (app != null) {
+                    val r = it.rect
+                    val isz = min(r.height() * 0.62f, 76f * sc) // the same icon size as the Menu
+                    val top = r.top + 3f * sc
+                    drawIcon(c, app.icon, r.centerX(), top + isz / 2f, isz)
+                    // the E6 home screen label: the same dark plate for every shortcut, a little wider than the icon
+                    val tsz = 16f * sc
+                    val tw = min(94f * sc, r.width() - 2f * sc)
+                    rf.set(r.centerX() - tw / 2f, top + isz + 2f * sc, r.centerX() + tw / 2f, top + isz + 24f * sc)
+                    p.style = Paint.Style.FILL
+                    p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, 0xD8505050.toInt(), 0xD8242424.toInt(), Shader.TileMode.CLAMP)
+                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
+                    p.shader = null
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 1f * sc
+                    p.color = al(Color.BLACK, 200)
+                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
+                    p.style = Paint.Style.FILL
+                    text(c, app.label, r.centerX(), baselineFor(rf.centerY(), tsz), tsz, Color.WHITE, Paint.Align.CENTER, tw - 8f * sc)
+                }
+            }
+            if (homeEdit) {
+                // the white cross on the corner of everything you can remove
+                val cx = it.rect.right - 12f * sc
+                val cy = it.rect.top + 12f * sc
+                p.color = Color.WHITE
+                c.drawCircle(cx, cy, 10f * sc, p)
+                p.color = Color.BLACK
+                p.strokeWidth = 2.2f * sc
+                p.style = Paint.Style.STROKE
+                c.drawLine(cx - 4.5f * sc, cy - 4.5f * sc, cx + 4.5f * sc, cy + 4.5f * sc, p)
+                c.drawLine(cx - 4.5f * sc, cy + 4.5f * sc, cx + 4.5f * sc, cy - 4.5f * sc, p)
+                p.style = Paint.Style.FILL
+            }
+            c.restore()
+        }
+        if (subFocus && cur != null) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 3f * sc
+            p.color = theme.accentLight
+            val ring = homeFocus.cur
+            c.drawRoundRect(ring, ring.height() / 2f, ring.height() / 2f, p)
+            p.style = Paint.Style.FILL
+        }
+        if (homeItems.isEmpty()) {
+            text(c, "Press ${optLetter()} for Options to add widgets and shortcuts", w / 2f, cTop + (cBot - cTop) / 2f, 18f * sc, al(Color.WHITE, 200), Paint.Align.CENTER, w - 40f * sc, face = light)
+        }
+    }
 
     private fun readStorage() {
         try {
@@ -1069,72 +1728,6 @@ class LauncherView(private val act: Activity) : View(act) {
         return t >= d0
     }
 
-    private fun drawWidget(c: Canvas, type: Int, r: RectF) {
-        widgetPlate(c, r)
-        val cy = r.centerY()
-        val grey = 0xFF999999.toInt()
-        val left = r.left + 18f * sc
-        when (type) {
-            WIDGET_DATE -> {
-                val dsz = 56f * sc
-                text(c, dayStr, left, baselineFor(cy, dsz), dsz, Color.WHITE)
-                val dx = left + measure(dayStr, dsz) + 16f * sc
-                text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = r.right - dx - 10f * sc)
-                text(c, dayMonthStr.substringAfter(' ', dayMonthStr), dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, grey, maxW = r.right - dx - 10f * sc, face = light)
-            }
-            WIDGET_BATTERY -> {
-                val bw = 60f * sc
-                val bh = bw * 18f / 24f
-                drawBattery(c, left, cy - bh / 2f, bw, bh)
-                val px = left + bw + 16f * sc
-                text(c, "$batteryPct%", px, baselineFor(cy - 8f * sc, 40f * sc), 40f * sc, Color.WHITE)
-                text(c, if (charging) "Charging" else "Battery", px, baselineFor(cy + 24f * sc, 18f * sc, light), 18f * sc, grey, face = light)
-            }
-            WIDGET_STORAGE -> {
-                text(c, "Storage", left, baselineFor(r.top + 22f * sc, 17f * sc, light), 17f * sc, grey, face = light)
-                text(c, "${gb(storageFree)} free", left, baselineFor(r.top + 48f * sc, 26f * sc), 26f * sc, Color.WHITE, maxW = r.width() - 36f * sc)
-                tmp.set(left, r.bottom - 30f * sc, r.right - 18f * sc, r.bottom - 10f * sc)
-                drawBar(c, tmp, (storageTotal - storageFree).toFloat() / storageTotal)
-            }
-            WIDGET_NOTES -> {
-                HubStore.load(act)
-                val today = HubStore.notes.count { isToday(it.time) }
-                val num = if (HubStore.hasAccess(act)) "$today" else "!"
-                val nsz = 50f * sc
-                text(c, num, left, baselineFor(cy, nsz), nsz, Color.WHITE)
-                val nx = left + measure(num, nsz) + 14f * sc
-                val head = when {
-                    !HubStore.hasAccess(act) -> "Allow access"
-                    today == 1 -> "notification today"
-                    else -> "notifications today"
-                }
-                text(c, head, nx, baselineFor(cy - 12f * sc, 18f * sc), 18f * sc, Color.WHITE, maxW = r.right - nx - 10f * sc)
-                text(c, HubStore.notes.firstOrNull()?.title?.ifBlank { null } ?: "Tap to open the Hub", nx, baselineFor(cy + 14f * sc, 16f * sc, light), 16f * sc, grey, maxW = r.right - nx - 10f * sc, face = light)
-            }
-            else -> { // clock
-                val tsz = 46f * sc
-                text(c, clockStr, left, baselineFor(cy, tsz), tsz, Color.WHITE)
-                var colX = left + measure(clockStr, tsz)
-                if (ampmStr.isNotEmpty()) {
-                    text(c, ampmStr, colX + 6f * sc, baselineFor(cy, tsz), 16f * sc, theme.accentLight)
-                    colX += 6f * sc + measure(ampmStr, 16f * sc)
-                }
-                val dx = max(colX + 16f * sc, r.left + 150f * sc)
-                text(c, weekdayStr, dx, baselineFor(cy - 12f * sc, 20f * sc), 20f * sc, Color.WHITE, maxW = r.right - dx - 10f * sc)
-                text(c, dayMonthStr, dx, baselineFor(cy + 13f * sc, 18f * sc, light), 18f * sc, grey, maxW = r.right - dx - 10f * sc, face = light)
-            }
-        }
-    }
-
-    /** Belle progress bar at its natural 20px height. */
-    private fun drawBar(c: Canvas, r: RectF, frac: Float) {
-        nine(c, "qtg_fr_progressbar_track", r, 20, 10f)
-        if (frac > 0.01f) {
-            val f = RectF(r.left, r.top, r.left + max(r.height(), r.width() * frac.coerceIn(0f, 1f)), r.bottom)
-            nine(c, "qtg_fr_progressbar_fill", f, 20, 10f)
-        }
-    }
-
     private fun openOther(pkg: String) {
         val i = act.packageManager.getLaunchIntentForPackage(pkg)
         if (i != null) tryStart(i) else showToast("That app isn't installed")
@@ -1149,34 +1742,459 @@ class LauncherView(private val act: Activity) : View(act) {
         }
     }
 
-    /** Home widgets: choose what each of the two slots shows. */
-    private fun openWidgetEditor(sel: Int) {
-        fun next(cur: Int, other: Int): Int {
-            var n = (cur + 1) % widgetNames.size
-            if (n == other) n = (n + 1) % widgetNames.size
-            return n
+    /** Options on the Home: arrange, add and remove (the Belle "arranging items" flow). */
+    private fun openHomeMenu() {
+        val cur = homeItems.getOrNull(homeIdx)
+        val items = ArrayList<PopupItem>()
+        items += PopupItem("Hub") { setPage(-1) }
+        if (homeEdit) {
+            items += PopupItem("Done") {
+                homeEdit = false
+                carrying = false
+                saveHome()
+            }
+        } else items += PopupItem("Arrange items") {
+            homeEdit = true
+            carrying = false
+            showToast("${okLetter()} picks up and drops, ${backLetter()} is done")
         }
-        popup = Popup("Home widgets", listOf(
-            PopupItem("Left: ${widgetNames[repo.widgetLeft]}") {
-                repo.widgetLeft = next(repo.widgetLeft, repo.widgetRight)
-                openWidgetEditor(0)
-            },
-            PopupItem("Right: ${widgetNames[repo.widgetRight]}") {
-                repo.widgetRight = next(repo.widgetRight, repo.widgetLeft)
-                openWidgetEditor(1)
-            },
-            PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
-            PopupItem("Done") { },
-        ), sel)
+        if (cur != null) {
+            if (cur.widget) items += PopupItem("Resize widget") { resizeCurrent() }
+            items += PopupItem(if (cur.widget) "Remove widget" else "Remove shortcut") { removeCurrent() }
+        }
+        items += PopupItem("Add widget") {
+            val names = arrayOf("Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes")
+            val order = intArrayOf(0, 1, 2, 3, 4, 5)
+            popup = Popup("Add widget", order.map { t -> PopupItem(names[t]) { addWidget(t) } }, 0)
+        }
+        items += PopupItem("Add shortcut") {
+            setPage(1)
+            showToast("Pick an app, then Options > Add to home")
+        }
+        items += PopupItem("Quick settings") { openQuick(0) }
+        items += PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) }
+        popup = Popup("Home", items, 0, menu = true)
     }
 
-    /** X on an empty Home slot. */
-    private fun openHomeMenu() {
-        popup = Popup("Home", listOf(
-            PopupItem("Edit widgets") { openWidgetEditor(0) },
-            PopupItem("Quick settings") { openQuick(0) },
-            PopupItem("Wallpaper") { tryStart(Intent(Intent.ACTION_SET_WALLPAPER)) },
-        ), 0, menu = true)
+    // ---- large Belle widgets (after the Nokia Belle home screen) ---------------------------------------
+
+    private fun widgetActivate() {
+        when (curWidget) {
+            -1 -> widgetTap(if (widgetSub == 0) repo.widgetLeft else repo.widgetRight)
+            0 -> openOther("com.belleui.clock")
+            1 -> {
+                if (!calendar.hasPermission()) act.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 31)
+                else tryStart(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("content://com.android.calendar/time")))
+            }
+            2 -> when {
+                !media.available -> if (!HubStore.hasAccess(act)) tryStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) else openOther("com.belleui.music")
+                widgetSub == 0 -> media.prev()
+                widgetSub == 2 -> media.next()
+                else -> media.toggle()
+            }
+            3 -> setPage(-1)
+            5 -> when (widgetSub) {
+                0 -> if (noteIdx > 0) noteIdx--
+                2 -> if (noteIdx < notesList.size - 1) noteIdx++
+                else -> openOther("com.belleui.notes")
+            }
+            4 -> when (widgetSub) {
+                0 -> tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS))
+                1 -> try {
+                    val am = act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                    am.ringerMode = if (am.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL) android.media.AudioManager.RINGER_MODE_VIBRATE else android.media.AudioManager.RINGER_MODE_NORMAL
+                } catch (_: Exception) {
+                    tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))
+                }
+                else -> openQuick(0)
+            }
+        }
+    }
+
+    private fun drawLarge(c: Canvas, type: Int, r: RectF) {
+        for (k in subRects) k.setEmpty()
+        when (type) {
+            0 -> drawFlip(c, r)
+            1 -> drawToday(c, r)
+            2 -> drawMusic(c, r)
+            3 -> drawInbox(c, r)
+            5 -> drawNotes(c, r)
+            else -> drawSwitches(c, r)
+        }
+    }
+
+    /** The latest notes, from the Notes app's read-only provider, off the main thread. */
+    private fun loadNotes() {
+        val now = System.currentTimeMillis()
+        if (now - notesLoadedAt < 5000) return
+        notesLoadedAt = now
+        Thread {
+            val out = ArrayList<Pair<String, String>>()
+            try {
+                act.contentResolver.query(android.net.Uri.parse("content://com.belleui.notes.provider/latest"), null, null, null, null)?.use { cur ->
+                    while (cur.moveToNext() && out.size < 6) out.add(cur.getString(0) to (cur.getString(1) ?: ""))
+                }
+            } catch (_: Exception) {
+            }
+            notesList = out
+            noteIdx = noteIdx.coerceIn(0, max(0, out.size - 1))
+            postInvalidate()
+        }.start()
+    }
+
+    /** The Belle notes widget: a yellow note with the latest note on it, a pen, and arrows to leaf through. */
+    private fun drawNotes(c: Canvas, r: RectF) {
+        loadNotes()
+        val aspect = 624f / 524f
+        val nh = r.height()
+        val nw = min(nh * aspect, r.width() - 90f * sc)
+        val box = RectF(r.centerX() - nw / 2f, r.top, r.centerX() + nw / 2f, r.top + nh)
+        if (!gfx.draw(c, "qgn_graf_hs_notes_bg_8x6", box)) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFFFFF4B8.toInt()
+            c.drawRoundRect(box, 8f * sc, 8f * sc, p)
+        }
+        val ink = 0xFF3A3520.toInt()
+        val n = notesList.getOrNull(noteIdx)
+        val tx = box.left + 18f * sc
+        val tw = box.width() - 36f * sc
+        if (n == null) {
+            text(c, "No notes yet", tx, box.top + 50f * sc, 20f * sc, ink, maxW = tw, face = medium)
+            text(c, "Press ${okLetter()} to write one", tx, box.top + 78f * sc, 16f * sc, al(ink, 170), maxW = tw, face = light)
+        } else {
+            text(c, n.first, tx, box.top + 46f * sc, 21f * sc, ink, maxW = tw, face = medium)
+            var y = box.top + 76f * sc
+            for (line in wrapText(n.second, 17f * sc, tw, 4)) {
+                text(c, line, tx, y, 17f * sc, ink, maxW = tw, face = light)
+                y += 24f * sc
+            }
+        }
+        // pen
+        gfx.draw(c, "qgn_graf_hs_notes_pen", RectF(box.right - 52f * sc, box.bottom - 78f * sc, box.right - 14f * sc, box.bottom - 40f * sc))
+        // arrows and the note itself are the three buttons
+        val cy = box.centerY()
+        val prevOn = noteIdx > 0
+        val nextOn = noteIdx < notesList.size - 1
+        val pr = RectF(box.left - 44f * sc, cy - 22f * sc, box.left - 4f * sc, cy + 22f * sc)
+        val nx = RectF(box.right + 4f * sc, cy - 22f * sc, box.right + 44f * sc, cy + 22f * sc)
+        gfx.draw(c, if (prevOn) "qgn_indi_hs_notes_prev" else "qgn_indi_hs_notes_prev_disabled", pr)
+        gfx.draw(c, if (nextOn) "qgn_indi_hs_notes_next" else "qgn_indi_hs_notes_next_disabled", nx)
+        subRects[0].set(pr)
+        subRects[1].set(box)
+        subRects[2].set(nx)
+    }
+
+    private fun wrapText(text: String, size: Float, maxW: Float, maxLines: Int): List<String> {
+        val out = ArrayList<String>()
+        for (para in text.split('\n')) {
+            var line = ""
+            for (w in para.split(' ')) {
+                val t = if (line.isEmpty()) w else "$line $w"
+                if (measure(t, size, light) <= maxW) line = t else {
+                    if (line.isNotEmpty()) out.add(line)
+                    line = w
+                    if (out.size >= maxLines) return out
+                }
+            }
+            if (line.isNotEmpty()) out.add(line)
+            if (out.size >= maxLines) return out.take(maxLines)
+        }
+        return out.take(maxLines)
+    }
+
+    private fun darkCard(c: Canvas, r: RectF, radius: Float) {
+        // the Belle widget plate (widget_belle00); the drawn glass is only the fallback
+        if (nine(c, "widget_plate", r, 20, 14f)) return
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF3A3D42.toInt(), 0xFF0C0D0F.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, radius, radius, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.2f * sc
+        p.color = al(Color.WHITE, 40)
+        c.drawRoundRect(r, radius, radius, p)
+        p.style = Paint.Style.FILL
+    }
+
+    /** Two flip cards: the Belle digital clock widget background and clock digits, with the AM/PM mark and the date. */
+    private fun drawFlip(c: Canvas, r: RectF) {
+        val hh = clockStr.substringBefore(':')
+        val mm = clockStr.substringAfter(':', "00")
+        if (dateShortFor != clockStr) {
+            dateShortFor = clockStr
+            dateShort = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+        }
+        // the widget picture keeps its own proportions, centred
+        val bgAspect = 624f / 254f
+        val bw = min(r.width(), r.height() * bgAspect)
+        val box = RectF(r.centerX() - bw / 2f, r.top, r.centerX() + bw / 2f, r.top + bw / bgAspect)
+        if (!gfx.draw(c, "qgn_graf_hs_digital_bg_8x3", box)) {
+            darkCard(c, RectF(box.left, box.top, box.centerX() - 4f * sc, box.bottom), 14f * sc)
+            darkCard(c, RectF(box.centerX() + 4f * sc, box.top, box.right, box.bottom), 14f * sc)
+        }
+        val dh = box.height() * 0.5f
+        val cy = box.centerY() - 3f * sc
+        val lx = box.left + box.width() * 0.25f
+        val rx = box.left + box.width() * 0.75f
+        if (gfx.digitsWidth(hh, dh) > 0f) {
+            gfx.digits(c, hh, lx, cy, dh, Paint.Align.CENTER)
+            gfx.digits(c, mm, rx, cy, dh, Paint.Align.CENTER)
+        } else {
+            val size = box.height() * 0.62f
+            text(c, hh, lx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+            text(c, mm, rx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+        }
+        if (ampmStr.isNotEmpty()) text(c, ampmStr, box.right - 22f * sc, box.top + 30f * sc, 16f * sc, al(Color.WHITE, 220), Paint.Align.RIGHT, face = light)
+        text(c, dateShort, box.right - 22f * sc, box.bottom - 16f * sc, 15f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
+    }
+
+    /** A paper calendar: the Belle calendar widget paper, "Today" and what is coming in the next week. */
+    /** The E6 paper widget: white card, rounded at the bottom, two binder rings on top (from the real home screen). */
+    private fun paperWidget(c: Canvas, r: RectF, rings: Boolean) {
+        val rad = 14f * sc
+        // soft shadow
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 70)
+        rf.set(r.left - 1f * sc, r.top + 2f * sc, r.right + 1f * sc, r.bottom + 5f * sc)
+        c.drawRoundRect(rf, rad, rad, p)
+        p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFFFFFFFF.toInt(), 0xFFE4E4E4.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, rad, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1f * sc
+        p.color = al(Color.BLACK, 120)
+        c.drawRoundRect(r, rad, rad, p)
+        p.style = Paint.Style.FILL
+        if (rings) {
+            for (fx in floatArrayOf(0.1f, 0.9f)) {
+                val cx = r.left + r.width() * fx
+                p.color = 0xFF9A9A9A.toInt()
+                rf.set(cx - 5f * sc, r.top - 6f * sc, cx + 5f * sc, r.top + 14f * sc)
+                c.drawRoundRect(rf, 5f * sc, 5f * sc, p)
+                p.color = 0xFFF4F4F4.toInt()
+                rf.set(cx - 2.5f * sc, r.top - 3f * sc, cx + 2.5f * sc, r.top + 10f * sc)
+                c.drawRoundRect(rf, 2.5f * sc, 2.5f * sc, p)
+            }
+        }
+    }
+
+    private fun drawToday(c: Canvas, r: RectF) {
+        paperWidget(c, r, true)
+        val ink = 0xFF111111.toInt()
+        val headH = min(46f * sc, r.height() * 0.3f)
+        text(c, "Today", r.centerX(), baselineFor(r.top + headH / 2f + 2f * sc, 26f * sc), 26f * sc, ink, Paint.Align.CENTER)
+        p.color = al(Color.BLACK, 70)
+        c.drawRect(r.left + 1f, r.top + headH, r.right - 1f, r.top + headH + 1f * sc, p)
+        val ev = calendar.events
+        val grey = 0xFF707070.toInt()
+        when {
+            !calendar.hasPermission() -> text(c, "Press ${okLetter()} to show your calendar", r.centerX(), baselineFor(r.top + headH + (r.height() - headH) / 2f, 19f * sc), 19f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            ev.isEmpty() -> text(c, "No events for 7 days", r.centerX(), baselineFor(r.top + headH + (r.height() - headH) / 2f, 20f * sc), 20f * sc, ink, Paint.Align.CENTER)
+            else -> {
+                val rowH = 42f * sc
+                val n = max(1, min(3, ((r.height() - headH - 6f * sc) / rowH).toInt()))
+                var y = r.top + headH + 6f * sc
+                val fmt = DateFormat.getTimeFormat(act)
+                val day = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+                for (e in ev.take(n)) {
+                    val whenText = if (e.allDay) "all day" else fmt.format(java.util.Date(e.begin))
+                    val dayText = if (isToday(e.begin) && e.begin < System.currentTimeMillis() + 24 * 3600_000L) null else day.format(java.util.Date(e.begin))
+                    text(c, whenText, r.left + 14f * sc, baselineFor(y + rowH / 2f - (if (dayText != null) 8f * sc else 0f), 22f * sc), 22f * sc, ink)
+                    if (dayText != null) text(c, dayText, r.left + 14f * sc, baselineFor(y + rowH / 2f + 12f * sc, 16f * sc, light), 16f * sc, grey, face = light)
+                    // the yellow event bar and the title, as in the E6 calendar widget
+                    p.color = 0xFFF2C500.toInt()
+                    c.drawRect(r.left + 84f * sc, y + 4f * sc, r.left + 89f * sc, y + rowH - 4f * sc, p)
+                    text(c, e.title, r.left + 100f * sc, baselineFor(y + rowH / 2f, 21f * sc), 21f * sc, ink, maxW = r.right - r.left - 116f * sc)
+                    y += rowH
+                }
+            }
+        }
+    }
+
+    /** A round dark media button of the E6 music widget: kind 0 previous, 1 play/pause, 2 next. */
+    private fun mediaDisc(c: Canvas, kind: Int, cx: Float, cy: Float, d: Float) {
+        val rad = d / 2f
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, cy - rad, 0f, cy + rad, 0xFF4A4A4A.toInt(), 0xFF101010.toInt(), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f * sc
+        p.color = 0xFF000000.toInt()
+        c.drawCircle(cx, cy, rad, p)
+        p.style = Paint.Style.FILL
+        p.color = Color.WHITE
+        val s = d * 0.2f
+        when (kind) {
+            1 -> if (media.playing) {
+                c.drawRect(cx - s * 0.9f, cy - s, cx - s * 0.2f, cy + s, p)
+                c.drawRect(cx + s * 0.2f, cy - s, cx + s * 0.9f, cy + s, p)
+            } else {
+                val path = Path()
+                path.moveTo(cx - s * 0.6f, cy - s * 1.1f)
+                path.lineTo(cx + s * 1.1f, cy)
+                path.lineTo(cx - s * 0.6f, cy + s * 1.1f)
+                path.close()
+                c.drawPath(path, p)
+            }
+            else -> {
+                val dir = if (kind == 0) -1f else 1f
+                val path = Path()
+                path.moveTo(cx - dir * s * 0.1f, cy - s)
+                path.lineTo(cx + dir * s * 1.0f, cy)
+                path.lineTo(cx - dir * s * 0.1f, cy + s)
+                path.close()
+                c.drawPath(path, p)
+                c.drawRect(cx - dir * s * 0.9f - s * 0.12f, cy - s, cx - dir * s * 0.9f + s * 0.12f, cy + s, p)
+            }
+        }
+    }
+
+    /** The E6 music widget: the cover on top of a dark glass panel, the title on a dark strip, three round buttons. */
+    private fun drawMusic(c: Canvas, r: RectF) {
+        if (r.height() < 170f * sc) {
+            // a short, wide widget: the cover on the left, title and the buttons on the right
+            val glass = RectF(r)
+            p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, glass.top, 0f, glass.bottom, 0xF0303030.toInt(), 0xF0101010.toInt(), Shader.TileMode.CLAMP)
+            c.drawRoundRect(glass, 16f * sc, 16f * sc, p)
+            p.shader = null
+            val side0 = r.height() - 12f * sc
+            val art0 = RectF(r.left + 6f * sc, r.top + 6f * sc, r.left + 6f * sc + side0, r.top + 6f * sc + side0)
+            val bmp0 = media.art
+            c.save()
+            c.clipRect(art0)
+            if (bmp0 != null) {
+                val k = max(art0.width() / bmp0.width, art0.height() / bmp0.height)
+                val sw = art0.width() / k
+                val sh = art0.height() / k
+                c.drawBitmap(bmp0, android.graphics.Rect(((bmp0.width - sw) / 2).toInt(), ((bmp0.height - sh) / 2).toInt(), ((bmp0.width + sw) / 2).toInt(), ((bmp0.height + sh) / 2).toInt()), art0, iconPaint)
+            } else {
+                p.color = 0xFF2A2A2A.toInt()
+                c.drawRect(art0, p)
+            }
+            c.restore()
+            val tx = art0.right + 14f * sc
+            val t0 = if (media.available) (media.title ?: "Playing") else "Nothing is playing"
+            text(c, t0, tx, baselineFor(r.top + r.height() * 0.28f, 21f * sc), 21f * sc, Color.WHITE, maxW = r.right - tx - 12f * sc)
+            val cy0 = r.top + r.height() * 0.68f
+            val span = (r.right - tx - 12f * sc)
+            val xs0 = floatArrayOf(tx + span * 0.18f, tx + span * 0.5f, tx + span * 0.82f)
+            val ds0 = floatArrayOf(40f * sc, 52f * sc, 40f * sc)
+            for (i in 0..2) {
+                mediaDisc(c, i, xs0[i], cy0, ds0[i])
+                val hh = ds0[i] / 2f + 3f * sc
+                subRects[i].set(xs0[i] - hh, cy0 - hh, xs0[i] + hh, cy0 + hh)
+            }
+            return
+        }
+        val side = min(r.width() - 28f * sc, r.height() - 92f * sc).coerceAtLeast(60f * sc)
+        val art = RectF(r.centerX() - side / 2f, r.top + 4f * sc, r.centerX() + side / 2f, r.top + 4f * sc + side)
+        // the glass panel starts about halfway down the cover and holds the buttons
+        val panel = RectF(r.left, art.top + side * 0.42f, r.right, r.bottom)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, panel.top, 0f, panel.bottom, 0xF0303030.toInt(), 0xF0101010.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(panel, 16f * sc, 16f * sc, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.5f * sc
+        p.color = al(Color.WHITE, 40)
+        c.drawRoundRect(panel, 16f * sc, 16f * sc, p)
+        p.style = Paint.Style.FILL
+        val bmp = media.art
+        c.save()
+        c.clipRect(art)
+        if (bmp != null) {
+            val k = max(art.width() / bmp.width, art.height() / bmp.height)
+            val sw = art.width() / k
+            val sh = art.height() / k
+            val src = android.graphics.Rect(((bmp.width - sw) / 2).toInt(), ((bmp.height - sh) / 2).toInt(), ((bmp.width + sw) / 2).toInt(), ((bmp.height + sh) / 2).toInt())
+            c.drawBitmap(bmp, src, art, iconPaint)
+        } else if (!nine(c, "qgn_graf_mup_npv_defalbumart", art, 0, 0f)) {
+            p.color = 0xFF2A2A2A.toInt()
+            c.drawRect(art, p)
+        }
+        // the title strip along the bottom of the cover
+        val strip = RectF(art.left, art.bottom - 40f * sc, art.right, art.bottom)
+        p.color = al(Color.BLACK, 190)
+        c.drawRect(strip, p)
+        val title = if (media.available) (media.title ?: "Playing") + (media.artist?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: "") else if (!HubStore.hasAccess(act)) "Allow notification access" else "Nothing is playing"
+        text(c, title, strip.left + 10f * sc, baselineFor(strip.centerY(), 21f * sc), 21f * sc, Color.WHITE, maxW = strip.width() - 20f * sc)
+        c.restore()
+        val by = r.bottom - 46f * sc
+        val dx = min(86f * sc, r.width() * 0.28f)
+        val xs = floatArrayOf(r.centerX() - dx, r.centerX(), r.centerX() + dx)
+        val ds = floatArrayOf(54f * sc, 82f * sc, 54f * sc)
+        for (i in 0..2) {
+            mediaDisc(c, i, xs[i], by, ds[i])
+            val hh = ds[i] / 2f + 3f * sc
+            subRects[i].set(xs[i] - hh, by - hh, xs[i] + hh, by + hh)
+        }
+    }
+
+    private fun drawInbox(c: Canvas, r: RectF) {
+        paperWidget(c, r, false)
+        HubStore.load(act)
+        val ink = 0xFF111111.toInt()
+        val grey = 0xFF707070.toInt()
+        val total = HubStore.notes.count { it.title.isNotBlank() || it.text.isNotBlank() }
+        val fit = max(1, (r.height() / (66f * sc)).toInt())
+        val list = HubStore.notes.filter { it.title.isNotBlank() || it.text.isNotBlank() }.take(min(3, fit))
+        if (!HubStore.hasAccess(act)) {
+            text(c, "Press ${okLetter()} and allow notification access", r.centerX(), baselineFor(r.centerY(), 18f * sc), 18f * sc, grey, Paint.Align.CENTER, maxW = r.width() - 30f * sc)
+            return
+        }
+        if (list.isEmpty()) {
+            text(c, "No notifications yet", r.centerX(), baselineFor(r.centerY(), 20f * sc), 20f * sc, grey, Paint.Align.CENTER)
+            return
+        }
+        val fmt = DateFormat.getTimeFormat(act)
+        val rowH = r.height() / list.size.toFloat()
+        var y = r.top
+        for ((i, n) in list.withIndex()) {
+            if (i > 0) {
+                p.color = al(Color.BLACK, 60)
+                c.drawRect(r.left + 16f * sc, y, r.right - 16f * sc, y + 1f * sc, p)
+            }
+            val t = fmt.format(java.util.Date(n.time))
+            text(c, t, r.right - 26f * sc, baselineFor(y + rowH * 0.32f, 19f * sc, light), 19f * sc, 0xFF3E7FBF.toInt(), Paint.Align.RIGHT, face = light)
+            text(c, n.title.ifBlank { n.pkg }, r.left + 18f * sc, baselineFor(y + rowH * 0.32f, 21f * sc, medium), 21f * sc, ink, maxW = r.width() - 110f * sc, face = medium)
+            text(c, n.text, r.left + 18f * sc, baselineFor(y + rowH * 0.70f, 20f * sc, light), 20f * sc, grey, maxW = r.width() - 48f * sc, face = light)
+            y += rowH
+        }
+        // the blue scroll bar down the right edge of the list
+        if (total > list.size) {
+            p.color = 0xFF3E7FBF.toInt()
+            rf.set(r.right - 9f * sc, r.top + 8f * sc, r.right - 5f * sc, r.top + 8f * sc + (r.height() - 16f) * list.size / total)
+            c.drawRoundRect(rf, 2f * sc, 2f * sc, p)
+        }
+    }
+
+    private fun drawSwitches(c: Canvas, r: RectF) {
+        darkCard(c, r, 14f * sc)
+        val ringer = try { (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode } catch (_: Exception) { 2 }
+        val labels = arrayOf("Wi-Fi", if (ringer == android.media.AudioManager.RINGER_MODE_NORMAL) "Sound on" else "Quiet", "Settings")
+        val on = booleanArrayOf(wifi || wifiOn(), ringer == android.media.AudioManager.RINGER_MODE_NORMAL, false)
+        val h = min(r.height() - 30f * sc, 68f * sc)
+        val w = h * 58f / 66f
+        for (i in 0..2) {
+            val cx = r.left + r.width() * (0.2f + 0.3f * i)
+            rf.set(cx - w / 2f, r.top + 6f * sc, cx + w / 2f, r.top + 6f * sc + h)
+            subRects[i].set(rf)
+            // the real Belle panel switch pictures, as on the Status menu
+            val art = when (i) { 0 -> "wlan"; 1 -> "audio"; else -> null }
+            if (art != null) {
+                gfx.draw(c, "qtg_graf_panel_switch_${art}_${if (on[i]) "on" else "off"}", rf)
+            } else {
+                p.style = Paint.Style.FILL
+                p.shader = LinearGradient(0f, rf.top + 4f * sc, 0f, rf.bottom - 8f * sc, 0xFF3A3A3A.toInt(), 0xFF1C1C1C.toInt(), Shader.TileMode.CLAMP)
+                c.drawRoundRect(rf.left + 3f * sc, rf.top + 5f * sc, rf.right - 3f * sc, rf.bottom - 9f * sc, 14f * sc, 14f * sc, p)
+                p.shader = null
+                gfx.glyph(c, "toolbar_settings", rf.centerX(), rf.centerY() - 2f * sc, 30f * sc, 255)
+            }
+            text(c, labels[i], cx, r.bottom - 7f * sc, 14f * sc, Color.WHITE, Paint.Align.CENTER, face = light)
+        }
     }
 
     // ---- Hub: everything that notified you, over the wallpaper ----------------------------------------
@@ -1295,6 +2313,11 @@ class LauncherView(private val act: Activity) : View(act) {
         hubHits.clear()
         buildHub()
         hubTick = true
+        // the same dimmed wallpaper as the Menu and Recent
+        p.style = Paint.Style.FILL
+        p.shader = null
+        p.color = al(Color.BLACK, 150)
+        c.drawRect(0f, cTop, w, cBot, p)
 
         val hr = RectF(m, cTop + 10f * sc, w - m, cTop + 88f * sc)
         card(c, hr)
@@ -1316,13 +2339,12 @@ class LauncherView(private val act: Activity) : View(act) {
             return
         }
 
-        val rowH = 62f * sc
-        val headH = 28f * sc
+        val rowH = 94f * sc
+        val headH = 30f * sc
         var total = 0f
         for (it in hubItems) total += if (it.header != null) headH else rowH
         val panelH = min(avail, total + 12f * sc)
-        val panel = RectF(m, panelTop, w - m, panelTop + panelH)
-        card(c, panel)
+        val panel = RectF(0f, panelTop, w, panelTop + panelH)
 
         // keep the selected notification in view
         var y = 6f * sc
@@ -1349,24 +2371,29 @@ class LauncherView(private val act: Activity) : View(act) {
             val h = if (it.header != null) headH else rowH
             if (yy + h >= panel.top && yy <= panel.bottom) {
                 if (it.header != null) {
-                    text(c, it.header, panel.left + 16f * sc, baselineFor(yy + h / 2f, 15f * sc, medium), 15f * sc, theme.accentLight, face = medium)
-                    p.color = al(Color.WHITE, 40)
-                    c.drawRect(panel.left + 12f * sc, yy + h - 2f * sc, panel.right - 12f * sc, yy + h - 1f * sc, p)
+                    // a grey section bar, as on the Status menu
+                    p.shader = LinearGradient(0f, yy, 0f, yy + h, 0xFF4A4A4A.toInt(), 0xFF383838.toInt(), Shader.TileMode.CLAMP)
+                    c.drawRect(panel.left, yy, panel.right, yy + h, p)
+                    p.shader = null
+                    text(c, it.header, panel.left + 14f * sc, baselineFor(yy + h / 2f, 16f * sc, medium), 16f * sc, Color.WHITE, face = medium)
                 } else {
                     val n = it.note!!
                     val rr = RectF(panel.left + 6f * sc, yy + 1f * sc, panel.right - 6f * sc, yy + h - 1f * sc)
-                    if (i == hubSel) drawFocus(c, rr, 10f * sc)
-                    val isz = 38f * sc
+                    if (i == hubSel) nine(c, "qtg_fr_list_pressed", rr, 40, 14f) else {
+                        p.color = al(Color.WHITE, 30)
+                        c.drawRect(rr.left + 8f * sc, rr.bottom, rr.right - 8f * sc, rr.bottom + 1f, p)
+                    }
+                    val isz = 56f * sc
                     noteIcon(n.pkg)?.let { b ->
                         rf.set(rr.left + 10f * sc, rr.centerY() - isz / 2f, rr.left + 10f * sc + isz, rr.centerY() + isz / 2f)
                         c.drawBitmap(b, null, rf, iconPaint)
                     }
                     val tx = rr.left + 10f * sc + isz + 12f * sc
                     val meta = appLabel(n.pkg) + "  " + DateFormat.format(if (DateFormat.is24HourFormat(act)) "HH:mm" else "h:mm a", n.time)
-                    val mw = min(measure(meta, 14f * sc, light), rr.width() * 0.4f)
-                    text(c, meta, rr.right - 12f * sc, baselineFor(rr.top + 22f * sc, 14f * sc, light), 14f * sc, if (i == hubSel) Color.WHITE else grey, Paint.Align.RIGHT, maxW = rr.width() * 0.4f, face = light)
-                    text(c, n.title.ifBlank { appLabel(n.pkg) }, tx, baselineFor(rr.top + 22f * sc, 18f * sc, medium), 18f * sc, Color.WHITE, maxW = rr.right - tx - mw - 24f * sc, face = medium)
-                    if (n.text.isNotBlank()) text(c, n.text.replace('\n', ' '), tx, baselineFor(rr.top + 46f * sc, 15f * sc, light), 15f * sc, if (i == hubSel) Color.WHITE else 0xFFBBBBBB.toInt(), maxW = rr.right - tx - 14f * sc, face = light)
+                    val mw = min(measure(meta, 17f * sc, light), rr.width() * 0.4f)
+                    text(c, meta, rr.right - 12f * sc, baselineFor(rr.top + 30f * sc, 17f * sc, light), 17f * sc, if (i == hubSel) Color.WHITE else grey, Paint.Align.RIGHT, maxW = rr.width() * 0.4f, face = light)
+                    text(c, n.title.ifBlank { appLabel(n.pkg) }, tx, baselineFor(rr.top + 30f * sc, 24f * sc, medium), 24f * sc, Color.WHITE, maxW = rr.right - tx - mw - 24f * sc, face = medium)
+                    if (n.text.isNotBlank()) text(c, n.text.replace('\n', ' '), tx, baselineFor(rr.top + 66f * sc, 20f * sc, light), 20f * sc, if (i == hubSel) Color.WHITE else 0xFFBBBBBB.toInt(), maxW = rr.right - tx - 14f * sc, face = light)
                     hubHits.add(RectF(rr) to i)
                 }
             }
@@ -1375,33 +2402,35 @@ class LauncherView(private val act: Activity) : View(act) {
         c.restore()
     }
 
-    // ---- page 1: applications (tab 1) -- black page, 70px icon frames, 18px labels -----------------
+    // ---- page 1: the Menu -- 151x122 cells, 72 px icons, 19 px labels over the dimmed wallpaper -----
 
     private fun drawMenu(c: Canvas) {
         val w = width.toFloat()
         val area = menuAreaTop()
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = Color.BLACK
+        // the wallpaper shows through, darkened, like the Belle Menu
+        p.color = al(Color.BLACK, 170)
         c.drawRect(0f, cTop, w, cBot, p)
         if (menuApps.isEmpty()) {
-            text(c, if (loaded) "No apps" else "Loading...", w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
+            val msg = if (!loaded) "Loading..." else if (searchQuery.isNotEmpty()) "No match" else "No apps"
+            text(c, msg, w / 2, (area + cBot) / 2, 22f * sc, Color.WHITE, Paint.Align.CENTER)
         } else {
-            drawFocus(c, menuFocus.cur, 12f * sc)
-            val cw = w / 4f
+            drawFocus(c, menuFocus.cur, 14f * sc)
+            val cw = menuCellW()
             val ch = menuCellH()
-            val isz = 70f * sc // graphicSizeLarge
+            val isz = 72f * sc
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + (ch - (isz + 26f * sc)) / 2f
+                val iconTop = tmp.top + 16f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), iconTop + isz + 22f * sc, 18f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 8f * sc)
+                text(c, app.label, tmp.centerX(), iconTop + isz + 30f * sc, 19f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
             }
-            val rows = (menuApps.size + 3) / 4
+            val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
                 val trackT = area + 6f * sc
                 val trackH = menuAreaBottom() - area - 12f * sc
@@ -1412,112 +2441,66 @@ class LauncherView(private val act: Activity) : View(act) {
                 c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
             }
         }
-        drawTabBar(c, 0)
     }
 
-    /** Belle tab bar: right under the status bar, full width, theme tab frames. */
-    private fun drawTabBar(c: Canvas, selected: Int) {
-        val w = width.toFloat()
-        val h = TAB * sc
-        val labels = arrayOf("Applications", "Recent")
-        val kinds = intArrayOf(ICON_GRID, ICON_CLOCK)
-        val tw = w / labels.size
-        rf.set(0f, cTop, w, cTop + h)
-        p.style = Paint.Style.FILL
-        p.color = Color.BLACK
-        c.drawRect(rf, p)
-        nine(c, "qtg_fr_tab_bar", rf, 40, 20f)
-        for (i in labels.indices) {
-            val sel = i == selected
-            rf.set(i * tw, cTop, (i + 1) * tw, cTop + h)
-            if (sel) {
-                p.style = Paint.Style.FILL
-                p.color = Color.BLACK
-                c.drawRect(rf, p)
-                nine(c, "qtg_fr_tab_active", rf, 40, 20f, 190)
-            } else {
-                nine(c, "qtg_fr_tab_passive_normal", rf, 40, 20f)
-            }
-            if (sel && tabFocus) {
-                p.style = Paint.Style.STROKE
-                p.strokeWidth = 3f * sc
-                p.color = theme.accentLight
-                c.drawRect(rf.left + 2f * sc, rf.top + 2f * sc, rf.right - 2f * sc, rf.bottom - 2f * sc, p)
-                p.style = Paint.Style.FILL
-            }
-            val col = if (sel) Color.WHITE else 0xFF999999.toInt()
-            val tsz = 18f * sc
-            val face = if (sel) sans else light
-            val textW = measure(labels[i], tsz, face)
-            val total = 30f * sc + 8f * sc + textW
-            val sx = rf.centerX() - total / 2f
-            glyph(c, kinds[i], sx + 15f * sc, cTop + h / 2f, 26f * sc, col)
-            text(c, labels[i], sx + 38f * sc, baselineFor(cTop + h / 2f, tsz, face), tsz, col, face = face)
-        }
-    }
-
-    // ---- page 2: recent (tab 2) -- ListItem: 70px, 12px inset, 50px icon, 22px title, 18px subtitle -
+    // ---- page 2: recent apps -- E6 list rows: 94 px, 64 px icon, 26 px title, 21 px subtitle ---------
 
     private fun drawRecent(c: Canvas) {
         val w = width.toFloat()
         val listTop = cTop + HEADER * sc
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = Color.BLACK
+        // the same dimmed wallpaper as the Menu
+        p.color = al(Color.BLACK, 170)
         c.drawRect(0f, cTop, w, cBot, p)
         if (recents.isEmpty()) {
-            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 22f * sc, 0xFF999999.toInt(), Paint.Align.CENTER)
-        } else {
-            for (i in recents.indices) {
-                recentRowRect(i, recentTopAnim, tmp)
-                if (tmp.bottom < listTop || tmp.top > cBot) continue
-                p.color = 0xFF444444.toInt() // colorDisabledMid separator
-                c.drawRect(0f, tmp.bottom - 1f, w, tmp.bottom, p)
-            }
-            // pressed / highlighted frame (qtg_fr_list_pressed): Belle blue with a white fade from the top
-            nine(c, "qtg_fr_list_pressed", recentFocus.cur, 40, 20f)
-            for (i in recents.indices) {
-                recentRowRect(i, recentTopAnim, tmp)
-                if (tmp.bottom < listTop || tmp.top > cBot) continue
-                val app = recents[i]
-                val sel = i == recentSel
-                val pad = 12f * sc // paddingLarge
-                drawIcon(c, app.icon, pad + 25f * sc, tmp.centerY(), 50f * sc)
-                val tx = pad + 50f * sc + pad
-                text(c, app.label, tx, tmp.centerY() - 4f * sc, 22f * sc, Color.WHITE, maxW = w - tx - 24f * sc)
-                text(c, app.component.packageName, tx, tmp.centerY() + 20f * sc, 18f * sc, if (sel) Color.WHITE else 0xFF999999.toInt(), maxW = w - tx - 24f * sc, face = light)
-            }
-            val vis = recentVisible()
-            if (recents.size > vis) {
-                val trackH = cBot - listTop - 8f * sc
-                val thumbH = max(24f * sc, trackH * vis / recents.size)
-                val prog = (recentTopAnim / (recents.size - vis).toFloat()).coerceIn(0f, 1f)
-                val ty = listTop + 4f * sc + (trackH - thumbH) * prog
-                rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
-                p.color = al(Color.WHITE, 150)
-                c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
-            }
+            text(c, "No recent apps", w / 2, (listTop + cBot) / 2, 22f * sc, 0xFFBBBBBB.toInt(), Paint.Align.CENTER)
+            return
         }
-        drawTabBar(c, 1)
-    }
-
-    private fun mix(a: Int, b: Int, t: Float): Int {
-        val r = (Color.red(a) * (1 - t) + Color.red(b) * t).toInt()
-        val g = (Color.green(a) * (1 - t) + Color.green(b) * t).toInt()
-        val bl = (Color.blue(a) * (1 - t) + Color.blue(b) * t).toInt()
-        return Color.rgb(r, g, bl)
+        nine(c, "qtg_fr_list_pressed", recentFocus.cur, 40, 20f)
+        val used = repo.lastUsed
+        val now = System.currentTimeMillis()
+        for (i in recents.indices) {
+            recentRowRect(i, recentTopAnim, tmp)
+            if (tmp.bottom < listTop || tmp.top > cBot) continue
+            val app = recents[i]
+            val sel = i == recentSel
+            if (i != recentSel) {
+                p.color = al(Color.WHITE, 30)
+                c.drawRect(14f * sc, tmp.bottom - 1f, w - 14f * sc, tmp.bottom, p)
+            }
+            val pad = 14f * sc
+            drawIcon(c, app.icon, pad + 32f * sc, tmp.centerY(), 64f * sc)
+            val tx = pad + 64f * sc + pad
+            val t = used[app.component.packageName]
+            val sub = if (t != null) android.text.format.DateUtils.getRelativeTimeSpanString(t, now, android.text.format.DateUtils.MINUTE_IN_MILLIS).toString() else "Opened from here"
+            text(c, app.label, tx, tmp.centerY() - 6f * sc, 26f * sc, Color.WHITE, maxW = w - tx - 70f * sc, face = medium)
+            text(c, sub, tx, tmp.centerY() + 27f * sc, 21f * sc, if (sel) Color.WHITE else 0xFFB5B5B5.toInt(), maxW = w - tx - 70f * sc, face = light)
+            // the cross on the right closes the app
+            glyph(c, ICON_CLOSE, w - 34f * sc, tmp.centerY(), 26f * sc, if (sel) Color.WHITE else al(Color.WHITE, 150))
+        }
+        val vis = recentVisible()
+        if (recents.size > vis) {
+            val trackH = cBot - listTop - 8f * sc
+            val thumbH = max(24f * sc, trackH * vis / recents.size)
+            val prog = (recentTopAnim / (recents.size - vis).toFloat()).coerceIn(0f, 1f)
+            val ty = listTop + 4f * sc + (trackH - thumbH) * prog
+            rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
+            p.color = al(Color.WHITE, 150)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+        }
     }
 
     // ---- chrome -------------------------------------------------------------------------------------
 
     private fun pageTitle() = when (page) {
         -1 -> "Hub"
-        0 -> "Home"
-        1 -> "Applications"
+        0 -> try { com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)] } catch (_: Throwable) { "Home" }
+        1 -> if (searchQuery.isNotEmpty()) "Search" else "Menu"
         else -> "Recent"
     }
 
-    /** 26px status bar: application title on the left, indicators and clock on the right. */
+    /** 36 px status bar (only when the Belle System UI is not drawing the real one): title on the left, indicators and clock on the right. */
     private fun drawStatusBar(c: Canvas, w: Float) {
         rf.set(0f, 0f, w, statusH)
         p.style = Paint.Style.FILL
@@ -1527,17 +2510,17 @@ class LauncherView(private val act: Activity) : View(act) {
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
 
         val cy = statusH / 2f
-        text(c, pageTitle(), 8f * sc, baselineFor(cy, 18f * sc), 18f * sc, Color.WHITE)
+        text(c, pageTitle(), 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 18f * sc
+        val csz = 22f * sc
         val tw = measure(time, csz)
         text(c, time, w - 8f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
 
-        val bw = 24f * sc
-        val bh = 18f * sc
-        val bLeft = w - 8f * sc - tw - 10f * sc - bw
+        val bw = 34f * sc
+        val bh = 20f * sc
+        val bLeft = w - 8f * sc - tw - 12f * sc - bw
         drawBattery(c, bLeft, cy - bh / 2f, bw, bh)
-        if (wifi) drawWifi(c, bLeft - 18f * sc, statusH * 0.76f, 10f * sc)
+        if (wifi) drawWifi(c, bLeft - 26f * sc, statusH * 0.78f, 13f * sc)
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float) {
@@ -1554,8 +2537,8 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /**
-     * 60px toolbar (heightToolBar), 30px white glyphs spread evenly: first button at the left edge, last at
-     * the right edge. Back is always first (apps button on Home); the options menu is always last.
+     * 67 px toolbar with 30 px white glyphs. Home: Menu, page dots, Options. Menu: Back, Search, Options (both as in
+     * the E6 Belle theme's HomeScreen.xml / ApplicationGrid.xml). Recent: Back, Close, Options.
      */
     private fun drawToolbar(c: Canvas, w: Float, h: Float) {
         rf.set(0f, cBot, w, h)
@@ -1568,6 +2551,32 @@ class LauncherView(private val act: Activity) : View(act) {
         val cy = cBot + softH / 2f
         val s = 30f * sc
         val inModal = popup != null || reorder
+        if ((page == 1 || page == 2) && !inModal) {
+            // the Belle Menu toolbar: back, search (or close, on Recent), menu
+            val mm = 56f * sc
+            toolIcon(c, ICON_BACK, mm, cy, s)
+            hintLetter(c, backLetter(), mm + 26f * sc, cy)
+            if (page == 1) gfx.glyph(c, "toolbar_search", w / 2f, cy, s, 255) else glyph(c, ICON_CLOSE, w / 2f, cy, s, Color.WHITE)
+            hintLetter(c, settingsLetter(), w / 2f + 26f * sc, cy)
+            toolIcon(c, ICON_MENU, w - mm, cy, s)
+            hintLetter(c, optLetter(), w - mm - 26f * sc, cy)
+            return
+        }
+        if (page == 0 && !inModal) {
+            // the E6 home toolbar: Menu, page dots, options (positions measured on the device)
+            val k = w / 640f
+            toolIcon(c, ICON_GRID, 60f * k, cy, s)
+            hintLetter(c, backLetter(), 60f * k + 26f * sc, cy)
+            toolIcon(c, ICON_MENU, w - 57f * k, cy, s)
+            hintLetter(c, optLetter(), w - 57f * k - 26f * sc, cy)
+            // page dots: Hub and Home, the current one lit
+            for (i in 0..1) {
+                p.style = Paint.Style.FILL
+                p.color = if (i == page + 1) Color.WHITE else al(Color.WHITE, 90)
+                c.drawCircle(w / 2f - 10f * sc + i * 20f * sc, cy, 4.5f * sc, p)
+            }
+            return
+        }
         val leftKind = if (page == 0 && !inModal) ICON_GRID else ICON_BACK
         val m = 32f * sc
         val step = (w - 2 * m) / 3f
@@ -1588,6 +2597,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun hintLetter(c: Canvas, letter: String, x: Float, cy: Float) {
+        if (!com.belleui.kit.Belle.keyHints) return
         text(c, letter, x, cy + 5f * sc, 13f * sc, al(Color.WHITE, 110), Paint.Align.CENTER, face = medium)
     }
 
@@ -1668,26 +2678,7 @@ class LauncherView(private val act: Activity) : View(act) {
         p.strokeJoin = Paint.Join.MITER
     }
 
-    // ---- overlays: options Menu, SelectionDialog, InfoBanner. Nothing dims the screen behind them. -----
-
-    private fun pushButton(c: Canvas, r: RectF, label: String, selected: Boolean) {
-        if (selected) {
-            nine(c, "qtg_fr_pushbutton_pressed", r, 40, 20f)
-        } else {
-            // colours sampled from the real Belle Cancel / Yes / No buttons
-            val rad = 6f * sc
-            p.style = Paint.Style.FILL
-            p.shader = LinearGradient(0f, r.top, 0f, r.bottom, 0xFF585953.toInt(), 0xFF393A34.toInt(), Shader.TileMode.CLAMP)
-            c.drawRoundRect(r, rad, rad, p)
-            p.shader = null
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 1f * sc
-            p.color = al(Color.BLACK, 170)
-            c.drawRoundRect(r, rad, rad, p)
-            p.style = Paint.Style.FILL
-        }
-        text(c, label, r.centerX(), baselineFor(r.centerY(), 22f * sc), 22f * sc, Color.WHITE, Paint.Align.CENTER)
-    }
+    // ---- overlays: options menu, selection popup, info banner - the same E6 look as the kit's -----
 
     private fun drawPopup(c: Canvas, pu: Popup, w: Float) {
         val box = popupRect(pu, RectF())
@@ -1708,22 +2699,27 @@ class LauncherView(private val act: Activity) : View(act) {
             c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
             p.shader = null
         } else {
-            // SelectionDialog: dark panel with the theme's heading frame
-            nine(c, "qtg_fr_popup", box, 40, 20f)
-            rf.set(box.left, box.top, box.right, box.top + titleH)
-            nine(c, "qtg_fr_popup_heading", rf, 40, 20f)
-            text(c, pu.title, box.left + 12f * sc, baselineFor(box.top + titleH / 2f, 22f * sc), 22f * sc, Color.WHITE, maxW = box.width() - 80f * sc)
-            glyph(c, ICON_CLOSE, box.right - 28f * sc, box.top + titleH / 2f, 30f * sc, Color.WHITE)
+            // the E6 selection popup, as in the Belle apps: dark plate, the title in blue over a thin blue rule
+            kit.popupPlate(c, box)
+            text(c, pu.title, box.left + 14f * sc, baselineFor(box.top + titleH / 2f + 2f * sc, 23f * sc), 23f * sc, POPUP_BLUE, maxW = box.width() - 28f * sc)
+            p.style = Paint.Style.FILL
+            p.shader = null
+            p.color = POPUP_BLUE
+            c.drawRect(box.left + 8f * sc, box.top + titleH, box.right - 8f * sc, box.top + titleH + 2f * sc, p)
         }
 
         val top0 = box.top + titleH + (if (pu.menu) 4f * sc else 0f)
-        for (i in pu.items.indices) {
-            val top = top0 + itemH * i
+        val vis = popupVis(pu)
+        val focus = min(pu.sel, pu.items.size - 1)
+        if (focus < pu.top) pu.top = focus else if (focus >= pu.top + vis) pu.top = focus - vis + 1
+        pu.top = pu.top.coerceIn(0, max(0, pu.items.size - vis))
+        for (i in pu.top until min(pu.items.size, pu.top + vis)) {
+            val top = top0 + itemH * (i - pu.top)
             val sel = i == pu.sel
             if (sel) {
                 tmp.set(box.left + 4f * sc, top + 1f * sc, box.right - 4f * sc, top + itemH - 1f * sc)
-                nine(c, "qtg_fr_list_pressed", tmp, 40, 14f)
-            } else if (i > 0) {
+                kit.highlight(c, tmp, 14f)
+            } else if (i > pu.top) {
                 p.style = Paint.Style.FILL
                 p.shader = null
                 p.color = al(Color.WHITE, 30)
@@ -1731,39 +2727,41 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             text(c, pu.items[i].label, box.left + 16f * sc, baselineFor(top + itemH / 2f, 22f * sc), 22f * sc, Color.WHITE, maxW = box.width() - 40f * sc)
         }
-        if (pu.menu) {
-            val cy0 = top0 + itemH * pu.items.size + 6f * sc
-            tmp.set(box.left + 8f * sc, cy0, box.right - 8f * sc, cy0 + 50f * sc)
-            pushButton(c, tmp, "Cancel", pu.sel == pu.items.size)
+        if (pu.items.size > vis) {
+            // a thin scroll bar on the right, since the list is longer than what fits
+            val trackT = top0 + 2f * sc
+            val trackH = itemH * vis - 4f * sc
+            val thumbH = trackH * vis / pu.items.size
+            val thumbT = trackT + (trackH - thumbH) * (pu.top.toFloat() / (pu.items.size - vis))
+            p.style = Paint.Style.FILL
+            p.shader = null
+            p.color = al(Color.WHITE, 120)
+            rf.set(box.right - 6f * sc, thumbT, box.right - 3f * sc, thumbT + thumbH)
+            c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
         }
+        // the full-width button under the list: Cancel on the options menu, Back on a popup (67 px, as on the E6)
+        val cy0 = top0 + itemH * vis + 6f * sc
+        tmp.set(box.left + 8f * sc, cy0, box.right - 8f * sc, cy0 + POPUP_BTN * sc)
+        kit.pushButton(c, tmp, if (pu.menu) "Cancel" else "Back", pu.menu && pu.sel == pu.items.size)
         c.restore()
     }
 
-    /** InfoBanner: 60px, full width under the status bar, slides in and dismisses itself. */
+    /** Info banner: as tall as the toolbar, full width under the status bar, slides in and dismisses itself. */
     private fun drawToast(c: Canvas, w: Float) {
         val now = System.currentTimeMillis()
         val tin = ((now - toastStart) / 220f).coerceIn(0f, 1f)
         val tout = ((toastUntil - now) / 220f).coerceIn(0f, 1f)
-        val t = min(tin, tout)
-        val hgt = 60f * sc
-        val top = statusH - (1f - t) * hgt
-        c.save()
-        c.clipRect(0f, statusH, w, statusH + hgt)
-        rf.set(0f, top, w, top + hgt)
-        p.style = Paint.Style.FILL
-        p.shader = null
-        p.color = Color.BLACK
-        c.drawRect(rf, p)
-        nine(c, "qtg_fr_popup_infobanner", rf, 40, 20f)
-        text(c, toast, 16f * sc, baselineFor(top + hgt / 2f, 20f * sc), 20f * sc, Color.WHITE, maxW = w - 32f * sc)
-        c.restore()
+        kit.banner(c, w, toast, min(tin, tout))
     }
 
     private companion object {
-        const val TAB = 50f      // tab bar (landscape; 60 in portrait)
-        const val HEADER = 50f   // list starts under the tab bar
-        const val ROW = 70f      // heightListItem
-        const val POPUP_ROW = 64f // heightMenuItem
+        const val SEARCH_H = 44f
+        const val TAB = 67f      // tab bar, as tall as the toolbar
+        const val HEADER = 6f    // a little air above the first row
+        const val ROW = 94f      // list item height on the E6 (graphicSizeLarge)
+        const val POPUP_ROW = 80f // menu and popup rows on the E6 (the kit's MENU_ITEM_H)
+        const val POPUP_BTN = 67f // the full-width Cancel / Back button
+        const val POPUP_BLUE = 0xFF4A90D9.toInt() // popup titles and their rule
         const val WIDGET_CLOCK = 0
         const val WIDGET_DATE = 1
         const val WIDGET_BATTERY = 2

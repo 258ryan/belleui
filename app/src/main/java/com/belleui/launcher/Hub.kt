@@ -100,6 +100,12 @@ object HubStore {
 
 /** Receives every notification so the Hub can list it. Needs the user to allow notification access once. */
 class HubListenerService : NotificationListenerService() {
+    companion object {
+        /** The connected listener, so the status provider can hand the live list to the System UI. */
+        @Volatile
+        var instance: HubListenerService? = null
+    }
+
     private fun record(sbn: StatusBarNotification) {
         val n = sbn.notification ?: return
         if (sbn.packageName == packageName) return
@@ -113,7 +119,12 @@ class HubListenerService : NotificationListenerService() {
         HubStore.add(this, Note(sbn.key, sbn.packageName, title, text, sbn.postTime))
     }
 
+    override fun onListenerDisconnected() {
+        if (instance === this) instance = null
+    }
+
     override fun onListenerConnected() {
+        instance = this
         HubStore.load(this)
         try {
             activeNotifications?.forEach { record(it) }

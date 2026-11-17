@@ -39,3 +39,17 @@ By speactra (https://openrepos.net/content/speactra/n9ish-icons). No licence fou
 ## Not bundled
 
 Nokia Pure Text (proprietary). Text uses the system sans-serif at Belle's sizes.
+
+## Nokia E6 Belle theme resources (`qtg_toolbar_*`, `qgn_*` in `belle/src/main/assets/belle/`)
+
+A curated subset (toolbar glyphs, music player buttons, default album art, list icons) of the icons in the
+"E6 Belle" theme package supplied with this project (`E6 Belle.zip`), rendered from SVG to PNG. These are Nokia
+artwork with no licence granted for redistribution; check before making the repository public or sharing builds.
+
+## Keyboard word list
+`keyboard/src/main/assets/words.txt` is the 20,000 most frequent English words (profanity filtered) taken from the FrequencyWords project (hermitdave/FrequencyWords, 2018 English list from OpenSubtitles), licensed CC BY-SA 4.0 (content) / MIT (code). The list is used on the device only, for word suggestions.
+
+## Belle FP1 / FP2 theme packs
+`vector/src/main/assets/belle/qtg_graf_panel_*`, `qgn_indi_home_profile_*` and similar graphics are rendered from the Nokia Belle FP2 theme pack (the quick switches, panel handle and profile indicators of the Belle status menu). Nokia artwork, not licensed for redistribution: private use only, like the E6 pack.
+
+Also rendered from the Belle FP2 pack into the kit: the calculator glyphs and paper (`qgn_indi_calc_*`, `qgn_graf_calc_*`), the input glyphs (`qgn_indi_input_*`), the keypad key frames (`qsn_fr_keypad_button*`) and the input panel background. Same note: Nokia artwork, private use.
