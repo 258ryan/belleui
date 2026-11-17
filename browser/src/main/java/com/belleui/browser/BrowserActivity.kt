@@ -56,6 +56,25 @@ class BrowserActivity : BelleActivity() {
     var desktop = false
     val prefs by lazy { getSharedPreferences("browser", Context.MODE_PRIVATE) }
 
+    /** Recently visited pages (browserng.r01: "Recently visited pages"), newest first, the last 100. */
+    fun history(): MutableList<Pair<String, String>> =
+        (prefs.getString("history", "") ?: "").split("\n").filter { it.contains("|") }.map {
+            val i = it.indexOf('|')
+            it.substring(0, i) to it.substring(i + 1)
+        }.toMutableList()
+
+    fun addHistory(title: String, url: String) {
+        val l = history()
+        if (l.firstOrNull()?.second == url) return
+        l.removeAll { it.second == url }
+        l.add(0, title.ifBlank { url }.replace("|", " ").replace("\n", " ") to url)
+        prefs.edit().putString("history", l.take(100).joinToString("\n") { it.first + "|" + it.second }).apply()
+    }
+
+    fun clearHistory() {
+        prefs.edit().remove("history").apply()
+    }
+
     var homePage: String
         get() = prefs.getString("home", "https://lite.duckduckgo.com/lite/") ?: "https://lite.duckduckgo.com/lite/"
         set(v) = prefs.edit().putString("home", v).apply()
@@ -135,6 +154,7 @@ class BrowserActivity : BelleActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 loading = false
                 pageUrl = url
+                if (url.startsWith("http")) addHistory(view.title ?: "", url)
                 view.evaluateJavascript(NAV_JS, null)
                 homeUi.invalidate()
             }

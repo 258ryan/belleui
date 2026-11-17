@@ -75,6 +75,12 @@ class BrowserScreen(private val act: BrowserActivity) : Screen() {
         items.add(MenuItem("Add bookmark") {
             shell.toast(if (Bookmarks(act).add(act.pageTitle, act.pageUrl)) "Bookmark added" else "Already bookmarked")
         })
+        items.add(MenuItem("Recently visited pages") { shell.push(HistoryScreen(act)) })
+        items.add(MenuItem("Page info") {
+            val u = act.pageUrl
+            val secure = if (u.startsWith("https://")) "Secure connection (https)" else if (u.startsWith("http://")) "Not secure (http)" else "Local page"
+            shell.showOverlay(QueryDialog("${act.pageTitle.ifBlank { "(no title)" }}\n$u\n$secure", "OK", null, "Page info") { })
+        })
         items.add(MenuItem("D-pad: " + arrayOf("links", "pointer", "page scroll")[navMode]) { navMode = (navMode + 1) % 3 })
         items.add(MenuItem("Images: " + if (act.imagesOn) "on" else "off (faster)") {
             act.imagesOn = !act.imagesOn
@@ -275,11 +281,68 @@ class BookmarksScreen(private val act: BrowserActivity) : Screen() {
                 Bookmarks(act).save(items)
             }
         },
+        MenuItem("Send link") {
+            items.getOrNull(list.sel)?.let { b ->
+                val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, b.second)
+                act.startActivity(Intent.createChooser(i, "Send link"))
+            }
+        },
     )
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         if (items.isEmpty()) {
             ui.text(c, "No bookmarks", r.centerX(), ui.baselineFor(r.centerY(), 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
+            return
+        }
+        list.draw(c, ui, r, items.size) { i -> Row(items[i].first, items[i].second, icon = ui.gfx.get("qgn_menu_browser"), iconKind = Ic.GLOBE, iconColor = 0xFF32B6C8.toInt()) }
+    }
+
+    private fun open(i: Int) {
+        act.web.loadUrl(items[i].second)
+        shell.pop()
+    }
+
+    override fun onAct(a: Act): Boolean {
+        if (items.isEmpty()) return false
+        if (a == Act.OK) {
+            open(list.sel)
+            return true
+        }
+        return list.act(a, items.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+    }
+
+    override fun onTap(x: Float, y: Float): Boolean {
+        val i = list.hit(shell.ui, RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom), y, items.size)
+        if (i < 0) return false
+        list.sel = i
+        open(i)
+        return true
+    }
+
+    override fun onScroll(dy: Float) = list.scrollBy(if (dy > 0) 1 else -1, items.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+}
+
+/** Recently visited pages: the browser's history, newest first. */
+class HistoryScreen(private val act: BrowserActivity) : Screen() {
+    override val lightOk: Boolean get() = true
+    override val title get() = "Recently visited pages"
+    private val list = ListState()
+    private var items = act.history()
+
+    override fun menu() = listOf(
+        MenuItem("Clear history") {
+            act.clearHistory()
+            items = act.history()
+            shell.toast("History cleared")
+        },
+        MenuItem("Add bookmark") {
+            items.getOrNull(list.sel)?.let { shell.toast(if (Bookmarks(act).add(it.first, it.second)) "Bookmark added" else "Already bookmarked") }
+        },
+    )
+
+    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+        if (items.isEmpty()) {
+            ui.text(c, "(no history)", r.centerX(), ui.baselineFor(r.centerY(), 22f * ui.sc), 22f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER)
             return
         }
         list.draw(c, ui, r, items.size) { i -> Row(items[i].first, items[i].second, icon = ui.gfx.get("qgn_menu_browser"), iconKind = Ic.GLOBE, iconColor = 0xFF32B6C8.toInt()) }

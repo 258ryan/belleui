@@ -129,13 +129,17 @@ class RootScreen(private val act: VideoActivity) : Screen() {
 
     private fun items(): List<Video> = if (tab == 0) act.library.items else resumable
 
-    override fun menu() = listOf(
-        MenuItem("Sort: " + if (act.library.sortByName) "name - switch to newest" else "newest - switch to name") {
+    override fun menu(): List<MenuItem> {
+        val items = ArrayList<MenuItem>()
+        val sel = if (tab == 0) videos.selected(act.library.items) else if (tab == 2) continueList.selected(resumable) else null
+        if (sel != null) items.add(MenuItem("Details") { videoDetails(act, shell, sel) })
+        items.add(MenuItem("Sort: " + if (act.library.sortByName) "name - switch to newest" else "newest - switch to name") {
             act.library.sortByName = !act.library.sortByName
             load()
-        },
-        MenuItem("Refresh") { load() },
-    )
+        })
+        items.add(MenuItem("Refresh") { load() })
+        return items
+    }
 
     override fun tools() = listOf(
         Tool(Ic.PLAY, { selectedVideo()?.let { v -> play(v) } }, selectedVideo() != null),
@@ -230,6 +234,8 @@ class FolderScreen(private val act: VideoActivity, private val name: String, pri
 
     override fun tools() = listOf(Tool(Ic.PLAY, { videos.selected(items)?.let { act.play(items, items.indexOf(it)) } }))
 
+    override fun menu(): List<MenuItem> = videos.selected(items)?.let { v -> listOf(MenuItem("Details") { videoDetails(act, shell, v) }) } ?: emptyList()
+
     override fun draw(c: Canvas, ui: Ui, r: RectF) = videos.draw(c, ui, r, items, shell)
 
     private fun vis() = videos.list.visible(shell.ui, shell.contentBottom - shell.contentTop)
@@ -252,4 +258,29 @@ class FolderScreen(private val act: VideoActivity, private val name: String, pri
     }
 
     override fun onScroll(dy: Float) = videos.list.scrollBy(if (dy > 0) 1 else -1, items.size, vis())
+}
+
+/** Video details (mpxvideodetailsview.r01): title, format, resolution, bit rate, duration, size, date and where it is. */
+internal fun videoDetails(act: VideoActivity, shell: com.belleui.kit.BelleShell, v: Video) {
+    val lines = ArrayList<String>()
+    lines.add(v.title)
+    var format: String? = null
+    var bitrate: String? = null
+    val mmr = android.media.MediaMetadataRetriever()
+    try {
+        mmr.setDataSource(act, v.uri)
+        format = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+        bitrate = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()?.let { "${it / 1000} kbit/s" }
+    } catch (_: Throwable) {
+    } finally {
+        try { mmr.release() } catch (_: Throwable) { }
+    }
+    if (format != null) lines.add("Format: $format")
+    if (v.width > 0 && v.height > 0) lines.add("Resolution: ${v.width} x ${v.height}")
+    if (bitrate != null) lines.add("Bit rate: $bitrate")
+    lines.add("Duration: ${v.durText}")
+    lines.add("Size: " + if (v.size > 1_000_000) "%.1f MB".format(v.size / 1_000_000.0) else "${v.size / 1000} kB")
+    lines.add("Date: " + android.text.format.DateFormat.format("d MMM yyyy, HH:mm", v.dateSec * 1000))
+    lines.add(v.bucket)
+    shell.showOverlay(com.belleui.kit.QueryDialog(lines.joinToString("\n"), "OK", null, "Video details") { })
 }

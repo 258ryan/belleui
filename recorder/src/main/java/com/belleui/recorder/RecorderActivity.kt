@@ -38,6 +38,11 @@ class RecorderActivity : BelleActivity() {
     private val handler = Handler(Looper.getMainLooper())
 
     private var rec: MediaRecorder? = null
+
+    /** Recording quality (voicerecorder.r01): 0 MMS compatible (small), 1 Standard, 2 High. */
+    var quality: Int
+        get() = getSharedPreferences("recorder", MODE_PRIVATE).getInt("quality", 1).coerceIn(0, 2)
+        set(v) = getSharedPreferences("recorder", MODE_PRIVATE).edit().putInt("quality", v).apply()
     private var session: RecordingStore.Session? = null
     private var startedAt = 0L
     var recording = false
@@ -101,8 +106,8 @@ class RecorderActivity : BelleActivity() {
             r.setAudioSource(MediaRecorder.AudioSource.MIC)
             r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            r.setAudioEncodingBitRate(96_000)
-            r.setAudioSamplingRate(44_100)
+            r.setAudioEncodingBitRate(intArrayOf(32_000, 96_000, 160_000)[quality])
+            r.setAudioSamplingRate(intArrayOf(16_000, 44_100, 44_100)[quality])
             r.setAudioChannels(1)
             if (Build.VERSION.SDK_INT >= 28 && input.info != null) r.setPreferredDevice(input.info)
             val s = store.begin(r)
@@ -245,8 +250,24 @@ class RootScreen(private val act: RecorderActivity) : Screen() {
         val m = ArrayList<MenuItem>()
         if (tab == 0) {
             m.add(MenuItem("Choose microphone") { chooseInput() })
+            if (!act.recording) m.add(MenuItem("Recording quality: " + QUALITY[act.quality]) {
+                shell.showOverlay(ListDialog("Recording quality", QUALITY, act.quality) { act.quality = it })
+            })
         } else {
             selected()?.let { r ->
+                m.add(MenuItem("Rename") {
+                    val et = android.widget.EditText(act)
+                    et.setText(r.title)
+                    et.setSingleLine(true)
+                    et.setSelectAllOnFocus(true)
+                    android.app.AlertDialog.Builder(act).setTitle("Rename sound").setView(et)
+                        .setPositiveButton("OK") { _, _ ->
+                            shell.toast(if (act.store.rename(r, et.text.toString())) "Renamed" else "Couldn't rename it")
+                            loadList()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                })
                 m.add(MenuItem("Share") { act.share(r) })
                 m.add(MenuItem("Delete") {
                     shell.showOverlay(QueryDialog("Delete \"${r.title}\"?", "Delete", "Cancel") {
@@ -353,3 +374,5 @@ class RootScreen(private val act: RecorderActivity) : Screen() {
 
     override fun onScroll(dy: Float) = list.scrollBy(if (dy > 0) 1 else -1, items.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
 }
+
+private val QUALITY = listOf("MMS compatible", "Standard", "High")

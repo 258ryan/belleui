@@ -91,6 +91,15 @@ class RecordingStore(private val ctx: Context) {
         return out
     }
 
+    /** Rename sound (voicerecorder.r01). */
+    fun rename(r: Recording, title: String): Boolean = try {
+        val n = title.trim().replace('/', ' ')
+        if (n.isEmpty()) false
+        else ctx.contentResolver.update(r.uri, android.content.ContentValues().apply { put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$n.m4a") }, null, null) > 0
+    } catch (_: Exception) {
+        false
+    }
+
     fun delete(r: Recording): Boolean = try {
         ctx.contentResolver.delete(r.uri, null, null) > 0
     } catch (_: Exception) {
