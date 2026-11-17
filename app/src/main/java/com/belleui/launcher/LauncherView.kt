@@ -746,8 +746,8 @@ class LauncherView(private val act: Activity) : View(act) {
             1 -> {
                 val cw = menuCellW()
                 val ch = menuCellH()
-                val idx = (((y - menuAreaTop()) / ch + menuTop).toInt()) * COLS + ((x - menuGridLeft()) / cw).toInt().coerceIn(0, COLS - 1)
-                if (y > menuAreaTop() && idx in menuApps.indices) {
+                val idx = (((y - menuGridTop()) / ch + menuTop).toInt()) * COLS + ((x - menuGridLeft()) / cw).toInt().coerceIn(0, COLS - 1)
+                if (y > menuGridTop() && idx in menuApps.indices) {
                     menuSel = idx
                     hit = true
                     if (!selectOnly) perform(Act.OK)
@@ -1098,14 +1098,16 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
     private fun menuCellW() = 151f * sc
-    private fun menuGridLeft() = (width - menuCellW() * COLS) / 2f
+    // grid_app_pane (640x480, 604x363 = 4x3 cells): l=11, t=7 (the 25 px on the right are the scroll bar's)
+    private fun menuGridLeft() = 11f * sc
+    private fun menuGridTop() = menuAreaTop() + 7f * sc
     private fun menuCellH() = 121f * sc // cell_app_pane variety 2: 151x121
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
         val cw = menuCellW()
         val ch = menuCellH()
         val x = menuGridLeft() + (idx % COLS) * cw
-        val y = menuAreaTop() + ((idx / COLS) - top) * ch
+        val y = menuGridTop() + ((idx / COLS) - top) * ch
         out.set(x, y, x + cw, y + ch)
         return out
     }
@@ -1666,7 +1668,8 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (app != null) {
                     val r = it.rect
                     val isz = min(r.height() * 0.62f, 76f * sc) // the same icon size as the Menu
-                    val top = r.top + 3f * sc
+                    // icon + 2 px + the 22 px label plate, centred in the cell so the selection frame has equal air above and below
+                    val top = r.top + (r.height() - (isz + 24f * sc)) / 2f
                     drawIcon(c, app.icon, r.centerX(), top + isz / 2f, isz)
                     // the E6 home screen label: the same dark plate for every shortcut, a little wider than the icon
                     val tsz = 16f * sc
@@ -2427,10 +2430,11 @@ class LauncherView(private val act: Activity) : View(act) {
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
-                val iconTop = tmp.top + 16f * sc
+                // cell_app_pane_t1: a 30 px label pane, 5 px above the cell's bottom edge (centre 101 px down); the icon sits 12 px down
+                val iconTop = tmp.top + 12f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), iconTop + isz + 30f * sc, 19f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
+                text(c, app.label, tmp.centerX(), baselineFor(tmp.top + 101f * sc, 19f * sc), 19f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
             }
             val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
