@@ -79,24 +79,26 @@ if [ "$install_vector_module" = "1" ] && [ ! -f $DIR/vector_installed ] && [ -f 
   pm install -r $MODDIR/extra/BelleUI-Chooser-Vector.apk >/dev/null 2>&1 && touch $DIR/vector_installed
 fi
 
-# Boot guard: once the System UI (the Belle one, or the stock one if the guard in post-fs-data.sh fell back to it) is up, the
-# "unconfirmed boots" counter that post-fs-data.sh keeps goes back to zero.
+# Boot guard: the counter that post-fs-data.sh keeps goes back to zero only once the System UI (the Belle one, or the stock one if the guard
+# fell back to it) has been up for FOUR MINUTES. A boot that comes up and dies a minute later (the loop that an overlay or a font can cause)
+# therefore still counts as failed. Runs in the background so the rest of this script is not held up.
 variant=$(cat $DIR/variant 2>/dev/null)
 [ -z "$variant" ] && variant=${system_ui:-belle}
-sleep 20
-ok=0
-if [ "$variant" = "belle" ]; then
-  # the Belle System UI writes the boot number into a setting once it is the registered status bar
-  [ "$(settings get global belle_sysui_ok)" = "$(settings get global boot_count)" ] && ok=1
-else
-  # the stock one: its process is running and the status bar window exists
-  if [ -n "$(pidof com.android.systemui)" ] && dumpsys window windows 2>/dev/null | grep -q "StatusBar"; then ok=1; fi
-fi
-{
-  echo "$(date): System UI check variant=$variant ok=$ok"
-  logcat -d -s BelleSysUi:V 2>&1 | tail -20
-} >> $DIR/sysui.log
-[ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
+(
+  sleep 240
+  ok=0
+  if [ "$variant" = "belle" ]; then
+    # the Belle System UI writes the boot number into a setting once it is the registered status bar
+    [ "$(settings get global belle_sysui_ok)" = "$(settings get global boot_count)" ] && ok=1
+  else
+    if [ -n "$(pidof com.android.systemui)" ] && dumpsys window windows 2>/dev/null | grep -q "StatusBar"; then ok=1; fi
+  fi
+  {
+    echo "$(date): System UI check after 4 minutes variant=$variant ok=$ok"
+    logcat -d -s BelleSysUi:V 2>&1 | tail -20
+  } >> $DIR/sysui.log
+  [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
+) &
 
 # --- control and diagnostics you can reach from adb without root ---------------------------------------------------------
 # /sdcard/Download/belleui.conf (framework=0|1, font=0|1, system_ui=..., reset_guard=1) is merged into /data/adb/belleui/config here,
