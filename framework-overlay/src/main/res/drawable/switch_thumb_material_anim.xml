@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Belle switch handle (qtg_graf_switchbutton_handle_*) -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android" android:constantSize="true">
-    <item android:state_pressed="true" android:drawable="@drawable/belle_switch_handle_pressed" />
-    <item android:drawable="@drawable/belle_switch_handle" />
+    <item android:state_pressed="true"><layer-list><item android:width="30dp" android:height="30dp" android:gravity="center" android:drawable="@drawable/belle_switch_handle_pressed" /></layer-list></item>
+    <item><layer-list><item android:width="30dp" android:height="30dp" android:gravity="center" android:drawable="@drawable/belle_switch_handle" /></layer-list></item>
 </selector>
