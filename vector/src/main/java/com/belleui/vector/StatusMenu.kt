@@ -364,14 +364,8 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
         u.p.color = 0xFF0C0C0C.toInt()
         c.drawRect(0f, 0f, w, panelH, u.p)
 
-        // the title bar
-        val top = Belle.STATUS_H * sc
-        u.p.color = Color.BLACK
-        c.drawRect(0f, 0f, w, top, u.p)
-        u.text(c, "Status", 6f * sc, u.baselineFor(top / 2f, 24f * sc), 24f * sc, Color.WHITE)
-        val clock = android.text.format.DateFormat.format(if (android.text.format.DateFormat.is24HourFormat(sys)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString()
-        u.text(c, clock, w - 8f * sc, u.baselineFor(top / 2f, 22f * sc), 22f * sc, Color.WHITE, Paint.Align.RIGHT)
-        u.text(c, batteryText(), w - 20f * sc - u.measure(clock, 22f * sc), u.baselineFor(top / 2f, 20f * sc, u.light), 20f * sc, Belle.TEXT_MID, Paint.Align.RIGHT, face = u.light)
+        // the system status bar sits right above this panel (as in the real Belle pull-down), so there is no title bar of its own
+        val top = 0f
 
         val handleH = 26f * sc
         val bottom = panelH - handleH
@@ -386,7 +380,10 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
             tileRects[i].set(x, rowTop, x + kw, rowTop + kh)
             switchTile(c, u, i, tileRects[i])
         }
-        var y = rowTop + kh + 8f * sc
+        // the labels the real menu puts under the switches (Mobile data, Wi-Fi, Bluetooth, Silent)
+        val labels = arrayOf(if (hasCell) "Mobile data" else "Airplane", "Wi-Fi", "Bluetooth", "Silent")
+        for (i in 0 until 4) u.text(c, labels[i], tileRects[i].centerX(), u.baselineFor(tileRects[i].bottom + 17f * sc, 21f * sc), 21f * sc, Color.WHITE, Paint.Align.CENTER, face = u.light, maxW = cellW - 8f * sc)
+        var y = rowTop + kh + 34f * sc
 
         // the More row opens the extras (rotation, torch, settings, profile, brightness) in place of the notifications
         val moreH = 34f * sc
@@ -620,7 +617,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
                     return true
                 }
                 if (ey > panelH - 26f * sc) { dismiss(); return true }
-                if (ey < Belle.STATUS_H * sc || ey > panelH - 26f * sc) return true
+                if (ey > panelH - 26f * sc) return true
                 for (i in 0 until 7) if (!tileRects[i].isEmpty && tileRects[i].contains(ex, ey)) { zone = 0; leftSel = i; toggle(i); invalidate(); return true }
                 if (moreRect.contains(ex, ey)) { zone = 0; leftSel = 9; activate(); invalidate(); return true }
                 // the list scrolls under the More row and the handle: a tap there must not hit a row that is only partly visible

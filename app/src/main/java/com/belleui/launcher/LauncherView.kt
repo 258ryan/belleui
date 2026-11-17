@@ -2838,9 +2838,21 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- chrome -------------------------------------------------------------------------------------
 
+    /** The Home status title as on a real Belle phone: the network's name, or "Offline"; the profile when there is neither (no SIM). */
+    private fun homeTitle(): String {
+        try {
+            if (Settings.Global.getInt(act.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0) return "Offline"
+            val tm = act.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            val n = tm.networkOperatorName
+            if (!n.isNullOrBlank()) return n
+        } catch (_: Throwable) {
+        }
+        return try { com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)] } catch (_: Throwable) { "Home" }
+    }
+
     private fun pageTitle() = when (page) {
         -1 -> "Hub"
-        0 -> try { com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)] } catch (_: Throwable) { "Home" }
+        0 -> homeTitle()
         1 -> if (searchQuery.isNotEmpty()) "Search" else (repo.openFolder ?: "Menu")
         else -> "Recent"
     }
