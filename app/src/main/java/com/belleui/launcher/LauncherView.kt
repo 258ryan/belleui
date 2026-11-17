@@ -429,7 +429,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     private fun refreshLists() {
-        menuApps = repo.menuApps(repo.showHidden).let { l -> if (searchQuery.isEmpty()) l else l.filter { it.label.contains(searchQuery, true) } }
+        menuApps = repo.menuApps(repo.showHidden, flat = searchQuery.isNotEmpty()).let { l -> if (searchQuery.isEmpty()) l else l.filter { it.label.contains(searchQuery, true) } }
         // hidden apps disappear everywhere (menu, home shortcuts, recents) unless "show hidden" is on
         favs = repo.favoriteEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
         recents = repo.recentEntries().filter { repo.showHidden || !repo.isHidden(it.key) }
@@ -629,7 +629,7 @@ class LauncherView(private val act: Activity) : View(act) {
                 }
             } else openQuick(0)
             Act.OPTIONS -> openOptions()
-            Act.BACK -> setPage(if (page == 0) 1 else 0)
+            Act.BACK -> if (page == 1 && repo.openFolder != null && searchQuery.isEmpty()) closeFolder() else setPage(if (page == 0) 1 else 0)
             else -> navigate(a)
         }
         invalidate()
@@ -668,7 +668,7 @@ class LauncherView(private val act: Activity) : View(act) {
                     Act.RIGHT -> if (menuSel % COLS == COLS - 1 || menuSel == n - 1) setPage(2) else menuSel++
                     Act.UP -> if (menuSel >= COLS) menuSel -= COLS
                     Act.DOWN -> if (menuSel + COLS < n) menuSel += COLS else if (menuSel / COLS < (n - 1) / COLS) menuSel = n - 1
-                    Act.OK -> launch(menuApps[menuSel])
+                    Act.OK -> menuApps[menuSel].let { if (repo.isFolder(it)) openFolder(it.label) else launch(it) }
                     else -> {}
                 }
             }
@@ -688,6 +688,9 @@ class LauncherView(private val act: Activity) : View(act) {
         if (menuApps.isEmpty()) return
         val to = (menuSel + d).coerceIn(0, menuApps.size - 1)
         if (to == menuSel) return
+        // folders always come first and are not moved
+        val folderCount = menuApps.count { repo.isFolder(it) }
+        if (repo.isFolder(menuApps[menuSel]) || to < folderCount) return
         repo.moveInOrder(menuApps.map { it.key }, menuSel, to)
         menuApps = repo.menuApps(repo.showHidden)
         menuSel = to
@@ -834,6 +837,10 @@ class LauncherView(private val act: Activity) : View(act) {
             openQuick(0)
             return
         }
+        if (page == 1 && repo.isFolder(app)) {
+            openFolderOptions(app)
+            return
+        }
         val items = ArrayList<PopupItem>()
         items += PopupItem("Open") { launch(app) }
         if (page == 2) {
@@ -854,6 +861,15 @@ class LauncherView(private val act: Activity) : View(act) {
         if (page == 1 && searchQuery.isEmpty()) items += PopupItem("Move") {
             reorder = true
             showToast("D-pad moves, ${okLetter()} drops")
+        }
+        if (page == 1 && searchQuery.isEmpty()) {
+            items += PopupItem("Move to folder") { moveToFolderPicker(app) }
+            if (repo.openFolder != null) items += PopupItem("Remove from folder") {
+                repo.setFolder(app.key, null)
+                refreshLists()
+                showToast("${app.label} is back in the Menu")
+            }
+            if (repo.openFolder == null) items += PopupItem("New folder") { newFolder() }
         }
         val fav = homeHas(app.key)
         items += PopupItem(if (fav) "Remove from home" else "Add to home") {
@@ -877,6 +893,97 @@ class LauncherView(private val act: Activity) : View(act) {
             }
         }
         popup = Popup(app.label, items, 0, menu = true)
+    }
+
+    // ---- Menu folders ------------------------------------------------------------------------------
+
+    private var folderWipeStart = 0L
+
+    private fun openFolder(name: String) {
+        repo.openFolder = name
+        menuTop = 0
+        menuSel = 0
+        folderWipeStart = System.currentTimeMillis()
+        refreshLists()
+        invalidate()
+    }
+
+    private fun closeFolder() {
+        val was = repo.openFolder
+        repo.openFolder = null
+        menuTop = 0
+        folderWipeStart = System.currentTimeMillis()
+        refreshLists()
+        // land on the folder just left
+        menuSel = menuApps.indexOfFirst { repo.isFolder(it) && it.label == was }.coerceAtLeast(0)
+        ensureVisible()
+        invalidate()
+    }
+
+    private fun askName(title: String, initial: String, ok: (String) -> Unit) {
+        val et = android.widget.EditText(act)
+        et.setText(initial)
+        et.setSingleLine(true)
+        et.setSelectAllOnFocus(true)
+        android.app.AlertDialog.Builder(act).setTitle(title).setView(et)
+            .setPositiveButton("OK") { _, _ -> ok(et.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun nextFolderName(): String {
+        val have = repo.folders().map { it.lowercase() }
+        var n = 1
+        while ("folder $n" in have) n++
+        return "Folder $n"
+    }
+
+    private fun newFolder(then: ((String) -> Unit)? = null) {
+        askName("New folder", nextFolderName()) { n ->
+            if (repo.addFolder(n)) {
+                val name = repo.folders().first { it.equals(n.trim().replace("|", "").take(24), true) }
+                refreshLists()
+                showToast("Folder created")
+                then?.invoke(name)
+            } else showToast("That name can't be used")
+        }
+    }
+
+    private fun moveToFolderPicker(app: AppEntry) {
+        val items = ArrayList<PopupItem>()
+        for (f in repo.folders().sortedBy { it.lowercase() }) {
+            items += PopupItem(f) {
+                repo.setFolder(app.key, f)
+                refreshLists()
+                showToast("${app.label} moved to $f")
+            }
+        }
+        items += PopupItem("New folder...") {
+            newFolder { f ->
+                repo.setFolder(app.key, f)
+                refreshLists()
+                showToast("${app.label} moved to $f")
+            }
+        }
+        popup = Popup("Move to folder", items, 0)
+    }
+
+    private fun openFolderOptions(entry: AppEntry) {
+        val name = entry.label
+        val items = ArrayList<PopupItem>()
+        items += PopupItem("Open") { openFolder(name) }
+        items += PopupItem("Rename") {
+            askName("Rename folder", name) { n ->
+                if (repo.renameFolder(name, n)) refreshLists() else showToast("That name can't be used")
+            }
+        }
+        items += PopupItem("Delete folder") {
+            repo.removeFolder(name)
+            refreshLists()
+            showToast("Folder deleted - its apps are back in the Menu")
+        }
+        items += PopupItem("New folder") { newFolder() }
+        popup = Popup(name, items, 0, menu = true)
     }
 
     /** Ends the background processes of these apps (a normal permission, so no root needed); the launcher itself is never touched. */
@@ -2634,6 +2741,20 @@ class LauncherView(private val act: Activity) : View(act) {
     // ---- page 1: the Menu -- 151x122 cells, 72 px icons, 19 px labels over the dimmed wallpaper -----
 
     private fun drawMenu(c: Canvas) {
+        // entering or leaving a folder: the firmware's folder_open / folder_close, a 0.3 s linear reveal
+        val t = ((System.currentTimeMillis() - folderWipeStart) / 300f).coerceIn(0f, 1f)
+        if (t >= 1f) {
+            drawMenuGrid(c)
+            return
+        }
+        c.save()
+        c.clipRect(0f, cTop, width * t, cBot)
+        drawMenuGrid(c)
+        c.restore()
+        postInvalidateOnAnimation()
+    }
+
+    private fun drawMenuGrid(c: Canvas) {
         val w = width.toFloat()
         val area = menuAreaTop()
         p.style = Paint.Style.FILL
@@ -2726,7 +2847,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun pageTitle() = when (page) {
         -1 -> "Hub"
         0 -> try { com.belleui.kit.Profiles.names[com.belleui.kit.Profiles.current(act)] } catch (_: Throwable) { "Home" }
-        1 -> if (searchQuery.isNotEmpty()) "Search" else "Menu"
+        1 -> if (searchQuery.isNotEmpty()) "Search" else (repo.openFolder ?: "Menu")
         else -> "Recent"
     }
 

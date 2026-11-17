@@ -372,15 +372,81 @@ class AppRepo(private val ctx: Context) {
 
     // ---- menu order / hidden --------------------------------------------------
 
-    fun menuApps(includeHidden: Boolean): List<AppEntry> {
+    fun menuApps(includeHidden: Boolean, flat: Boolean = false): List<AppEntry> {
         val order = getList("order")
         val rank = HashMap<String, Int>()
         order.forEachIndexed { i, k -> rank[k] = i }
         val hidden = getList("hidden").toSet()
-        return apps
+        val open = openFolder
+        val known = folders().toSet()
+        val sorted = apps
             .filter { includeHidden || it.key !in hidden }
             .filter { matchesFilter(it) }
+            // a search looks through everything; otherwise the Menu shows the apps of the open folder, or those in no folder
+            .filter { flat || (prefs.getString("fold_" + it.key, null)?.takeIf { f -> f in known }) == open }
             .sortedWith(compareBy<AppEntry>({ rank[it.key] ?: Int.MAX_VALUE }, { it.label.lowercase() }))
+        return if (flat || open != null) sorted else known.sortedBy { it.lowercase() }.map { folderEntry(it) } + sorted
+    }
+
+    // ---- menu folders: the firmware's menu has them (effects/folder_open.fxml and folder_close.fxml) -------------
+
+    /** The folder the Menu is showing, or null for the top level. Not saved. */
+    var openFolder: String? = null
+
+    fun folders(): List<String> = getList("folders")
+
+    fun isFolder(a: AppEntry) = a.key.startsWith("folder:")
+
+    fun folderOf(key: String): String? = prefs.getString("fold_$key", null)?.takeIf { it in folders() }
+
+    fun setFolder(key: String, folder: String?) {
+        prefs.edit().apply { if (folder == null) remove("fold_$key") else putString("fold_$key", folder) }.apply()
+    }
+
+    fun addFolder(name: String): Boolean {
+        val n = name.trim().replace("|", "").take(24)
+        if (n.isEmpty() || folders().any { it.equals(n, true) }) return false
+        putList("folders", folders() + n)
+        return true
+    }
+
+    /** Deleting a folder puts its apps back in the Menu. */
+    fun removeFolder(name: String) {
+        for (a in apps) if (prefs.getString("fold_" + a.key, null) == name) setFolder(a.key, null)
+        putList("folders", folders().filter { it != name })
+        if (openFolder == name) openFolder = null
+    }
+
+    fun renameFolder(old: String, new: String): Boolean {
+        val n = new.trim().replace("|", "").take(24)
+        if (n.isEmpty() || (!n.equals(old, true) && folders().any { it.equals(n, true) })) return false
+        for (a in apps) if (prefs.getString("fold_" + a.key, null) == old) setFolder(a.key, n)
+        putList("folders", folders().map { if (it == old) n else it })
+        if (openFolder == old) openFolder = n
+        return true
+    }
+
+    private var folderBmp: Bitmap? = null
+
+    /** A folder in the Menu grid: a stand-in entry with the folder icon; its key starts with "folder:". */
+    fun folderEntry(name: String) = AppEntry("folder:$name", name, ComponentName(ctx.packageName, "folder"), folderBmp ?: makeFolderIcon().also { folderBmp = it })
+
+    private fun makeFolderIcon(): Bitmap {
+        val tile = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        val c = Canvas(tile)
+        c.clipPath(squircle(RectF(0f, 0f, 96f, 96f)))
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.shader = LinearGradient(0f, 0f, 0f, 96f, 0xFF63707D.toInt(), 0xFF27303A.toInt(), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 96f, 96f, p)
+        p.shader = LinearGradient(0f, 0f, 0f, 48f, 0x55FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 96f, 48f, p)
+        p.shader = null
+        p.color = 0xFFEAF0F5.toInt()
+        c.drawRoundRect(RectF(20f, 28f, 46f, 40f), 4f, 4f, p)   // the tab
+        c.drawRoundRect(RectF(20f, 34f, 76f, 68f), 5f, 5f, p)   // the body
+        p.color = 0x33000000
+        c.drawRect(20f, 44f, 76f, 45.5f, p)
+        return withShadow(tile)
     }
 
     /** Moves an item inside the visible list and persists the new order. */
