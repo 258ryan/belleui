@@ -635,6 +635,15 @@ class QueryDialog(
         ui.popupPlate(c, box)
         // the heading is plain white text on the plate, as in the E6 query dialogs
         ui.text(c, title ?: (if (no == null) "Information" else "Confirm"), box.left + 26f * sc, ui.baselineFor(box.top + head / 2f + 4f * sc, 26f * sc), 26f * sc, maxW = bw - 52f * sc)
+        // the guideline's heading glyph at the right: "?" for a query, "i" for information
+        run {
+            val cx = box.right - 34f * sc
+            val cy = box.top + head / 2f
+            ui.p.style = Paint.Style.FILL
+            ui.p.color = Color.WHITE
+            c.drawCircle(cx, cy, 14f * sc, ui.p)
+            ui.text(c, if (no == null) "i" else "?", cx, ui.baselineFor(cy, 20f * sc), 20f * sc, Color.BLACK, Paint.Align.CENTER)
+        }
         for ((i, l) in lines.withIndex()) {
             ui.text(c, l, box.left + 26f * sc, ui.baselineFor(box.top + head + 14f * sc + i * 30f * sc, 22f * sc), 22f * sc, maxW = bw - 52f * sc)
         }
@@ -642,7 +651,8 @@ class QueryDialog(
         val by = box.bottom - 9f * sc - btnH
         val m = 9f * sc
         if (no == null) {
-            yesR.set(box.left + m, by, box.right - m, by + btnH)
+            // a single button is centred, never stretched or paired with a blank space (design guidelines)
+            yesR.set(box.centerX() - bw * 0.22f, by, box.centerX() + bw * 0.22f, by + btnH)
         } else {
             val half = (bw - 2 * m - 2f * sc) / 2f
             yesR.set(box.left + m, by, box.left + m + half, by + btnH)
