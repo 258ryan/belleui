@@ -19,7 +19,7 @@ import com.belleui.kit.Screen
 import com.belleui.kit.Tool
 import com.belleui.kit.Ui
 
-/** Shown over the lock screen while an alarm rings: A stops, Y snoozes for 10 minutes. */
+/** Shown over the lock screen while an alarm rings: A stops, Y snoozes for the snooze time set in the Clock (10 minutes unless changed). */
 class RingActivity : BelleActivity() {
     private val closer = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = finish()
@@ -72,7 +72,7 @@ class RingScreen(private val act: RingActivity, private val label: String) : Scr
         if (ui.gfx.digitsWidth(time, 84f * ui.sc) > 0f) ui.gfx.digits(c, time, r.centerX() + 60f * ui.sc, r.centerY() - 58f * ui.sc, 84f * ui.sc, Paint.Align.CENTER)
         else ui.text(c, time, r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() - 40f * ui.sc, 88f * ui.sc, ui.light), 88f * ui.sc, align = Paint.Align.CENTER, face = ui.light)
         ui.text(c, label, r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() + 30f * ui.sc, 26f * ui.sc), 26f * ui.sc, Belle.BLUE_LIGHT, Paint.Align.CENTER, maxW = r.width() - 40f * ui.sc)
-        ui.text(c, "Y  Snooze 10 min        A  Stop", r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() + 90f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
+        ui.text(c, "Y  Snooze ${ClockSettings.snoozeMinutes(act)} min        A  Stop", r.centerX() + 60f * ui.sc, ui.baselineFor(r.centerY() + 90f * ui.sc, 18f * ui.sc, ui.light), 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
     }
 
     override fun onAct(a: Act): Boolean {

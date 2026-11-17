@@ -132,18 +132,29 @@ class ClockScreen(private val act: ClockActivity) : Screen() {
     }
 
     override fun menu(): List<MenuItem> = when (tab) {
-        0 -> listOf(MenuItem("Add city") { addCity() }) + if (zones.isNotEmpty()) listOf(MenuItem("Remove city") { removeCity() }) else emptyList()
+        0 -> listOf(MenuItem("Add city") { addCity() }) + (if (zones.isNotEmpty()) listOf(MenuItem("Remove city") { removeCity() }) else emptyList()) +
+            listOf(MenuItem("Alarm snooze time: ${ClockSettings.snoozeMinutes(act)} min") { snoozePicker() })
         1 -> {
             val items = arrayListOf(MenuItem("New alarm") { newAlarm() })
             alarms.getOrNull(alarmList.sel)?.let { a ->
+                items.add(MenuItem(if (a.enabled) "Deactivate alarm" else "Activate alarm") { toggleAlarm(a) })
                 items.add(MenuItem("Edit time") { editTime(a) })
                 items.add(MenuItem("Repeat: ${repeatText(a.days)}") { editRepeat(a) })
-                items.add(MenuItem("Delete") { deleteAlarm(a) })
+                items.add(MenuItem("Delete alarm") { deleteAlarm(a) })
             }
+            items.add(MenuItem("Alarm snooze time: ${ClockSettings.snoozeMinutes(act)} min") { snoozePicker() })
             items
         }
         3 -> listOf(MenuItem("Set time") { timerSet() })
         else -> emptyList()
+    }
+
+    private fun snoozePicker() {
+        val cur = ClockSettings.snoozeMinutes(act)
+        shell.showOverlay(ListDialog("Alarm snooze time", ClockSettings.SNOOZE_CHOICES.map { "$it min" }, ClockSettings.SNOOZE_CHOICES.indexOf(cur)) { i ->
+            ClockSettings.setSnoozeMinutes(act, ClockSettings.SNOOZE_CHOICES[i])
+            shell.toast("Snooze time: ${ClockSettings.SNOOZE_CHOICES[i]} min")
+        })
     }
 
     // ---- clock tab -----------------------------------------------------------------------------

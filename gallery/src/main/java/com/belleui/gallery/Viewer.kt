@@ -118,6 +118,7 @@ class ViewerScreen(private val act: GalleryActivity, private val items0: List<Me
                 MenuItem("Share") { share() },
                 MenuItem("Hide") { hide() },
                 MenuItem("Delete") { delete() },
+            ) + (if (current.isVideo) emptyList() else listOf(MenuItem("Use as wallpaper") { useAsWallpaper() })) + listOf(
                 MenuItem("Slideshow: " + if (slideshow) "stop" else "start") {
                     slideshow = !slideshow
                     lastAdvance = System.currentTimeMillis()
@@ -161,6 +162,22 @@ class ViewerScreen(private val act: GalleryActivity, private val items0: List<Me
         } else if (slideshow) {
             slideshow = false
         }
+    }
+
+    /** "Use items" in the firmware's Gallery: sets the picture as the wallpaper. */
+    private fun useAsWallpaper() {
+        if (items.isEmpty() || current.isVideo) return
+        val uri = current.uri
+        shell.toast("Setting wallpaper...")
+        Thread {
+            val ok = try {
+                act.contentResolver.openInputStream(uri)?.use { android.app.WallpaperManager.getInstance(act).setStream(it) }
+                true
+            } catch (_: Throwable) {
+                false
+            }
+            shell.post { shell.toast(if (ok) "Wallpaper set" else "Couldn't set the wallpaper") }
+        }.start()
     }
 
     private fun share() {

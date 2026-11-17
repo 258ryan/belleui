@@ -143,9 +143,11 @@ private val pool = Executors.newFixedThreadPool(2)
 /** One folder. */
 class FolderScreen(private val act: FilesActivity, private val dir: File, private val label: String?) : Screen() {
     override val lightOk: Boolean get() = true
-    override val title get() = label ?: dir.name.ifEmpty { "/" }
+    override val title get() = if (found != null) "Find: $query" else (label ?: dir.name.ifEmpty { "/" })
     private val list = ListState()
     private var entries: List<File> = emptyList()
+    private var query = ""
+    private var found: List<File>? = null // results of Find, from this folder down
     private val marked = LinkedHashSet<String>()
     private val counts = HashMap<String, Int>()
     private val counting = HashSet<String>()
@@ -153,7 +155,7 @@ class FolderScreen(private val act: FilesActivity, private val dir: File, privat
     override fun onShow() = refresh()
 
     private fun refresh() {
-        entries = Fs.list(dir, act.showHidden, act.sort)
+        entries = found?.filter { it.exists() } ?: Fs.list(dir, act.showHidden, act.sort)
         marked.retainAll(entries.map { it.path }.toSet())
         list.sel = list.sel.coerceIn(0, maxOf(0, entries.size - 1))
         shell.postInvalidate()
@@ -183,7 +185,11 @@ class FolderScreen(private val act: FilesActivity, private val dir: File, privat
             if (marked.size <= 1) items.add(MenuItem("Rename") { rename(cur) })
             items.add(MenuItem("Details") { details(cur) })
         }
-        items.add(MenuItem("New folder") { newFolder() })
+        if (found == null) items.add(MenuItem("New folder") { newFolder() })
+        // Find (filemanager.r01): looks through this folder and the ones under it
+        items.add(MenuItem("Find") { startFind() })
+        if (found != null) items.add(MenuItem("Clear find") { found = null; query = ""; list.sel = 0; refresh() })
+        if (cur != null && targets().any { !it.isDirectory }) items.add(MenuItem("Send") { send() })
         items.add(MenuItem("Sort by: " + Fs.sortNames[act.sort]) {
             shell.showOverlay(ListDialog("Sort by", Fs.sortNames, act.sort) {
                 act.sort = it
@@ -198,6 +204,50 @@ class FolderScreen(private val act: FilesActivity, private val dir: File, privat
     }
 
     // ---- actions --------------------------------------------------------------------------------
+
+    private fun startFind() {
+        act.askText("Find", query) { q ->
+            shell.toast("Searching...")
+            val hidden = act.showHidden
+            pool.execute {
+                val out = ArrayList<File>()
+                fun walk(d: File, depth: Int) {
+                    if (out.size >= 500 || depth > 8) return
+                    val kids = try { d.listFiles() } catch (_: SecurityException) { null } ?: return
+                    for (f in kids) {
+                        if (!hidden && f.name.startsWith(".")) continue
+                        if (f.name.contains(q, ignoreCase = true)) out.add(f)
+                        if (f.isDirectory && out.size < 500) walk(f, depth + 1)
+                    }
+                }
+                walk(dir, 0)
+                out.sortBy { it.name.lowercase() }
+                shell.post {
+                    query = q
+                    found = out
+                    list.sel = 0
+                    refresh()
+                    if (out.isEmpty()) shell.toast("Nothing found")
+                }
+            }
+        }
+    }
+
+    /** Send (filemanager.r01): hands the marked files, or the one in focus, to whatever app can take them. */
+    private fun send() {
+        val files = targets().filter { it.isFile }
+        if (files.isEmpty()) return
+        val uris = ArrayList(files.map { android.net.Uri.fromFile(it) })
+        val i = if (uris.size == 1) android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType(Fs.mime(files[0])).putExtra(android.content.Intent.EXTRA_STREAM, uris[0])
+        else android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE)
+            .setType("*/*").putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+        try {
+            act.startActivity(android.content.Intent.createChooser(i, "Send").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            shell.toast("Nothing to send it with")
+        }
+    }
 
     private fun open(f: File) {
         if (f.isDirectory) shell.push(FolderScreen(act, f, null)) else act.openFile(f)?.let { shell.toast(it) }

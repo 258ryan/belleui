@@ -133,7 +133,7 @@ class AlarmService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_SNOOZE -> {
-                AlarmScheduler.scheduleAt(this, AlarmScheduler.SNOOZE_CODE, System.currentTimeMillis() + 10 * 60_000L, "snooze", 0, label)
+                AlarmScheduler.scheduleAt(this, AlarmScheduler.SNOOZE_CODE, System.currentTimeMillis() + ClockSettings.snoozeMinutes(this) * 60_000L, "snooze", 0, label)
                 stopRinging()
                 return START_NOT_STICKY
             }
@@ -217,5 +217,16 @@ class AlarmService : Service() {
         const val ID = 11
         const val ACTION_STOP = "com.belleui.clock.STOP"
         const val ACTION_SNOOZE = "com.belleui.clock.SNOOZE"
+    }
+}
+
+/** The Clock settings (clock.r01: "Alarm snooze time", 1 to 60 minutes). */
+object ClockSettings {
+    val SNOOZE_CHOICES = listOf(1, 5, 10, 15, 20, 30, 60)
+
+    fun snoozeMinutes(ctx: Context): Int = ctx.getSharedPreferences("clock", Context.MODE_PRIVATE).getInt("snooze", 10).coerceIn(1, 60)
+
+    fun setSnoozeMinutes(ctx: Context, m: Int) {
+        ctx.getSharedPreferences("clock", Context.MODE_PRIVATE).edit().putInt("snooze", m.coerceIn(1, 60)).apply()
     }
 }
