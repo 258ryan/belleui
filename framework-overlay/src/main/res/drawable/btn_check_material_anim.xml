@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle check box (qtg_graf_checkbox_*) -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:state_checked="true" android:drawable="@drawable/belle_check_on_disabled" />
+    <item android:state_enabled="false" android:drawable="@drawable/belle_check_off_disabled" />
+    <item android:state_pressed="true" android:drawable="@drawable/belle_check_pressed" />
+    <item android:state_checked="true" android:drawable="@drawable/belle_check_on" />
+    <item android:drawable="@drawable/belle_check_off" />
+</selector>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle progress bar (qtg_fr_progressbar_track and _fill), 28 px high -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background" android:gravity="fill_horizontal|center_vertical" android:drawable="@drawable/belle_progress_track" />
+    <item android:id="@android:id/progress" android:gravity="fill_horizontal|center_vertical">
+        <clip android:clipOrientation="horizontal" android:gravity="start" android:drawable="@drawable/belle_progress_fill" />
+    </item>
+</layer-list>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle switch track (qtg_graf_switchbutton_track + _fill when on) -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:state_checked="true" android:drawable="@drawable/belle_switch_track_on_disabled" />
+    <item android:state_enabled="false" android:drawable="@drawable/belle_switch_track_off_disabled" />
+    <item android:state_checked="true">
+        <layer-list>
+            <item android:drawable="@drawable/belle_switch_track" />
+            <item android:drawable="@drawable/belle_switch_fill" />
+        </layer-list>
+    </item>
+    <item android:drawable="@drawable/belle_switch_track" />
+</selector>

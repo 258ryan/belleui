@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle list highlight (qtg_fr_list_pressed / _highlighted) instead of the ripple -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:drawable="@drawable/belle_list_pressed" />
+    <item android:state_focused="true" android:drawable="@drawable/belle_list_highlighted" />
+    <item android:state_activated="true" android:drawable="@drawable/belle_list_highlighted" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

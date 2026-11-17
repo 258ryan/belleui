@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle radio button (qtg_graf_radiobutton_*) -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:state_checked="true" android:drawable="@drawable/belle_radio_on_disabled" />
+    <item android:state_enabled="false" android:drawable="@drawable/belle_radio_off_disabled" />
+    <item android:state_pressed="true" android:drawable="@drawable/belle_radio_pressed" />
+    <item android:state_checked="true" android:drawable="@drawable/belle_radio_on" />
+    <item android:drawable="@drawable/belle_radio_off" />
+</selector>
