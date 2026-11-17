@@ -139,7 +139,7 @@ class CalcScreen(private val act: CalcActivity) : Screen() {
     }
 
     override fun draw(cv: Canvas, ui: Ui, area: RectF) {
-        if (area.width() >= area.height) drawLandscape(cv, ui, area) else drawPortrait(cv, ui, area)
+        if (area.width() >= area.height()) drawLandscape(cv, ui, area) else drawPortrait(cv, ui, area)
     }
 
     /**
