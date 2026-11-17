@@ -38,62 +38,56 @@ class BarView(context: Context, private val barH: Int) : View(context) {
         // left: the title of what is on screen, as on every Belle screen
         ui.text(c, Bar.title, pad, ui.baselineFor(h / 2f, size), size, Color.WHITE, maxW = w * 0.45f)
 
-        // right, from the edge in: clock, battery, notification mark, wifi
-        var x = w - pad
+        // right side: Qt Components StatusBarDefault.qml from the firmware, every size a fraction of the bar height
+        // (statusBarHeight): content 18/26, battery 24/26 wide, clock 44/26 wide, padding-small 6 at 36 px
+        val cy = h / 2f
+        val ch = Math.round(h * 18f / 26f).toFloat()                 // priv.contentHeight
+        val padS = 6f * h / 36f                                      // platformStyle.paddingSmall
+        val pad14 = Math.round(padS / 4f).toFloat()                  // paddingSmallOneQuarter
+        val pad34 = Math.round(padS * 3f / 4f).toFloat()             // paddingSmallThreeQuarters
+
+        // clock: Light, content-height pixels, right aligned in a 44/26 box, paddingSmall from the edge
         val clock = DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString()
-        ui.text(c, clock, x, ui.baselineFor(h / 2f, size), size, Color.WHITE, Paint.Align.RIGHT)
-        x -= ui.measure(clock, size) + pad * 0.6f
-        val bw = h * 1.15f
-        val bh = h * 0.6f
-        val bt = (h - bh) / 2f
-        r.set(x - bw, bt, x, bt + bh)
+        val clockRight = w - padS
+        val clockW = Math.round(h * 44f / 26f).toFloat()
+        ui.text(c, clock, clockRight, ui.baselineFor(cy, ch, ui.light), ch, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
+        val clockLeft = clockRight - maxOf(clockW, ui.measure(clock, ch, ui.light))
+
+        // battery: 24/26 wide box, fill width (level + 2) / 13 of the bar height, level 0..7; charging runs the level round in 3.5 s
+        val bw = Math.round(h * 24f / 26f).toFloat()
+        val bRight = clockLeft - pad34
+        r.set(bRight - bw, cy - ch / 2f, bRight, cy + ch / 2f)
         val bg = ui.gfx.get("qtg_graf_battery_level_bg")
         val full = ui.gfx.get("qtg_graf_battery_level_full")
-        if (bg != null) c.drawBitmap(bg, null, r, null)
+        val level = if (Bar.charging) ((System.currentTimeMillis() % 3500L) * 800L / 3500L).toInt() / 100 else ((Bar.batteryPct * 7 + 50) / 100).coerceIn(0, 7)
+        if (bg != null) c.drawBitmap(bg, null, fit(bg, r), null)
         if (full != null) {
             c.save()
-            c.clipRect(r.left, r.top, r.left + bw * (0.12f + 0.76f * Bar.batteryPct / 100f), r.bottom)
-            c.drawBitmap(full, null, r, null)
+            c.clipRect(r.left, r.top, r.left + Math.round(h * (level + 2) / 13f), r.bottom)
+            c.drawBitmap(full, null, fit(full, r), null)
             c.restore()
         }
-        if (Bar.charging) {
-            // a bolt over the battery while it charges
-            p.style = Paint.Style.FILL
-            p.color = Color.WHITE
-            val bx = r.centerX()
-            val by = r.centerY()
-            val bolt = android.graphics.Path()
-            bolt.moveTo(bx + bw * 0.06f, by - bh * 0.42f)
-            bolt.lineTo(bx - bw * 0.14f, by + bh * 0.08f)
-            bolt.lineTo(bx - bw * 0.01f, by + bh * 0.08f)
-            bolt.lineTo(bx - bw * 0.06f, by + bh * 0.42f)
-            bolt.lineTo(bx + bw * 0.16f, by - bh * 0.1f)
-            bolt.lineTo(bx + bw * 0.03f, by - bh * 0.1f)
-            bolt.close()
-            c.drawPath(bolt, p)
-        }
-        x -= bw + pad * 0.6f
-        // the small indicators, from the battery outwards: wifi, bluetooth, silent, alarm, airplane
+        var x = r.left - pad34
+
+        // universal indicators: at most three (maxIndicatorCount), content-height squares, a quarter padding apart
+        var shown = 0
         fun glyph(name: String) {
-            val s = h * 0.8f
-            r.set(x - s, (h - s) / 2f, x, (h + s) / 2f)
+            if (shown >= 3) return
+            r.set(x - ch, cy - ch / 2f, x, cy + ch / 2f)
             ui.gfx.draw(c, name, r)
-            x -= s + pad * 0.3f
+            x -= ch + pad14
+            shown++
         }
-        if (Bar.wifi) glyph("qtg_toolbar_wlan_on")
-        if (Bar.bluetooth) glyph("qtg_toolbar_bluetooth_on")
-        if (Bar.silent) glyph("qtg_toolbar_audio_off")
-        if (Bar.alarm) { ui.glyph(c, com.belleui.kit.Ic.BELL, x - h * 0.4f, h / 2f, h * 0.62f); x -= h * 0.8f + pad * 0.3f }
-        if (Bar.airplane) glyph("qtg_toolbar_network_off")
-        if (Bar.notifications > 0) {
+        if (Bar.notifications > 0 && shown < 3) {
             // an envelope, with the count beside it
             val label = if (Bar.notifications > 99) "99+" else Bar.notifications.toString()
-            val tw = ui.measure(label, size * 0.8f)
-            ui.text(c, label, x, ui.baselineFor(h / 2f, size * 0.8f), size * 0.8f, Color.WHITE, Paint.Align.RIGHT)
-            x -= tw + 4f
-            val ew = h * 0.62f
-            val eh = h * 0.42f
-            r.set(x - ew, (h - eh) / 2f, x, (h + eh) / 2f)
+            val ts = ch * 0.85f
+            val tw = ui.measure(label, ts)
+            ui.text(c, label, x, ui.baselineFor(cy, ts), ts, Color.WHITE, Paint.Align.RIGHT)
+            x -= tw + pad14
+            val ew = ch
+            val eh = ch * 0.7f
+            r.set(x - ew, cy - eh / 2f, x, cy + eh / 2f)
             p.style = Paint.Style.STROKE
             p.strokeWidth = 1.6f
             p.color = Color.WHITE
@@ -101,8 +95,26 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawLine(r.left, r.top, r.centerX(), r.centerY(), p)
             c.drawLine(r.right, r.top, r.centerX(), r.centerY(), p)
             p.style = Paint.Style.FILL
-            x -= ew + pad * 0.6f
+            x -= ew + pad14
+            shown++
         }
+        if (Bar.wifi) glyph("qtg_toolbar_wlan_on")
+        if (Bar.bluetooth) glyph("qtg_toolbar_bluetooth_on")
+        if (Bar.silent) glyph("qtg_toolbar_audio_off")
+        if (Bar.alarm && shown < 3) { ui.glyph(c, com.belleui.kit.Ic.BELL, x - ch / 2f, cy, ch); x -= ch + pad14; shown++ }
+        if (Bar.airplane) glyph("qtg_toolbar_network_off")
+
+        if (Bar.charging) postInvalidateDelayed(220)
+    }
+
+    /** [bmp] fitted inside [box], aspect kept and centred (Image.PreserveAspectFit). */
+    private val fitRect = RectF()
+    private fun fit(bmp: android.graphics.Bitmap, box: RectF): RectF {
+        val s = minOf(box.width() / bmp.width, box.height() / bmp.height)
+        val dw = bmp.width * s
+        val dh = bmp.height * s
+        fitRect.set(box.centerX() - dw / 2f, box.centerY() - dh / 2f, box.centerX() + dw / 2f, box.centerY() + dh / 2f)
+        return fitRect
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
