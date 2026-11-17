@@ -81,11 +81,16 @@ object Belle {
         } catch (_: Throwable) { }
     }
 
-    const val STATUS_H = 36f   // measured on the E6 at 640x480
-    const val TAB_H = 67f      // as tall as the toolbar (scaled from the measured bars)
-    const val TOOL_H = 67f
-    const val ROW_H = 94f
-    const val MENU_ITEM_H = 80f
+    // From the E6 firmware's own layout data (2001cb90.dll, Elaf_Vga4_touch_land_Normal_Pack); see docs/E6-LAYOUT.md
+    const val STATUS_H = 35f   // area_top_pane, landscape flat status pane
+    const val TAB_H = 68f      // as tall as the toolbar
+    const val TOOL_H = 68f     // area_bottom_pane / control pane (main_pane is t=35 b=68)
+    const val ROW_H = 94f      // list_double_pane / list_double_large_graphic_pane
+    const val MENU_ITEM_H = 67f // list_single_pane_cp2 in popup_menu_window (480 wide)
+    const val LIST_INSET = 14f // list_gen_pane l/r inside listscroll_gen_pane
+    const val LIST_ICON = 72f  // list_double_large_graphic_pane_g1: 72x72 at l=10 t=11
+    const val LIST_ICON_X = 10f
+    const val LIST_TEXT_X = 90f // list_double_large_graphic_pane_t1 l=90
     const val PADDING = 12f
 }
 
@@ -735,15 +740,16 @@ class Ui(val ctx: Context) {
             return
         }
         var tx = r.left + pad
-        val iconSize = 64f * sc
+        val iconSize = Belle.LIST_ICON * sc
         if (row.icon != null || row.iconKind >= 0) {
+            tx = r.left + Belle.LIST_ICON_X * sc
             tmp.set(tx, r.centerY() - iconSize / 2f, tx + iconSize, r.centerY() + iconSize / 2f)
             if (row.icon != null) {
                 drawBitmap(c, row.icon, tmp, dim)
             } else {
                 iconFrame(c, tmp, row.iconColor, row.iconKind)
             }
-            tx += iconSize + pad
+            tx = r.left + Belle.LIST_TEXT_X * sc
         }
         var rightEdge = r.right - pad - row.rightReserve * sc
         if (row.drill) {

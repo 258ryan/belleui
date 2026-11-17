@@ -143,8 +143,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     // ---- layout (px) ---------------------------------------------------------------
     private var sc = 1f
-    private var statusH = 36f
-    private var softH = 67f
+    private var statusH = 35f
+    private var softH = 68f
     private var cTop = 30f
     private var cBot = 436f
 
@@ -1083,8 +1083,8 @@ class LauncherView(private val act: Activity) : View(act) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
         kit.sc = sc
-        statusH = (if (com.belleui.kit.Belle.sysBar) 0f else 36f) * sc
-        softH = 67f * sc
+        statusH = (if (com.belleui.kit.Belle.sysBar) 0f else com.belleui.kit.Belle.STATUS_H) * sc
+        softH = com.belleui.kit.Belle.TOOL_H * sc
         cTop = statusH
         cBot = h - softH
         ensureVisible()
@@ -1097,7 +1097,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
     private fun menuCellW() = 151f * sc
     private fun menuGridLeft() = (width - menuCellW() * COLS) / 2f
-    private fun menuCellH() = 122f * sc
+    private fun menuCellH() = 121f * sc // cell_app_pane variety 2: 151x121
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
         val cw = menuCellW()
@@ -2756,11 +2756,11 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private companion object {
         const val SEARCH_H = 44f
-        const val TAB = 67f      // tab bar, as tall as the toolbar
+        const val TAB = 68f      // tab bar, as tall as the toolbar
         const val HEADER = 6f    // a little air above the first row
         const val ROW = 94f      // list item height on the E6 (graphicSizeLarge)
-        const val POPUP_ROW = 80f // menu and popup rows on the E6 (the kit's MENU_ITEM_H)
-        const val POPUP_BTN = 67f // the full-width Cancel / Back button
+        const val POPUP_ROW = 67f // menu and popup rows on the E6 (the kit's MENU_ITEM_H)
+        const val POPUP_BTN = 68f // the full-width Cancel / Back button
         const val POPUP_BLUE = 0xFF4A90D9.toInt() // popup titles and their rule
         const val WIDGET_CLOCK = 0
         const val WIDGET_DATE = 1
