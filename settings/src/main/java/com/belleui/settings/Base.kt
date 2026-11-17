@@ -8,6 +8,7 @@ import android.os.SystemClock
 import com.belleui.kit.Act
 import com.belleui.kit.Belle
 import com.belleui.kit.ListState
+import com.belleui.kit.Scroll
 import com.belleui.kit.Row
 import com.belleui.kit.Screen
 import com.belleui.kit.Ui
