@@ -168,10 +168,39 @@ abstract class Screen {
  * Scrolling list of [Row]s. With [sectionOf] set, the first row of each group gets a Belle section bar (a letter) above
  * it, and [AlphaIndex] can jump between groups.
  */
+/** The finger's movement of the gesture in progress, so any list a screen scrolls can follow it in pixels and keep its momentum. */
+object Scroll {
+    var dy = 0f
+    var last: ListState? = null
+}
+
 class ListState(val rowH: Float = Belle.ROW_H) {
     var sel = 0
     var top = 0
     private var topAnim = 0f
+
+    // touch scrolling: the list follows the finger in pixels, then coasts (fling) and slows down; a key press goes back to row steps
+    private var free = false
+    private var vel = 0f          // rows per second
+    private var lastNs = 0L
+    private var lastSc = 1f
+    private var lastCount = 0
+    private var lastVis = 1
+
+    /** Called by the shell when a fling ends with [vy] px/s: the list coasts on. */
+    fun fling(vy: Float) {
+        if (!free) return
+        vel = -vy / (rowH * lastSc)
+        lastNs = System.nanoTime()
+    }
+
+    private fun dragPx(px: Float, count: Int, vis: Int) {
+        free = true
+        vel = 0f
+        val maxTop = max(0, count - vis).toFloat()
+        topAnim = (topAnim + px / (rowH * lastSc)).coerceIn(0f, maxTop)
+        top = topAnim.toInt()
+    }
 
     /** The label of the group a row starts, or null when it continues the previous group. */
     var sectionOf: ((Int) -> String?)? = null
@@ -189,6 +218,8 @@ class ListState(val rowH: Float = Belle.ROW_H) {
     /** Handles UP/DOWN; returns true if the selection moved. */
     fun act(a: Act, count: Int, vis: Int, repeat: Int = Keys.repeat): Boolean {
         val before = sel
+        free = false
+        vel = 0f
         // holding UP or DOWN speeds up: 1 row at first, then 2, then 4
         val step = if (repeat > 24) 4 else if (repeat > 10) 2 else 1
         when (a) {
@@ -203,6 +234,14 @@ class ListState(val rowH: Float = Belle.ROW_H) {
     }
 
     fun scrollBy(rows: Int, count: Int, vis: Int) {
+        lastCount = count
+        lastVis = vis
+        if (Scroll.dy != 0f && sectionOf == null) {
+            Scroll.last = this
+            dragPx(Scroll.dy, count, vis)
+            return
+        }
+        free = false
         top = (top + rows).coerceIn(0, max(0, count - vis))
     }
 
@@ -261,7 +300,23 @@ class ListState(val rowH: Float = Belle.ROW_H) {
     fun draw(c: Canvas, ui: Ui, r: RectF, count: Int, showSel: Boolean = true, rowAt: (Int) -> Row) {
         val vis = visible(ui, r.height())
         val so = sectionOf
-        if (so == null) ensure(count, vis) else {
+        lastSc = ui.sc
+        lastCount = count
+        lastVis = vis
+        if (free && so == null) {
+            // coasting after a fling: friction slows it, and it stops dead at either end
+            if (abs(vel) > 0.03f) {
+                val now = System.nanoTime()
+                val dt = ((now - lastNs) / 1e9f).coerceIn(0f, 0.05f)
+                lastNs = now
+                val maxTop = max(0, count - vis).toFloat()
+                topAnim = (topAnim + vel * dt).coerceIn(0f, maxTop)
+                if (topAnim <= 0f || topAnim >= maxTop) vel = 0f
+                vel *= Math.exp(-3.2 * dt).toFloat()
+                top = topAnim.toInt()
+                ui.busy = true
+            } else vel = 0f
+        } else if (so == null) ensure(count, vis) else {
             layout(count, ui.sc)
             sel = sel.coerceIn(0, max(0, count - 1))
             // keep the selected row (with its bar) fully on screen
@@ -269,8 +324,10 @@ class ListState(val rowH: Float = Belle.ROW_H) {
             while (top < sel && off[sel + 1] - off[top] > r.height()) top++
             top = top.coerceIn(0, max(0, count - 1))
         }
-        topAnim += (top - topAnim) * ui.k
-        if (abs(top - topAnim) < 0.004f) topAnim = top.toFloat() else ui.busy = true
+        if (!(free && so == null)) {
+            topAnim += (top - topAnim) * ui.k
+            if (abs(top - topAnim) < 0.004f) topAnim = top.toFloat() else ui.busy = true
+        }
         c.save()
         c.clipRect(r)
         val h = rowH * ui.sc
@@ -856,12 +913,18 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
                 switchTab(screen.tab + if (vx < 0) 1 else -1)
                 return true
             }
+            if (overlay == null && abs(vy) > abs(vx)) {
+                Scroll.last?.fling(vy)
+                invalidate()
+            }
             return false
         }
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
             if (overlay != null) return false
-            screen.onScroll(dy)
+            Scroll.dy = dy
+            Scroll.last = null
+            try { screen.onScroll(dy) } finally { Scroll.dy = 0f }
             invalidate()
             return true
         }
