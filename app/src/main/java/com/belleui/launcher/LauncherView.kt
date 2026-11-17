@@ -2767,17 +2767,17 @@ class LauncherView(private val act: Activity) : View(act) {
             drawFocus(c, menuFocus.cur, 14f * sc)
             val cw = menuCellW()
             val ch = menuCellH()
-            val isz = 84f * sc
+            val isz = 74f * sc // smaller than the measured 84 so the cells aren't cramped on this taller screen
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
                 // cell_app_pane_t1: a 30 px label pane, 5 px above the cell's bottom edge (centre 101 px down); the icon sits 12 px down
-                val iconTop = tmp.top + 5f * sc
+                val iconTop = tmp.top + 9f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), baselineFor(tmp.top + 112f * sc, 27f * sc), 27f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
+                text(c, app.label, tmp.centerX(), baselineFor(tmp.top + 101f * sc, 21f * sc), 21f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 10f * sc)
             }
             val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
