@@ -1816,7 +1816,14 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun homeTap(x: Float, y: Float, selectOnly: Boolean): Boolean {
         layoutHome()
-        val idx = homeItems.indexOfLast { it.rect.contains(x, y) }
+        // the flip clock is drawn taller than its cell (the tiles hang 14 px below the top and run past the bottom): its hit area is the drawn tiles
+        fun hitRect(it: HomeItem): RectF {
+            if (!it.widget || it.type != 0) return it.rect
+            val bw = min(400f * sc, width - 8f * sc)
+            val bottom = it.rect.top + 14f * sc + bw / (624f / 254f)
+            return RectF(it.rect.left, it.rect.top, it.rect.right, max(it.rect.bottom, bottom))
+        }
+        val idx = homeItems.indexOfLast { hitRect(it).contains(x, y) }
         if (homeEdit) {
             val cur = homeItems.getOrNull(homeIdx)
             if (idx >= 0) {
