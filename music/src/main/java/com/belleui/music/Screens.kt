@@ -75,19 +75,21 @@ private class MiniPlayer(private val act: MusicActivity) {
     }
 }
 
-/** Songs / Albums / Artists, as Belle tabs. Albums are a grid of covers, the lists have letter bars and a letter strip. */
+/** Songs / Albums / Artists / Genres / Playlists, as Belle tabs (the firmware's library: mpxcollectionviewhg.r01). Albums are a grid of covers, the lists have letter bars and a letter strip. */
 class RootScreen(private val act: MusicActivity) : Screen() {
     override val lightOk: Boolean get() = true
     override val title get() = "Music"
-    override val tabs = listOf(TabDef("Songs", Ic.NOTE), TabDef("Albums", Ic.DISC), TabDef("Artists", Ic.PERSON))
+    override val tabs = listOf(TabDef("Songs", Ic.NOTE), TabDef("Albums", Ic.DISC), TabDef("Artists", Ic.PERSON), TabDef("Genres", Ic.ALBUMS), TabDef("Playlists", Ic.LIST))
 
-    private val lists = Array(3) { ListState() }
-    private val alpha = Array(3) { com.belleui.kit.AlphaIndex() }
+    private val lists = Array(5) { ListState() }
+    private val alpha = Array(5) { com.belleui.kit.AlphaIndex() }
     private val albumGrid = com.belleui.kit.GridState(4, 1.34f)
     private val mini = MiniPlayer(act)
     private var state = 0 // 0 loading, 1 ready, 2 access denied
     private var albums: List<Pair<String, List<Track>>> = emptyList()
     private var artists: List<Pair<String, List<Track>>> = emptyList()
+    private var genres: List<Pair<String, List<Track>>> = emptyList()
+    private var playlists: List<Pair<String, List<Track>>> = emptyList()
     private var started = false
 
     override fun onShow() {
@@ -113,10 +115,13 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                     act.library.load()
                     albums = act.library.albums()
                     artists = act.library.artists()
+                    genres = act.library.genres()
+                    playlists = act.library.playlists()
                     shell.post {
                         val songs = act.library.tracks
                         lists[0].sectionOf = { i -> if (i == 0 || letterOf(songs[i].title) != letterOf(songs[i - 1].title)) letterOf(songs[i].title) else null }
                         lists[2].sectionOf = { i -> if (i == 0 || letterOf(artists[i].first) != letterOf(artists[i - 1].first)) letterOf(artists[i].first) else null }
+                        lists[3].sectionOf = { i -> if (i == 0 || letterOf(genres[i].first) != letterOf(genres[i - 1].first)) letterOf(genres[i].first) else null }
                         state = 1
                         shell.invalidate()
                     }
@@ -128,7 +133,9 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     private fun count() = when (tab) {
         0 -> act.library.tracks.size
         1 -> albums.size
-        else -> artists.size
+        2 -> artists.size
+        3 -> genres.size
+        else -> playlists.size
     }
 
     override fun tools(): List<Tool> = listOf(
@@ -146,7 +153,8 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 openNowPlaying()
             })
         }
-        items.add(MenuItem("Rescan library") { request() })
+        if (Player.current != null) items.add(MenuItem("Go to Now playing") { openNowPlaying() })
+        items.add(MenuItem("Refresh") { request() })
         items.add(MenuItem("Settings") { shell.push(SettingsScreen(act)) })
         return items
     }
@@ -163,7 +171,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         when (state) {
             0 -> message(c, ui, r, "Loading music...")
             2 -> message(c, ui, r, com.belleui.kit.Keys.hint("Music needs access to your audio files.\nPress A to allow."))
-            else -> if (count() == 0) message(c, ui, r, "No music found") else if (tab == 1) drawAlbums(c, ui, b) else {
+            else -> if (count() == 0) message(c, ui, r, when (tab) { 3 -> "No genres"; 4 -> "No playlists"; else -> "No music found" }) else if (tab == 1) drawAlbums(c, ui, b) else {
                 lists[tab].draw(c, ui, b, count()) { i -> rowAt(i) }
                 alpha[tab].set((0 until count()).mapNotNull { lists[tab].sectionOf?.invoke(it) })
                 alpha[tab].draw(c, ui, b, lists[tab].sectionOf?.let { f -> (lists[tab].sel downTo 0).firstNotNullOfOrNull { f(it) } })
@@ -204,6 +212,8 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         val gfx = shell.ui.gfx
         return when (tab) {
             0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
+            3 -> genres[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.ALBUMS, iconColor = GREEN, drill = true) }
+            4 -> playlists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_playlist"), iconKind = Ic.LIST, iconColor = MAGENTA, drill = true) }
             else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_artist"), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
         }
     }
@@ -215,6 +225,8 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 shell.push(NowPlayingScreen(act))
             }
             1 -> shell.push(TrackListScreen(act, albums[i].first, albums[i].second))
+            3 -> shell.push(TrackListScreen(act, genres[i].first, genres[i].second))
+            4 -> shell.push(TrackListScreen(act, playlists[i].first, playlists[i].second))
             else -> shell.push(TrackListScreen(act, artists[i].first, artists[i].second))
         }
     }

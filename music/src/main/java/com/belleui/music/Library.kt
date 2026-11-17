@@ -20,6 +20,7 @@ class Track(
     val albumId: Long,
     val durationMs: Long,
     val uri: Uri,
+    val genre: String = "",
 ) {
     // built once, not on every frame of a scrolling list
     val sub: String = "$artist - $album"
@@ -88,7 +89,7 @@ class Library(private val ctx: Context) {
         val proj = arrayOf(
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION,
-        )
+        ) + (if (Build.VERSION.SDK_INT >= 30) arrayOf(MediaStore.Audio.Media.GENRE) else emptyArray())
         val dirs = folders
         var where = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ${max(1, minSeconds) * 1000L}"
         val args = ArrayList<String>()
@@ -108,6 +109,7 @@ class Library(private val ctx: Context) {
                             id, c.getString(1) ?: "Unknown", c.getString(2)?.takeIf { it != "<unknown>" } ?: "Unknown artist",
                             c.getString(3) ?: "Unknown album", c.getLong(4), c.getLong(5),
                             ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id),
+                            if (Build.VERSION.SDK_INT >= 30) c.getString(6)?.trim().orEmpty() else "",
                         ),
                     )
                 }
@@ -122,6 +124,36 @@ class Library(private val ctx: Context) {
 
     fun artists(): List<Pair<String, List<Track>>> =
         tracks.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }
+
+    /** Genres from the tags (Android 11 and later reports one per song); songs without one are left out. */
+    fun genres(): List<Pair<String, List<Track>>> =
+        tracks.filter { it.genre.isNotEmpty() }.groupBy { it.genre }.toList().sortedBy { it.first.lowercase() }
+
+    /** The playlists Android has: read only (the app cannot change another app's playlists). Blocking; call off the main thread. */
+    @Suppress("DEPRECATION")
+    fun playlists(): List<Pair<String, List<Track>>> {
+        val byId = tracks.associateBy { it.id }
+        val out = ArrayList<Pair<String, List<Track>>>()
+        try {
+            ctx.contentResolver.query(
+                MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Audio.Playlists._ID, MediaStore.Audio.Playlists.NAME),
+                null, null, "${MediaStore.Audio.Playlists.NAME} COLLATE NOCASE",
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val pid = c.getLong(0)
+                    val name = c.getString(1) ?: continue
+                    val members = ArrayList<Track>()
+                    ctx.contentResolver.query(
+                        MediaStore.Audio.Playlists.Members.getContentUri("external", pid), arrayOf(MediaStore.Audio.Playlists.Members.AUDIO_ID),
+                        null, null, MediaStore.Audio.Playlists.Members.PLAY_ORDER,
+                    )?.use { m -> while (m.moveToNext()) byId[m.getLong(0)]?.let { members.add(it) } }
+                    out.add(name to members)
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return out
+    }
 }
 
 /** Album art, loaded off the main thread. */
