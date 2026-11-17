@@ -59,8 +59,18 @@ object Belle {
     /** True when the Belle System UI draws the status bar: the apps then draw none of their own and sit below the real one. */
     @JvmField @Volatile var sysBar = false
 
-    /** Height of the status bar the app draws itself (none when the real one is there). */
-    fun statusH(): Float = if (sysBar) 0f else STATUS_H
+    /** Height in px of the real status bar (read with [detectSysBar]); the apps lay out under it and keep this strip free. */
+    @JvmField @Volatile var sysBarPx = 0
+
+    /** Screen px per design px, set by the shell and the launcher, so [statusH] can be given in design px. */
+    @JvmField @Volatile var sc = 1f
+
+    /**
+     * Height (design px) of the strip at the top that belongs to the status bar: the one the app draws itself, or the
+     * room kept free for the real one. The window always runs up to the top edge, so this does not depend on the
+     * system reporting the bar as an inset.
+     */
+    fun statusH(): Float = if (sysBar) sysBarPx / sc else STATUS_H
 
     /** Looks for the Belle System UI: it writes the boot number into a setting once it is the registered status bar. */
     fun detectSysBar(ctx: android.content.Context) {
@@ -70,6 +80,13 @@ object Belle {
             ok != null && ok == android.provider.Settings.Global.getString(r, android.provider.Settings.Global.BOOT_COUNT)
         } catch (_: Throwable) {
             false
+        }
+        sysBarPx = try {
+            val res = android.content.res.Resources.getSystem()
+            val id = res.getIdentifier("status_bar_height", "dimen", "android")
+            if (id != 0) res.getDimensionPixelSize(id) else (24 * res.displayMetrics.density).toInt()
+        } catch (_: Throwable) {
+            0
         }
     }
 

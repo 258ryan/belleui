@@ -163,8 +163,33 @@ object Bar {
         lp.gravity = Gravity.TOP or Gravity.FILL_HORIZONTAL
         lp.title = "StatusBar"
         lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        step("insets") { provideInsets(lp) }
         (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(v, lp)
         view = v
+    }
+
+    /**
+     * Tells the window manager that this window is the status bar inset, so every app's content starts below it instead
+     * of under it. Up to Android 12 the window type alone does that; 13 wants the inset types listed on the window, and
+     * 14+ wants an inset provider. Both are hidden fields, set by reflection; a miss leaves the window as it was.
+     */
+    private fun provideInsets(lp: WindowManager.LayoutParams) {
+        val sdk = android.os.Build.VERSION.SDK_INT
+        if (sdk < 33) return
+        val cls = WindowManager.LayoutParams::class.java
+        if (sdk == 33) {
+            // InsetsState.ITYPE_STATUS_BAR = 0, ITYPE_TOP_MANDATORY_GESTURES = 7 (as the stock status bar lists them)
+            cls.getField("providesInsetsTypes").set(lp, intArrayOf(0, 7))
+            return
+        }
+        val pc = Class.forName("android.view.InsetsFrameProvider")
+        // (owner, index, type): the owner is declared as Object on 14 and as IBinder on some later builds
+        val ctor = pc.constructors.first { it.parameterTypes.size == 3 && it.parameterTypes[1] == Int::class.javaPrimitiveType && it.parameterTypes[2] == Int::class.javaPrimitiveType }
+        val owner = Binder()
+        val types = intArrayOf(android.view.WindowInsets.Type.statusBars(), android.view.WindowInsets.Type.mandatorySystemGestures())
+        val arr = java.lang.reflect.Array.newInstance(pc, types.size)
+        for ((i, t) in types.withIndex()) java.lang.reflect.Array.set(arr, i, ctor.newInstance(owner, 0, t))
+        cls.getField("providedInsets").set(lp, arr)
     }
 
     private fun receivers() {

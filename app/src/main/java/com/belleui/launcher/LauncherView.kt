@@ -1083,7 +1083,9 @@ class LauncherView(private val act: Activity) : View(act) {
         super.onSizeChanged(w, h, oldw, oldh)
         sc = min(w / 640f, h / 480f)
         kit.sc = sc
-        statusH = (if (com.belleui.kit.Belle.sysBar) 0f else com.belleui.kit.Belle.STATUS_H) * sc
+        com.belleui.kit.Belle.sc = sc
+        // the strip of the status bar: the launcher's own, or the room kept free under the real one
+        statusH = com.belleui.kit.Belle.statusH() * sc
         softH = com.belleui.kit.Belle.TOOL_H * sc
         cTop = statusH
         cBot = h - softH

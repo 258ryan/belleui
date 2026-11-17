@@ -943,6 +943,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         ui.sc = min(w / 640f, h / 480f)
+        Belle.sc = ui.sc
         computeContent()
     }
 
@@ -1301,8 +1302,13 @@ abstract class BelleActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun hideSystemBars() {
-        // with the Belle System UI the real status bar stays; only the navigation bar is hidden
-        val statusFlags = if (Belle.sysBar) 0 else (View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+        // the themes are "...Fullscreen", which sets the window's fullscreen flag and hides the status bar whatever the
+        // visibility flags below say: with the Belle System UI the flag is taken off so the real status bar shows
+        if (com.belleui.kit.Belle.sysBar) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        else window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        // with the Belle System UI the real status bar stays visible; the window still runs under it and the shell keeps
+        // that strip free itself (Belle.statusH), so nothing depends on the bar being reported as an inset
+        val statusFlags = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or (if (Belle.sysBar) 0 else View.SYSTEM_UI_FLAG_FULLSCREEN)
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
