@@ -612,22 +612,30 @@ class Ui(val ctx: Context) {
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
         val cy = h / 2f
         text(c, title, 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, maxW = w * 0.5f)
-        val tw = measure(st.clock, 22f * sc)
-        text(c, st.clock, w - 8f * sc, baselineFor(cy, 22f * sc), 22f * sc, align = Paint.Align.RIGHT)
-        val bw = 34f * sc
-        val bh = 20f * sc
-        val bLeft = w - 8f * sc - tw - 12f * sc - bw
-        battery(c, bLeft, cy - bh / 2f, bw, bh, st.batteryPct)
-        if (st.wifi) wifi(c, bLeft - 26f * sc, h * 0.78f, 13f * sc)
+        // the right side follows StatusBarDefault.qml of the firmware: every size a fraction of the bar height
+        val ch = Math.round(h * 18f / 26f).toFloat()                  // contentHeight
+        val padS = 6f * h / 36f                                        // paddingSmall
+        val pad34 = Math.round(padS * 3f / 4f).toFloat()
+        val clockRight = w - padS
+        val clockW = Math.round(h * 44f / 26f).toFloat()
+        text(c, st.clock, clockRight, baselineFor(cy, ch, light), ch, align = Paint.Align.RIGHT, face = light)
+        val clockLeft = clockRight - max(clockW, measure(st.clock, ch, light))
+        val bw = Math.round(h * 24f / 26f).toFloat()
+        val bRight = clockLeft - pad34
+        val level = (st.batteryPct * 7 + 50) / 100
+        battery(c, bRight - bw, cy - ch / 2f, bw, ch, st.batteryPct, h, level.coerceIn(0, 7))
+        if (st.wifi) wifi(c, bRight - bw - pad34 - ch / 2f, cy + ch * 0.3f, ch * 0.5f)
     }
 
-    fun battery(c: Canvas, left: Float, top: Float, bw: Float, bh: Float, pct: Int) {
+    /** The battery as the status bar draws it: the fill is (level + 2) / 13 of the bar height wide, level 0..7. */
+    fun battery(c: Canvas, left: Float, top: Float, bw: Float, bh: Float, pct: Int, barH: Float = 0f, level: Int = -1) {
         rf.set(left, top, left + bw, top + bh)
         gfx.draw(c, "qtg_graf_battery_level_bg", rf)
         val full = gfx.get("qtg_graf_battery_level_full")
         if (full != null) {
             c.save()
-            c.clipRect(left, top, left + bw * (0.12f + 0.76f * pct / 100f), top + bh)
+            val fillW = if (barH > 0f && level >= 0) Math.round(barH * (level + 2) / 13f).toFloat() else bw * (0.12f + 0.76f * pct / 100f)
+            c.clipRect(left, top, left + fillW, top + bh)
             gfx.draw(c, "qtg_graf_battery_level_full", rf)
             c.restore()
         }
@@ -701,7 +709,7 @@ class Ui(val ctx: Context) {
                 p.style = Paint.Style.FILL
             }
             val col = if (sel) Color.WHITE else Belle.TEXT_MID
-            val face = if (sel) sans else light
+            val face = light
             val tsz = 22f * sc
             val textW = measure(labels[i], tsz, face)
             val total = 40f * sc + 10f * sc + textW
@@ -809,19 +817,20 @@ class Ui(val ctx: Context) {
 
     fun scrollbar(c: Canvas, w: Float, top: Float, bottom: Float, frac: Float, thumbFrac: Float) {
         val trackH = bottom - top - 8f * sc
-        val thumbH = max(24f * sc, trackH * thumbFrac)
+        // ScrollBar.qml: the handle is at least 3 x the 18 px thickness long; its graphic is a 6 px wide capsule, #999999 at 60 %
+        val thumbH = max(54f * sc, trackH * thumbFrac).coerceAtMost(trackH)
         val ty = top + 4f * sc + (trackH - thumbH) * frac.coerceIn(0f, 1f)
-        rf.set(w - 6f * sc, ty, w - 3f * sc, ty + thumbH)
+        rf.set(w - 12f * sc, ty, w - 6f * sc, ty + thumbH)
         p.style = Paint.Style.FILL
         p.shader = null
-        p.color = if (lightOn) al(Color.BLACK, 110) else al(Color.WHITE, 150)
-        c.drawRoundRect(rf, 1.5f * sc, 1.5f * sc, p)
+        p.color = if (lightOn) al(Color.BLACK, 110) else 0x99999999.toInt()
+        c.drawRoundRect(rf, 3f * sc, 3f * sc, p)
     }
 
     fun progressBar(c: Canvas, r0: RectF, frac: Float) {
-        // the bar is 26 px tall (scaled up with the other controls); a thinner box is grown around its middle
+        // ProgressBar.qml: implicitHeight is sliderThickness, 28 px on the E6; a thinner box is grown around its middle
         val r = RectF(r0)
-        val minH = 26f * sc
+        val minH = 28f * sc
         if (r.height() < minH) {
             val grow = (minH - r.height()) / 2f
             r.top -= grow
@@ -837,8 +846,8 @@ class Ui(val ctx: Context) {
     }
 
     fun switchButton(c: Canvas, cx: Float, cy: Float, on: Boolean) {
-        val w = 88f * sc
-        val h = 58f * sc
+        val h = 60f * sc          // privateStyle.switchButtonHeight
+        val w = h * 1.5f           // Switch.qml: the track is 3/2 of that
         rf.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
         gfx.draw(c, if (lightOn) "qtg_graf_switchbutton_track_inverse" else "qtg_graf_switchbutton_track", rf)
         if (on) gfx.draw(c, "qtg_graf_switchbutton_fill", rf)
@@ -915,9 +924,9 @@ class Ui(val ctx: Context) {
         c.save()
         c.clipRect(0f, top0, w, top0 + h)
         rf.set(0f, top, w, top + h)
-        fill(c, rf, Color.BLACK)
-        nine(c, "qtg_fr_popup_infobanner", rf, 40, 20f)
-        text(c, text, 16f * sc, baselineFor(top + h / 2f, 20f * sc), 20f * sc, Color.WHITE, maxW = w - 32f * sc)
+        // InfoBanner.qml: the graphic at 90 % opacity, text fontSizeMedium (28) with paddingLarge (18) at its sides
+        nine(c, "qtg_fr_popup_infobanner", rf, 40, 20f, 230)
+        text(c, text, 18f * sc, baselineFor(top + h / 2f, 28f * sc), 28f * sc, Color.WHITE, maxW = w - 36f * sc)
         c.restore()
     }
 }
