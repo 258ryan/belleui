@@ -32,7 +32,7 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.drawRect(r, p)
             p.shader = null
         }
-        val size = h * 0.62f
+        val size = h * 0.86f   // the title: about 30 px on the 35 px bar (measured on a real Belle screen)
         val pad = h * 0.4f
 
         // left: the title of what is on screen, as on every Belle screen
@@ -50,8 +50,9 @@ class BarView(context: Context, private val barH: Int) : View(context) {
         val clock = DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a", System.currentTimeMillis()).toString()
         val clockRight = w - padS
         val clockW = Math.round(h * 44f / 26f).toFloat()
-        ui.text(c, clock, clockRight, ui.baselineFor(cy, ch, ui.light), ch, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
-        val clockLeft = clockRight - maxOf(clockW, ui.measure(clock, ch, ui.light))
+        val csz = h * 0.74f   // the clock: about 26 px
+        ui.text(c, clock, clockRight, ui.baselineFor(cy, csz, ui.light), csz, Color.WHITE, Paint.Align.RIGHT, face = ui.light)
+        val clockLeft = clockRight - maxOf(clockW, ui.measure(clock, csz, ui.light))
 
         // battery: 24/26 wide box, fill width (level + 2) / 13 of the bar height, level 0..7; charging runs the level round in 3.5 s
         val bw = Math.round(h * 24f / 26f).toFloat()

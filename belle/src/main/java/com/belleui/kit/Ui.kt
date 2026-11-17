@@ -612,7 +612,7 @@ class Ui(val ctx: Context) {
         fill(c, rf, Color.BLACK)
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
         val cy = h / 2f
-        text(c, title, 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, maxW = w * 0.5f)
+        text(c, title, 6f * sc, baselineFor(cy, 30f * sc), 30f * sc, maxW = w * 0.5f)
         // the right side follows StatusBarDefault.qml of the firmware: every size a fraction of the bar height
         val ch = Math.round(h * 18f / 26f).toFloat()                  // contentHeight
         val padS = 6f * h / 36f                                        // paddingSmall

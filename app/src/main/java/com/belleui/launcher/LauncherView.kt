@@ -499,6 +499,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     fun handleKeyEvent(e: KeyEvent): Boolean {
+        if (e.action == KeyEvent.ACTION_DOWN && !keyNav) { keyNav = true; invalidate() }
         if (e.keyCode == KeyEvent.KEYCODE_APP_SWITCH && !searching()) {
             // the recents key, when the system lets it through to the launcher
             if (e.action == KeyEvent.ACTION_UP) openRecents()
@@ -538,6 +539,7 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) keyNav = false
         if (page == 0 && homeEdit && carrying && dragging) {
             val cur = homeItems.getOrNull(homeIdx)
             if (cur != null && (event.action == MotionEvent.ACTION_MOVE || event.action == MotionEvent.ACTION_UP)) {
@@ -1215,8 +1217,8 @@ class LauncherView(private val act: Activity) : View(act) {
     // the E6 menu grid, measured at 640x480: 151 px across, 122 px down, 72 px icons, the first row 16 px under the title bar
     private fun menuCellW() = 151f * sc
     // grid_app_pane (640x480, 604x363 = 4x3 cells): l=11, t=7 (the 25 px on the right are the scroll bar's)
-    private fun menuGridLeft() = 11f * sc
-    private fun menuGridTop() = menuAreaTop() + 7f * sc
+    private fun menuGridLeft() = 24f * sc
+    private fun menuGridTop() = menuAreaTop()
     private fun menuCellH() = 121f * sc // cell_app_pane variety 2: 151x121
 
     private fun menuCellRect(idx: Int, top: Float, out: RectF): RectF {
@@ -1324,7 +1326,10 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /** Belle highlight: the theme's blue pressed frame (qtg_fr_list_pressed). */
+    private var keyNav = false // the focus box shows once a key has been pressed, as the touch reference shows none until you navigate
+
     private fun drawFocus(c: Canvas, r: RectF, radius: Float) {
+        if (!keyNav) return
         if (nine(c, "qtg_fr_list_pressed", r, 40, radius / sc)) return
         p.style = Paint.Style.FILL
         p.color = theme.accent
@@ -1532,9 +1537,9 @@ class LauncherView(private val act: Activity) : View(act) {
                 homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
                 var i = 0
                 for (app in repo.favoriteEntries()) {
-                    homeItems.add(HomeItem(false, app.key, i % HC, 1 + i / HC))
+                    homeItems.add(HomeItem(false, app.key, i % HC, 2))
                     i++
-                    if (i >= HC * 2) break
+                    if (i >= HC) break
                 }
             } else defaultView(homeView)
             saveHome()
@@ -1888,23 +1893,17 @@ class LauncherView(private val act: Activity) : View(act) {
                 val app = appFor(it)
                 if (app != null) {
                     val r = it.rect
-                    val isz = min(r.height() * 0.62f, 76f * sc) // the same icon size as the Menu
-                    // icon + 2 px + the 22 px label plate, centred in the cell so the selection frame has equal air above and below
-                    val top = r.top + (r.height() - (isz + 24f * sc)) / 2f
-                    drawIcon(c, app.icon, r.centerX(), top + isz / 2f, isz)
-                    // the E6 home screen label: the same dark plate for every shortcut, a little wider than the icon
-                    val tsz = 16f * sc
-                    val tw = min(94f * sc, r.width() - 2f * sc)
-                    rf.set(r.centerX() - tw / 2f, top + isz + 2f * sc, r.centerX() + tw / 2f, top + isz + 24f * sc)
+                    val isz = 88f * sc
+                    val iconCy = r.bottom - 111f * sc
+                    drawIcon(c, app.icon, r.centerX(), iconCy, isz)
+                    // the home screen label: a dark translucent plate, 107 x 34
+                    val tsz = 22f * sc
+                    val tw = min(107f * sc, r.width() - 2f * sc)
+                    rf.set(r.centerX() - tw / 2f, r.bottom - 65f * sc, r.centerX() + tw / 2f, r.bottom - 31f * sc)
                     p.style = Paint.Style.FILL
-                    p.shader = LinearGradient(0f, rf.top, 0f, rf.bottom, 0xD8505050.toInt(), 0xD8242424.toInt(), Shader.TileMode.CLAMP)
-                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
                     p.shader = null
-                    p.style = Paint.Style.STROKE
-                    p.strokeWidth = 1f * sc
-                    p.color = al(Color.BLACK, 200)
-                    c.drawRoundRect(rf, 4f * sc, 4f * sc, p)
-                    p.style = Paint.Style.FILL
+                    p.color = 0x99000000.toInt()
+                    c.drawRoundRect(rf, 6f * sc, 6f * sc, p)
                     text(c, app.label, r.centerX(), baselineFor(rf.centerY(), tsz), tsz, Color.WHITE, Paint.Align.CENTER, tw - 8f * sc)
                 }
             }
@@ -2261,27 +2260,22 @@ class LauncherView(private val act: Activity) : View(act) {
             dateShort = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date())
         }
         // the widget picture keeps its own proportions, centred
+        // the reference: two tiles about 392 x 152 px, centred, the top 17 px below the widget's top edge (they may reach past it)
         val bgAspect = 624f / 254f
-        val bw = min(r.width(), r.height() * bgAspect)
-        val box = RectF(r.centerX() - bw / 2f, r.top, r.centerX() + bw / 2f, r.top + bw / bgAspect)
+        val bw = min(400f * sc, width - 8f * sc)
+        val box = RectF(r.centerX() - bw / 2f, r.top + 14f * sc, r.centerX() + bw / 2f, r.top + 14f * sc + bw / bgAspect)
         if (!gfx.draw(c, "qgn_graf_hs_digital_bg_8x3", box)) {
             darkCard(c, RectF(box.left, box.top, box.centerX() - 4f * sc, box.bottom), 14f * sc)
             darkCard(c, RectF(box.centerX() + 4f * sc, box.top, box.right, box.bottom), 14f * sc)
         }
-        val dh = box.height() * 0.5f
-        val cy = box.centerY() - 3f * sc
+        val cy = box.centerY() - 4f * sc
         val lx = box.left + box.width() * 0.25f
         val rx = box.left + box.width() * 0.75f
-        if (gfx.digitsWidth(hh, dh) > 0f) {
-            gfx.digits(c, hh, lx, cy, dh, Paint.Align.CENTER)
-            gfx.digits(c, mm, rx, cy, dh, Paint.Align.CENTER)
-        } else {
-            val size = box.height() * 0.62f
-            text(c, hh, lx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
-            text(c, mm, rx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
-        }
+        val size = box.height() * 0.66f
+        text(c, hh, lx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
+        text(c, mm, rx, baselineFor(cy, size), size, Color.WHITE, Paint.Align.CENTER, face = light)
         if (ampmStr.isNotEmpty()) text(c, ampmStr, box.right - 22f * sc, box.top + 30f * sc, 16f * sc, al(Color.WHITE, 220), Paint.Align.RIGHT, face = light)
-        text(c, dateShort, box.right - 22f * sc, box.bottom - 16f * sc, 15f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
+        text(c, dateShort, box.right - 30f * sc, box.bottom - 14f * sc, 21f * sc, al(Color.WHITE, 190), Paint.Align.RIGHT, face = light)
     }
 
     /** A paper calendar: the Belle calendar widget paper, "Today" and what is coming in the next week. */
@@ -2769,17 +2763,17 @@ class LauncherView(private val act: Activity) : View(act) {
             drawFocus(c, menuFocus.cur, 14f * sc)
             val cw = menuCellW()
             val ch = menuCellH()
-            val isz = 72f * sc
+            val isz = 84f * sc
             for (idx in menuApps.indices) {
                 menuCellRect(idx, menuTopAnim, tmp)
                 if (tmp.bottom < area || tmp.top > cBot) continue
                 val app = menuApps[idx]
                 val dim = if (repo.isHidden(app.key)) 110 else 255
                 // cell_app_pane_t1: a 30 px label pane, 5 px above the cell's bottom edge (centre 101 px down); the icon sits 12 px down
-                val iconTop = tmp.top + 12f * sc
+                val iconTop = tmp.top + 5f * sc
                 val lift = if (reorder && idx == menuSel) 7f * sc else 0f
                 drawIcon(c, app.icon, tmp.centerX(), iconTop + isz / 2f - lift, isz, dim)
-                text(c, app.label, tmp.centerX(), baselineFor(tmp.top + 101f * sc, 19f * sc), 19f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
+                text(c, app.label, tmp.centerX(), baselineFor(tmp.top + 112f * sc, 27f * sc), 27f * sc, al(Color.WHITE, dim), Paint.Align.CENTER, cw - 6f * sc)
             }
             val rows = (menuApps.size + COLS - 1) / COLS
             if (rows > 3) {
@@ -2861,9 +2855,9 @@ class LauncherView(private val act: Activity) : View(act) {
         nine(c, "qtg_fr_statusbar", rf, 20, 10f)
 
         val cy = statusH / 2f
-        text(c, pageTitle(), 6f * sc, baselineFor(cy, 24f * sc), 24f * sc, Color.WHITE)
+        text(c, pageTitle(), 6f * sc, baselineFor(cy, 30f * sc), 30f * sc, Color.WHITE)
         val time = if (ampmStr.isEmpty()) clockStr else "$clockStr $ampmStr"
-        val csz = 22f * sc
+        val csz = 26f * sc
         val tw = measure(time, csz)
         text(c, time, w - 8f * sc, baselineFor(cy, csz), csz, Color.WHITE, Paint.Align.RIGHT)
 
