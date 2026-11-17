@@ -100,6 +100,15 @@ variant=$(cat $DIR/variant 2>/dev/null)
   [ "$ok" = "1" ] && echo 0 > $DIR/sysui_boots
 ) &
 
+# The ROM's accent overlay (org.*.overlay.accent.*) outranks the Belle overlay, so accent-coloured text stays that colour; once, switch it off
+# so Belle blue shows (undo: cmd overlay enable <name>). Skipped with belle_accent=0 in the config.
+if [ "$framework" != "0" ] && [ "$belle_accent" != "0" ] && [ ! -f $DIR/accent_done ]; then
+  for o in $(cmd overlay list 2>/dev/null | grep -E '^\[x\].*overlay\.accent\.' | sed 's/^\[x\] //'); do
+    cmd overlay disable "$o" >/dev/null 2>&1 && echo "$(date): accent overlay $o switched off" >> $DIR/sysui.log
+  done
+  touch $DIR/accent_done
+fi
+
 # --- control and diagnostics you can reach from adb without root ---------------------------------------------------------
 # /sdcard/Download/belleui.conf (framework=0|1, font=0|1, system_ui=..., reset_guard=1) is merged into /data/adb/belleui/config here,
 # then deleted; the settings that act on boot (framework, font) apply from the next boot on.
