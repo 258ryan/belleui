@@ -505,6 +505,15 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
 
     override fun bar(i: Int): Float? = if (i == offset()) brightness() / 255f else null
 
+    override fun adjustable(i: Int) = i == offset()
+
+    override fun setBar(i: Int, frac: Float) {
+        if (!act.canWriteSettings()) return
+        val v = (5 + frac * 250f).toInt().coerceIn(5, 255)
+        Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+        Settings.System.putInt(act.contentResolver, Settings.System.SCREEN_BRIGHTNESS, v)
+    }
+
     override fun adjust(i: Int, dir: Int) {
         if (!act.canWriteSettings()) {
             act.askWriteSettings()
@@ -564,6 +573,16 @@ class SoundScreen(act: SettingsActivity) : RowsScreen(act) {
     }
 
     override fun bar(i: Int): Float? = streams.getOrNull(i)?.let { pct(it.second) / 100f }
+
+    override fun adjustable(i: Int) = i < streams.size
+
+    override fun setBar(i: Int, frac: Float) {
+        val s = streams.getOrNull(i)?.second ?: return
+        try {
+            am.setStreamVolume(s, Math.round(frac * am.getStreamMaxVolume(s)).coerceIn(0, am.getStreamMaxVolume(s)), 0)
+        } catch (_: SecurityException) {
+        }
+    }
 
     override fun adjust(i: Int, dir: Int) {
         val s = streams.getOrNull(i)?.second ?: return

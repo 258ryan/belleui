@@ -93,6 +93,24 @@ class BelleGfx(private val ctx: Context) {
         return true
     }
 
+    /** Draws [name] stretched into [to] as three slices: [srcBorder] px caps at the ends, the middle stretched, the full height scaled. */
+    fun threeH(c: Canvas, name: String, to: RectF, srcBorder: Int, dstBorder: Float, alpha: Int = 255): Boolean {
+        val bmp = get(name) ?: return false
+        val sb = min(srcBorder, bmp.width / 2)
+        val db = min(dstBorder, to.width() / 2f)
+        val sx = intArrayOf(0, sb, bmp.width - sb, bmp.width)
+        val dx = floatArrayOf(to.left, to.left + db, to.right - db, to.right)
+        paint.alpha = alpha
+        for (i in 0..2) {
+            if (sx[i + 1] <= sx[i] || dx[i + 1] <= dx[i]) continue
+            src.set(sx[i], 0, sx[i + 1], bmp.height)
+            dst.set(dx[i], to.top, dx[i + 1], to.bottom)
+            c.drawBitmap(bmp, src, dst, paint)
+        }
+        paint.alpha = 255
+        return true
+    }
+
     /** Draws a flat glyph centred on (cx, cy), scaled to [size] px. */
     fun glyph(c: Canvas, name: String, cx: Float, cy: Float, size: Float, alpha: Int = 255): Boolean {
         val bmp = get(name) ?: return false

@@ -36,6 +36,12 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
     open fun open(i: Int) {}
     open fun adjust(i: Int, dir: Int) {}
 
+    /** True for a row whose bar is a slider you can pull (brightness, volume); the other bars only show a value. */
+    open fun adjustable(i: Int): Boolean = false
+
+    /** Sets a slider row to [frac] (0..1) when its handle is pulled. */
+    open fun setBar(i: Int, frac: Float) {}
+
     protected fun refresh(force: Boolean = false) {
         val now = SystemClock.uptimeMillis()
         if (!force && now - cachedAt < cacheMs) return
@@ -64,8 +70,13 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
             ui.text(c, row.title, tx, rr.top + 40f * sc, 26f * sc, white, maxW = rr.right - tx - pad - 170f * sc)
             if (value != null) ui.text(c, value, rr.right - pad - 8f * sc, rr.top + 39f * sc, 21f * sc, if (i == list.sel) Color.WHITE else Belle.TEXT_MID, Paint.Align.RIGHT, face = ui.light)
             // the Belle progress bar is 20px tall; drawn at that size it keeps its rounded ends
-            ui.tmp.set(tx, rr.top + 58f * sc, rr.right - pad - 8f * sc, rr.top + 78f * sc)
-            ui.progressBar(c, ui.tmp, f)
+            if (adjustable(i)) {
+                ui.tmp.set(tx, rr.top + 56f * sc, rr.right - pad - 8f * sc, rr.top + 88f * sc)
+                ui.slider(c, ui.tmp, f, dragBar == i)
+            } else {
+                ui.tmp.set(tx, rr.top + 58f * sc, rr.right - pad - 8f * sc, rr.top + 86f * sc)
+                ui.progressBar(c, ui.tmp, f)
+            }
         }
     }
 
@@ -94,6 +105,77 @@ abstract class RowsScreen(protected val act: SettingsActivity) : Screen() {
             else -> {}
         }
         return list.act(a, n, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+    }
+
+    // ---- touch: pulling a slider's handle, scrolling, and tapping --------------------------------------
+    private var dragBar = -1
+    private var downY = 0f
+    private var lastY = 0f
+    private var moved = false
+    private var scrollAcc = 0f
+    private var tapX = 0f
+
+    override val rawTouch: Boolean get() = true
+
+    private fun barSpan(i: Int, r: RectF): Pair<Float, Float> {
+        val rr = list.rowRect(shell.ui, r, i, rowRect)
+        val sc = shell.ui.sc
+        val row = rowsCache[i]
+        val tx = rr.left + 20f * sc + (if (row.icon != null || row.iconKind >= 0) 84f * sc else 0f)
+        val hd = 42f * sc
+        return (tx + hd / 2f) to (rr.right - 28f * sc - hd / 2f)
+    }
+
+    private fun pull(i: Int, x: Float) {
+        val (a, b) = barSpan(i, area())
+        setBar(i, ((x - a) / (b - a)).coerceIn(0f, 1f))
+        refresh(true)
+        shell.invalidate()
+    }
+
+    override fun onTouch(e: android.view.MotionEvent): Boolean {
+        refresh()
+        val r = area()
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downY = e.y; lastY = e.y; tapX = e.x; moved = false; scrollAcc = 0f; dragBar = -1
+                val i = list.hit(shell.ui, r, e.y, rowsCache.size)
+                if (i >= 0 && barsCache.getOrNull(i) != null && adjustable(i)) {
+                    val rr = list.rowRect(shell.ui, r, i, rowRect)
+                    // the lower half of the row, where the slider is, so the title stays a normal tap target
+                    if (e.y > rr.top + 40f * shell.ui.sc) {
+                        dragBar = i
+                        list.sel = i
+                        pull(i, e.x)
+                    }
+                }
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (dragBar >= 0) {
+                    pull(dragBar, e.x)
+                } else {
+                    if (Math.abs(downY - e.y) > 12f * shell.ui.sc) moved = true
+                    if (moved) {
+                        scrollAcc += lastY - e.y
+                        val step = 60f * shell.ui.sc
+                        while (Math.abs(scrollAcc) > step) {
+                            val d = if (scrollAcc > 0) 1 else -1
+                            scrollAcc -= d * step
+                            list.scrollBy(d, rowsCache.size, list.visible(shell.ui, shell.contentBottom - shell.contentTop))
+                        }
+                        shell.invalidate()
+                    }
+                    lastY = e.y
+                }
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                val was = dragBar
+                dragBar = -1
+                if (was < 0 && !moved) onTap(tapX, e.y) else shell.invalidate()
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> { dragBar = -1; shell.invalidate() }
+        }
+        return true
     }
 
     override fun onTap(x: Float, y: Float): Boolean {

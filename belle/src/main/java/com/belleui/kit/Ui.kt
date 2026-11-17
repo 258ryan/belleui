@@ -838,12 +838,34 @@ class Ui(val ctx: Context) {
             r.bottom += grow
         }
         val inv = if (lightOn) "_inverse" else ""
-        nine(c, "qtg_fr_progressbar_track$inv", r, 20, 10f)
+        // three slices (the ends keep their shape, the height scales): the old nine-slice left an unpainted band once the bar was taller than 20 px
+        gfx.threeH(c, "qtg_fr_progressbar_track$inv", r, 20, r.height() / 2f)
         val f = frac.coerceIn(0f, 1f)
         if (f > 0.01f) {
             tmp.set(r.left, r.top, r.left + max(r.height(), r.width() * f), r.bottom)
-            nine(c, "qtg_fr_progressbar_fill", tmp, 20, 10f)
+            gfx.threeH(c, "qtg_fr_progressbar_fill", tmp, 20, r.height() / 2f)
         }
+    }
+
+    /** The Belle slider: the track and fill of the progress bar with the pull handle at the value; [pressed] while it is being dragged. Returns the handle's centre x. */
+    fun slider(c: Canvas, r0: RectF, frac: Float, pressed: Boolean = false): Float {
+        val f = frac.coerceIn(0f, 1f)
+        val hd = 42f * sc
+        val track = RectF(r0.left + hd / 2f, r0.centerY() - 14f * sc, r0.right - hd / 2f, r0.centerY() + 14f * sc)
+        val inv = if (lightOn) "_inverse" else ""
+        gfx.threeH(c, "qtg_fr_progressbar_track$inv", track, 20, track.height() / 2f)
+        val hx = track.left + track.width() * f
+        if (f > 0.01f) {
+            tmp.set(track.left, track.top, hx, track.bottom)
+            gfx.threeH(c, "qtg_fr_progressbar_fill", tmp, 20, track.height() / 2f)
+        }
+        rf.set(hx - hd / 2f, r0.centerY() - hd / 2f, hx + hd / 2f, r0.centerY() + hd / 2f)
+        if (!gfx.draw(c, if (pressed) "qtg_graf_slider_h_handle_pressed" else "qtg_graf_slider_h_handle_normal", rf)) {
+            p.style = Paint.Style.FILL
+            p.color = if (pressed) Belle.BLUE_LIGHT else 0xFF303030.toInt()
+            c.drawCircle(hx, r0.centerY(), hd / 2f, p)
+        }
+        return hx
     }
 
     fun switchButton(c: Canvas, cx: Float, cy: Float, on: Boolean) {
