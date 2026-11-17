@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Belle scroll bar handle (ScrollBar.qml): a 6 px capsule, #999999 at 60 % -->
+<!-- Belle scroll bar handle (ScrollBar.qml): a 6 px (3 dp) capsule, #999999 at 60 % -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="3px" />
+    <corners android:radius="1.5dp" />
     <solid android:color="#99999999" />
-    <size android:width="6px" />
+    <size android:width="3dp" />
 </shape>

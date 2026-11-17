@@ -28,10 +28,10 @@ jobs:
           python3 tools/belle-tokens/qrc_extract.py plugin.bin qrc
           ls qrc/params/graphics_1_1_2 | wc -l
       - name: Render
-        run: python3 tools/framework/make_assets.py qrc/params/graphics_1_1_2 framework-overlay/src/main/res/drawable-nodpi
+        run: python3 tools/framework/make_assets.py qrc/params/graphics_1_1_2 framework-overlay/src/main/res/drawable-xhdpi
       - name: Commit
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          git add framework-overlay/src/main/res/drawable-nodpi
+          git add framework-overlay/src/main/res/drawable-xhdpi
           if git diff --cached --quiet; then echo "no change"; else git commit -m "Framework overlay: Belle graphics rendered from the firmware's SVGs" && git push; fi

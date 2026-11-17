@@ -5,7 +5,7 @@ usage: make_assets.py <svg-dir> <out-dir>      needs rsvg-convert and Pillow
 
 The graphics are drawn about 1.375 times larger on the E6 profile than their SVG size (button 42 -> 58, switch 44 -> 60,
 progress 20 -> 28, big spinner 70 -> 96: Qt Components' privateStyle values), so every SVG is rendered at that zoom, to be
-used 1:1 in px (drawable-nodpi). Frame graphics become nine-patch PNGs with the Qt border sizes (20 px; 10 px for the banner).
+authored at the E6's ~326 ppi, so they go in drawable-xhdpi and Android scales them to the screen's density. Frame graphics become nine-patch PNGs with the Qt border sizes (20 px; 10 px for the banner).
 """
 import subprocess, sys, os
 from PIL import Image
