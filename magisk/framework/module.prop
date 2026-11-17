@@ -1,0 +1,6 @@
+id=belleui_framework
+name=BelleUI - Android framework colours
+version=v0.1
+versionCode=1
+author=BelleUI
+description=A static overlay on the Android framework: the Symbian Belle palette (black pages, #1080DD accent, white and grey text, the light inverse theme) for every app, dialog, list and control. Android 11. Nothing in /system is changed.

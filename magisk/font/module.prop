@@ -1,0 +1,6 @@
+id=belleui_font
+name=BelleUI - Nokia Sans system font
+version=v0.1
+versionCode=1
+author=BelleUI
+description=Replaces the Roboto Thin/Light/Regular/Medium/Bold/Black system fonts with Nokia Sans S60 Regular and SemiBold, the Symbian Belle UI typeface. Italics and other fonts stay stock. Android 11. Nothing in /system is changed.
