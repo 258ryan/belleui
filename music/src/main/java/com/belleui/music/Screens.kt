@@ -208,13 +208,20 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         }
     }
 
+    /** The cover of [t] for a list row (loaded in the background), or [fallback] until it arrives. */
+    private fun cover(t: Track, fallback: android.graphics.Bitmap?): android.graphics.Bitmap? {
+        val b = ArtCache.peek(t)
+        if (b == null) ArtCache.load(act, t, 120) { shell.invalidate() }
+        return b ?: fallback
+    }
+
     private fun rowAt(i: Int): Row {
         val gfx = shell.ui.gfx
         return when (tab) {
-            0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
+            0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = cover(it, gfx.get("qgn_indi_mp_vc_song")), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
             3 -> genres[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.ALBUMS, iconColor = GREEN, drill = true) }
             4 -> playlists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_playlist"), iconKind = Ic.LIST, iconColor = MAGENTA, drill = true) }
-            else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_artist"), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
+            else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = cover(ts.first(), gfx.get("qgn_indi_mp_vc_artist")), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
         }
     }
 
@@ -408,11 +415,13 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         val x = art.right + pad
         val maxW = r.right - x - pad
         var y = art.top + 24f * ui.sc
-        ui.text(c, t.artist, x, y, 19f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-        y += 38f * ui.sc
-        ui.text(c, t.title, x, y, 28f * ui.sc, maxW = maxW, face = ui.medium)
-        y += 30f * ui.sc
-        ui.text(c, t.album, x, y, 18f * ui.sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
+        // artist, title and album are centred, the title the largest, as in the Belle player
+        val mid = x + maxW / 2f
+        ui.text(c, t.artist, mid, y, 19f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = maxW, face = ui.light)
+        y += 36f * ui.sc
+        ui.text(c, t.title, mid, y, 28f * ui.sc, Color.WHITE, Paint.Align.CENTER, maxW = maxW, face = ui.medium)
+        y += 28f * ui.sc
+        ui.text(c, t.album, mid, y, 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = maxW, face = ui.light)
 
         val barY = art.top + 112f * ui.sc
         progress.set(x, barY, x + maxW, barY + 26f * ui.sc)
