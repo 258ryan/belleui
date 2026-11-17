@@ -355,15 +355,15 @@ object Hud {
 
     private var dialog: Dialog? = null
 
-    private fun fullDialog(sys: Context, view: View, keys: (Int, KeyEvent) -> Boolean): Dialog {
+    private fun fullDialog(sys: Context, view: View, dim: Boolean = true, keys: (Int, KeyEvent) -> Boolean): Dialog {
         val d = Dialog(sys)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
         d.setContentView(view)
         d.window?.apply {
             setType(2009 /* TYPE_KEYGUARD_DIALOG: above everything, as the stock power menu is */)
-            setBackgroundDrawable(ColorDrawable(0xB0000000.toInt()))
+            setBackgroundDrawable(ColorDrawable(if (dim) 0xB0000000.toInt() else 0))
             setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            if (dim) addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         }
         view.isFocusable = true
         view.isFocusableInTouchMode = true
@@ -624,7 +624,7 @@ object Hud {
         }
         lateinit var d: Dialog
         val v = StatusMenu(sys, mod) { d.dismiss() }
-        d = fullDialog(sys, v) { code, ev -> v.key(code, ev) }
+        d = fullDialog(sys, v, dim = false) { code, ev -> v.key(code, ev) }
         dialog = d
         d.show()
         v.requestFocus()

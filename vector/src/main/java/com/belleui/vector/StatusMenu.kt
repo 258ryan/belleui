@@ -61,7 +61,11 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
     private val r = RectF()
     private var dragBright = false
     private var dragY = 0f
+    private var downY = 0f
+    private var downOnHandle = false
     private var dragMoved = false
+    private var anim: android.animation.ValueAnimator? = null
+    private var closing = false
 
     private val torchCb = object : CameraManager.TorchCallback() {
         override fun onTorchModeChanged(id: String, enabled: Boolean) {
@@ -88,9 +92,27 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
             torchId = cam?.cameraIdList?.firstOrNull { cam.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
             if (torchId != null) cam?.registerTorchCallback(torchCb, handler)
         } catch (_: Throwable) { }
-        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+        anim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 180
+            interpolator = android.view.animation.DecelerateInterpolator()
             addUpdateListener { slide = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    /** Slides the panel back up, then closes it (the panel used to vanish at once). */
+    private fun dismiss() {
+        if (closing) return
+        closing = true
+        anim?.cancel()
+        val from = slide
+        anim = android.animation.ValueAnimator.ofFloat(from, 0f).apply {
+            duration = (180 * from).toLong().coerceAtLeast(60L)
+            interpolator = android.view.animation.AccelerateInterpolator()
+            addUpdateListener { slide = it.animatedValue as Float; invalidate() }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { close() }
+            })
             start()
         }
     }
@@ -98,6 +120,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         handler.removeCallbacks(tick)
+        anim?.cancel()
         try { cam?.unregisterTorchCallback(torchCb) } catch (_: Throwable) { }
     }
 
@@ -413,7 +436,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
                     c.drawCircle(rx + 66f * sc, yy + 21f * sc, 6f * sc, u.p)
                 }
                 val tx = rx + 84f * sc
-                val time = android.text.format.DateFormat.format("HH:mm", n.postTime).toString()
+                val time = android.text.format.DateFormat.format(if (android.text.format.DateFormat.is24HourFormat(sys)) "HH:mm" else "h:mm a", n.postTime).toString()
                 u.text(c, time, w - 14f * sc, yy + 36f * sc, 18f * sc, if (focus) Color.WHITE else Belle.BLUE_LIGHT, Paint.Align.RIGHT, face = u.light)
                 u.text(c, n.title, tx, yy + 38f * sc, 24f * sc, Color.WHITE, maxW = w - tx - 72f * sc, face = u.medium)
                 if (n.progress != null) u.progressBar(c, RectF(tx, yy + 54f * sc, w - 18f * sc, yy + 74f * sc), n.progress)
@@ -459,7 +482,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
             notesAt = 0
         } else all.getOrNull(rightSel - 1)?.let {
             Hud.Notes.open(sys, it)
-            close()
+            dismiss()
         }
     }
 
@@ -504,7 +527,7 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
                 notesAt = 0
             }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BUTTON_SELECT -> {
-                close()
+                dismiss()
                 return true
             }
             else -> return false
@@ -527,6 +550,8 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragY = e.y
+                downY = e.y
+                downOnHandle = ey > panelH - 52f * sc
                 dragMoved = false
                 dragBright = brightRect.contains(ex, ey)
                 if (dragBright) { zone = 0; leftSel = 8; setBrightnessFromX(ex) }
@@ -544,11 +569,15 @@ internal class StatusMenu(val sys: Context, val mod: Context, val close: () -> U
             MotionEvent.ACTION_UP -> {
                 if (dragBright) { dragBright = false; return true }
                 if (dragMoved) {
-                    // a swipe up from the bottom strip closes the menu
-                    if (dragY - e.y > 60f * sc && e.y > panelH - 60f * sc) close()
+                    // a swipe up that starts on the pull handle closes the menu (dragY is reset on every move, so use the start)
+                    if (downOnHandle && downY - e.y > 40f * sc) dismiss()
                     return true
                 }
-                if (ey > panelH - 26f * sc) { close(); return true }
+                if (ey > panelH - 26f * sc) { dismiss(); return true }
+                // the list scrolls under the title bar and the handle: a tap there must not hit a row that is only partly visible
+                val listTop = Belle.STATUS_H * sc
+                val listBottom = panelH - 26f * sc
+                if (ey < listTop || ey > listBottom) return true
                 for (i in 0 until 7) if (tileRects[i].contains(ex, ey)) { zone = 0; leftSel = i; toggle(i); invalidate(); return true }
                 if (profileRect.contains(ex, ey)) { zone = 0; leftSel = 7; activate(); invalidate(); return true }
                 if (!clearRect.isEmpty && clearRect.contains(ex, ey + 0f)) { zone = 1; rightSel = 0; activate(); invalidate(); return true }
