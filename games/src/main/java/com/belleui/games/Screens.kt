@@ -69,7 +69,7 @@ private fun square(box: RectF): RectF {
 }
 
 /** Art for a game in an icon-shaped tile; a coloured icon frame stands in until (or unless) there is art. */
-private fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game, box: RectF) {
+internal fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.kit.BelleShell, g: Game, box: RectF) {
     val sq = square(box)
     val bmp = act.art.get(g) { shell.invalidate() }
     if (bmp != null) maskedArt(c, ui, bmp, sq) else ui.iconFrame(c, sq, g.system.color, Ic.PLAY)
@@ -80,7 +80,7 @@ private fun drawArt(c: Canvas, ui: Ui, act: GamesActivity, shell: com.belleui.ki
  * L1 / R1 jump to the previous / next letter of the alphabet.
  */
 class GameList(private val act: GamesActivity, private val showSystem: Boolean) {
-    val list = ListState(72f)
+    val list = ListState(100f)
     private val rr = RectF()
     private var letter = ""
     private var letterUntil = 0L
@@ -103,28 +103,20 @@ class GameList(private val act: GamesActivity, private val showSystem: Boolean) 
     fun selected(games: List<Game>): Game? = games.getOrNull(list.sel.coerceIn(0, max(0, games.size - 1)))
 
     fun draw(c: Canvas, ui: Ui, r: RectF, games: List<Game>, shell: com.belleui.kit.BelleShell) {
-        list.draw(c, ui, r, games.size) { i ->
+        // the Nokia Store's item rows: 100 px, icon, title, a grey line, stars, and the blue selection
+        list.rowDrawer = { cv, u, rect, i, sel ->
             val g = games[i]
-            Row(g.title, detail(g), iconKind = Ic.PLAY, iconColor = g.system.color, right = if (showSystem) g.system.short else null)
+            val st = act.prefs.peek(g.rep.path)
+            val right = if (st != null && st.launches > 0) "Played ${st.launches}x" else ""
+            drawStoreItem(cv, u, rect, g, sel, act, shell, (if (showSystem) g.system.name else detail(g)) + (genreOfGame(g)?.let { " - $it" } ?: ""), right)
         }
-        // box art over the icon slot, cropped to a square
-        val vis = list.visible(ui, r.height())
+        list.draw(c, ui, r, games.size) { i -> Row(games[i].title) }
         val sc = ui.sc
-        c.save()
-        c.clipRect(r)
-        for (i in max(0, list.top - 1)..min(games.size - 1, list.top + vis + 1)) {
-            list.rowRect(ui, r, i, rr)
-            val x = rr.left + Belle.PADDING * sc
-            ui.tmp.set(x, rr.centerY() - 25f * sc, x + 50f * sc, rr.centerY() + 25f * sc)
-            val bmp = act.art.get(games[i]) { shell.invalidate() }
-            if (bmp != null) maskedArt(c, ui, bmp, ui.tmp)
-        }
-        c.restore()
         // the letter being jumped to
         if (SystemClock.uptimeMillis() < letterUntil) {
             val box = RectF(r.centerX() - 60f * sc, r.centerY() - 60f * sc, r.centerX() + 60f * sc, r.centerY() + 60f * sc)
             ui.nine(c, "qtg_fr_popup", box, 40, 20f)
-            ui.text(c, letter, box.centerX(), ui.baselineFor(box.centerY(), 64f * sc), 64f * sc, Color.WHITE, Paint.Align.CENTER)
+            ui.onDark { ui.text(c, letter, box.centerX(), ui.baselineFor(box.centerY(), 64f * sc), 64f * sc, Color.WHITE, Paint.Align.CENTER) }
             ui.busy = true
         }
     }
@@ -579,29 +571,27 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             val game get() = tile.game
             override fun height(ui: Ui, w: Float) = 100f * ui.sc
             override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
-                val sc = ui.sc
-                if (focused) selBg(c, ui, r)
                 val g = tile.game ?: return
-                val box = RectF(r.left + 8f * sc, r.centerY() - 38f * sc, r.left + 84f * sc, r.centerY() + 38f * sc)
-                drawArt(c, ui, act, shell, g, box)
-                val x = r.left + 100f * sc
-                val maxW = r.right - x - 14f * sc
-                val white = 0xFFFFFFFF.toInt()
-                val sel = focused
-                fun tx(s: String, px: Float, py: Float, size: Float, col: Int, al: Paint.Align = Paint.Align.LEFT, mw: Float = 0f, face: android.graphics.Typeface = ui.sans) {
-                    if (sel) ui.onDark { ui.text(c, s, px, py, size, col, al, mw, face) } else ui.text(c, s, px, py, size, col, al, mw, face)
-                }
-                tx(g.title, x, r.top + 5f * sc + 26f * sc, 30f * sc, if (focused) white else ink, mw = maxW)
                 val launches = act.prefs.peek(g.rep.path)?.launches ?: 0
-                val right = if (launches > 0) "Played ${launches}x" else ""
-                val rw = if (right.isEmpty()) 0f else ui.measure(right, 24f * sc, ui.light) + 10f * sc
-                tx(info(g), x, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, mw = maxW - rw, face = ui.light)
-                if (right.isNotEmpty()) tx(right, r.right - 14f * sc, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, Paint.Align.RIGHT, face = ui.light)
-                val rating = g.rep.meta?.rating ?: 0f
-                if (rating > 0f) stars(c, ui, x, r.bottom - 12f * sc - 16f * sc, rating)
-                if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
+                drawStoreItem(c, ui, r, g, focused, act, shell, info(g), if (launches > 0) "Played ${launches}x" else "")
             }
             override fun onClick() { use(tile) }
+        }
+
+        /** The Store's search bar at the top of its home: tap it (or press A on it) to look for a game. */
+        private inner class SearchCell : com.belleui.kit.Cell() {
+            override fun height(ui: Ui, w: Float) = 82f * ui.sc
+            override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
+                drawStoreSearchBar(c, ui, r, "")
+                if (focused) {
+                    ui.p.style = Paint.Style.STROKE
+                    ui.p.strokeWidth = 3f * ui.sc
+                    ui.p.color = 0xFF1080DD.toInt()
+                    c.drawRoundRect(RectF(r.left + 6f * ui.sc, r.top + 6f * ui.sc, r.right - 6f * ui.sc, r.bottom - 6f * ui.sc), 14f * ui.sc, 14f * ui.sc, ui.p)
+                    ui.p.style = Paint.Style.FILL
+                }
+            }
+            override fun onClick() { openSearch() }
         }
 
         /** PivotBar: 100 px with an icon, 82 without; the label at 30 px and the arrow on the right. */
@@ -630,6 +620,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             build()
             val out = ArrayList<com.belleui.kit.Cell>()
             val hero = shelves.firstOrNull()?.tiles?.filter { it.game != null } ?: emptyList()
+            out.add(SearchCell())
             if (hero.isNotEmpty()) out.add(BannerCell(hero))
             for (s in shelves.drop(1)) {
                 val games = s.tiles.filter { it.game != null }
@@ -650,7 +641,8 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         }
 
         private fun use(t: Tile) {
-            if (t.game != null) startGame(act, shell, t.game) else t.open?.invoke()
+            // a Store item opens its details page; Play is there (and Start on the toolbar plays the highlighted game straight away)
+            if (t.game != null) shell.push(GameScreen(act, t.game)) else t.open?.invoke()
         }
 
         fun act(a: Act): Boolean {
@@ -686,6 +678,10 @@ class GameListScreen(
     private val system: GameSystem?,
     private val autoSearch: Boolean = false,
 ) : Screen() {
+    // the Store's browse page: light, with its search bar and the sort buttons above the item rows
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
+    override val lightOk: Boolean get() = true
     private val gameList = GameList(act, showSystem)
     private var query = ""
     private var filter = 0 // 0 all, 1 favourites, 2 played, 3 never played
@@ -801,10 +797,19 @@ class GameListScreen(
         return items
     }
 
-    private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
-    private fun vis() = gameList.list.visible(shell.ui, shell.contentBottom - shell.contentTop)
+    private val barLabels = listOf("A-Z", "New", "Most played", "Recent")
+    private fun headH(ui: Ui) = (82f + 50f) * ui.sc
+    private fun searchRect(r: RectF, ui: Ui) = RectF(r.left, r.top, r.right, r.top + 82f * ui.sc)
+    private fun barRect(r: RectF, ui: Ui) = RectF(r.left + 10f * ui.sc, r.top + 82f * ui.sc + 4f * ui.sc, r.right - 10f * ui.sc, r.top + 82f * ui.sc + 46f * ui.sc)
 
-    override fun draw(c: Canvas, ui: Ui, r: RectF) {
+    /** The area of the item rows: under the search bar and the sort buttons. */
+    private fun rect(): RectF = RectF(shell.contentLeft, shell.contentTop + headH(shell.ui), shell.contentRight, shell.contentBottom)
+    private fun vis() = gameList.list.visible(shell.ui, rect().height())
+
+    override fun draw(c: Canvas, ui: Ui, r0: RectF) {
+        drawStoreSearchBar(c, ui, searchRect(r0, ui), query)
+        drawStoreButtonBar(c, ui, barRect(r0, ui), barLabels, sort)
+        val r = RectF(r0.left, r0.top + headH(ui), r0.right, r0.bottom)
         val g = games
         if (g.isEmpty()) {
             val msg = if (query.isNotBlank() || filter != 0 || genre != null) com.belleui.kit.Keys.hint("Nothing matches.\nPress X, then \"Clear search and filters\".") else "No games here yet"
@@ -819,18 +824,39 @@ class GameListScreen(
         val g = games
         if (g.isEmpty()) return false
         if (a == Act.OK) {
-            gameList.selected(g)?.let { startGame(act, shell, it) }
+            gameList.selected(g)?.let { shell.push(GameScreen(act, it)) }
+            return true
+        }
+        // the sort buttons are on the left / right keys, as on the Store's button bar
+        if (a == Act.LEFT || a == Act.RIGHT) {
+            sort = (sort + if (a == Act.RIGHT) 1 else -1 + sortNames.size) % sortNames.size
+            gameList.list.sel = 0
+            gameList.list.top = 0
             return true
         }
         return gameList.act(a, g, vis(), letters = sort == 0)
     }
 
     override fun onTap(x: Float, y: Float): Boolean {
+        val full = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
+        if (searchRect(full, shell.ui).contains(x, y)) {
+            search()
+            return true
+        }
+        val bar = barRect(full, shell.ui)
+        if (y < bar.bottom + 2f * shell.ui.sc && y >= bar.top - 4f * shell.ui.sc) {
+            if (bar.contains(x, y)) {
+                sort = ((x - bar.left) / (bar.width() / barLabels.size)).toInt().coerceIn(0, barLabels.size - 1)
+                gameList.list.sel = 0
+                gameList.list.top = 0
+            }
+            return true
+        }
         val g = games
         val i = gameList.hit(shell.ui, rect(), y, g.size)
         if (i < 0) return false
         gameList.list.sel = i
-        startGame(act, shell, g[i])
+        shell.push(GameScreen(act, g[i]))
         return true
     }
 
@@ -841,15 +867,23 @@ class GameListScreen(
 // one game
 // ================================================================================================
 
+/**
+ * One game as the Nokia Store's details page: the item header (icon, stars, "By ...", "System > Genre"), the Play button in an action item,
+ * Favourite and Version rows, the description under a group bar and the file details as label / value rows.
+ */
 class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
+    override val lightOk: Boolean get() = true
+
     /** The title as the library shows it; [cur] is the version or disc that Play starts. */
     private val game: Game = game0.rep
     private var cur: Game = game0
     private val versions get() = game.variants
+    private val page = com.belleui.kit.FlowPage()
+    private var builtFor = ""
 
     override val title get() = game.title
-    private val playBtn = RectF()
-    private val favBtn = RectF()
 
     private fun fav() = act.prefs.peek(game.path)?.fav == true
 
@@ -863,6 +897,7 @@ class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
         val labels = versions.map { v -> v.label + "  (" + size(v.size) + ")" }
         shell.showOverlay(ListDialog("Version or disc", labels, versions.indexOf(cur).coerceAtLeast(0)) { i ->
             cur = versions[i]
+            builtFor = ""
             shell.invalidate()
         })
     }
@@ -871,13 +906,12 @@ class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
         val items = ArrayList<MenuItem>()
         if (versions.size > 1) items.add(MenuItem("Version: ${cur.label}") { chooseVersion() })
         items.add(MenuItem(if (fav()) "Remove from favourites" else "Add to favourites") { toggleFav() })
-        items.add(MenuItem("Details") { details() })
         if (game.system.emu == Emu.PPSSPP) {
-            items.add(MenuItem("PSP opens in: " + if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch") { act.prefs.pspWithPpsspp = !act.prefs.pspWithPpsspp })
+            items.add(MenuItem("PSP opens in: " + if (act.prefs.pspWithPpsspp) "PPSSPP" else "RetroArch") { act.prefs.pspWithPpsspp = !act.prefs.pspWithPpsspp; builtFor = "" })
         }
         if (act.emus.emulatorFor(game) == Emu.RETROARCH) {
             items.add(MenuItem("Core: ${act.prefs.core(game.system)}") {
-                shell.showOverlay(ListDialog("Core for ${game.system.short}", game.system.cores, game.system.cores.indexOf(act.prefs.core(game.system))) { i -> act.prefs.setCore(game.system, game.system.cores[i]) })
+                shell.showOverlay(ListDialog("Core for ${game.system.short}", game.system.cores, game.system.cores.indexOf(act.prefs.core(game.system))) { i -> act.prefs.setCore(game.system, game.system.cores[i]); builtFor = "" })
             })
         }
         return items
@@ -885,6 +919,7 @@ class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
 
     private fun toggleFav() {
         act.toggleFavourite(game)
+        builtFor = ""
         shell.toast(if (fav()) "Added to favourites" else "Removed from favourites")
     }
 
@@ -893,97 +928,61 @@ class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
         shell.toast(err ?: "Starting ${game.title}...")
     }
 
-    private fun details() {
-        val st = act.prefs.peek(game.path)
-        val played = if (st != null && st.launches > 0) "Played ${st.launches}x, ${playTime(st.playMs)}" else "Not played yet"
-        shell.showOverlay(QueryDialog("${cur.rawName}\n${game.system.name}  -  ${size(cur.size)}\n$played\n${cur.file.parent}", "OK", null) { })
+    private fun how(): String = when (act.emus.emulatorFor(game)) {
+        Emu.PPSSPP -> "Opens in PPSSPP"
+        Emu.RETROARCH -> if (act.emus.retroArch() != null) "Opens in RetroArch - ${act.prefs.core(game.system)} core" else "RetroArch is not installed"
     }
 
-    /** Word-wraps [text] into at most [maxLines] lines that fit [maxW]. */
-    private fun wrap(ui: Ui, text: String, size: Float, maxW: Float, maxLines: Int): List<String> {
-        val out = ArrayList<String>()
-        var line = ""
-        for (w in text.split(Regex("\\s+"))) {
-            val t = if (line.isEmpty()) w else "$line $w"
-            if (ui.measure(t, size, ui.light) <= maxW) {
-                line = t
-            } else {
-                if (line.isNotEmpty()) out.add(line)
-                line = w
-                if (out.size == maxLines) break
-            }
+    private fun build() {
+        val key = "${fav()}|${cur.path}|${act.prefs.pspWithPpsspp}|${act.prefs.peek(game.path)?.launches}"
+        if (key == builtFor) return
+        builtFor = key
+        val m = game.meta
+        val st = act.prefs.peek(game.path)
+        val out = ArrayList<com.belleui.kit.Cell>()
+        val by = m?.developer ?: m?.publisher ?: game.system.name
+        val genre = m?.genre ?: genreOfGame(game)
+        val played = if (st != null && st.launches > 0) "Played ${st.launches}x - ${playTime(st.playMs)}" else "Not played yet"
+        out.add(StoreItemHeaderCell(act, shell, game, listOf("By $by", game.system.name + (genre?.let { " > $it" } ?: ""), played)))
+        out.add(StoreActionCell("Play", how(), "Play", false) { play() })
+        out.add(StoreActionCell("Favourites", if (fav()) "In your favourites" else "Keep it close", if (fav()) "Remove" else "Add", true) { toggleFav() })
+        if (versions.size > 1) out.add(StoreActionCell("Version", cur.label, "Change", true) { chooseVersion() })
+        m?.desc?.takeIf { it.isNotBlank() }?.let { d ->
+            out.add(StoreHeaderCell("Description"))
+            out.add(StoreBodyCell(d.trim()))
         }
-        if (out.size < maxLines && line.isNotEmpty()) out.add(line)
-        if (out.size == maxLines && text.length > out.joinToString(" ").length) out[maxLines - 1] = out[maxLines - 1].trimEnd('.', ',') + "..."
-        return out
+        out.add(StoreHeaderCell("Details"))
+        out.add(StoreInfoCell("System", game.system.name))
+        m?.developer?.let { out.add(StoreInfoCell("Developer", it)) }
+        m?.publisher?.takeIf { it != m.developer }?.let { out.add(StoreInfoCell("Publisher", it)) }
+        m?.year?.let { out.add(StoreInfoCell("Released", it.toString())) }
+        m?.players?.let { out.add(StoreInfoCell("Players", it)) }
+        out.add(StoreInfoCell("File", cur.rawName))
+        out.add(StoreInfoCell("Size", size(cur.size)))
+        if (st != null && st.launches > 0) out.add(StoreInfoCell("Last played", DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(st.lastPlayed))))
+        val keepSel = page.sel
+        page.cells = out
+        page.sel = keepSel.coerceIn(0, out.size - 1).let { if (out[it].focusable) it else out.indexOfFirst { c -> c.focusable } }
+        if (keepSel < 0) page.sel = 1
+    }
+
+    private fun rect() = RectF(shell.contentLeft, shell.contentTop, shell.contentRight, shell.contentBottom)
+
+    override fun onShow() {
+        build()
+        page.sel = 1 // the Play button
     }
 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
-        val sc = ui.sc
-        val pad = 20f * sc
-        val side = min(r.height() - 2 * pad, 250f * sc)
-        val art = RectF(r.left + pad, r.top + pad, r.left + pad + side, r.top + pad + side)
-        drawArt(c, ui, act, shell, game, art)
-        val x = art.right + pad
-        val maxW = r.right - x - pad
-        val m = game.meta
-        var y = r.top + pad + 28f * sc
-        ui.text(c, game.title, x, y, 26f * sc, maxW = maxW)
-        y += 28f * sc
-        val sysLine = game.system.name + (m?.year?.let { " - $it" } ?: "")
-        ui.text(c, sysLine, x, y, 18f * sc, Belle.TEXT_MID, maxW = maxW - 90f * sc, face = ui.light)
-        // rating from gamelist.xml, as five stars
-        m?.rating?.let { rating ->
-            val stars = (rating * 5f + 0.5f).toInt().coerceIn(0, 5)
-            for (i in 0 until 5) ui.glyph(c, Ic.STAR, x + maxW - 84f * sc + i * 17f * sc, y - 6f * sc, 15f * sc, if (i < stars) 0xFFFFB300.toInt() else ui.al(Color.WHITE, 60))
-        }
-        val credits = listOfNotNull(m?.developer, m?.publisher?.takeIf { it != m.developer }, m?.genre, m?.players?.let { "$it player${if (it == "1") "" else "s"}" }).joinToString("  -  ")
-        if (credits.isNotEmpty()) {
-            y += 24f * sc
-            ui.text(c, credits, x, y, 15f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-        }
-        val st = act.prefs.peek(game.path)
-        val played = if (st != null && st.launches > 0) {
-            "Played ${st.launches}x - ${playTime(st.playMs)} - last ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(st.lastPlayed))}"
-        } else "Not played yet"
-        y += 24f * sc
-        ui.text(c, played, x, y, 15f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-        if (versions.size > 1) {
-            y += 24f * sc
-            ui.text(c, "${versions.size} versions - playing: ${cur.label}", x, y, 15f * sc, Belle.BLUE_LIGHT, maxW = maxW, face = ui.light)
-        }
-        val how = when (act.emus.emulatorFor(game)) {
-            Emu.PPSSPP -> "Opens in PPSSPP"
-            Emu.RETROARCH -> if (act.emus.retroArch() != null) "Opens in RetroArch - ${act.prefs.core(game.system)} core" else "RetroArch is not installed"
-        }
-        y += 24f * sc
-        ui.text(c, how, x, y, 15f * sc, if (act.emus.retroArch() == null && act.emus.emulatorFor(game) == Emu.RETROARCH) 0xFFE5844D.toInt() else Belle.BLUE_LIGHT, maxW = maxW, face = ui.light)
-        m?.desc?.takeIf { it.isNotBlank() }?.let { d ->
-            var dy = y + 24f * sc
-            for (line in wrap(ui, d, 15f * sc, maxW, 2)) {
-                ui.text(c, line, x, dy, 15f * sc, ui.al(Color.WHITE, 200), maxW = maxW, face = ui.light)
-                dy += 20f * sc
-            }
-        }
-        val by = art.bottom - 52f * sc
-        playBtn.set(x, by, x + 150f * sc, by + 52f * sc)
-        favBtn.set(x + 160f * sc, by, min(r.right - pad, x + 160f * sc + 190f * sc), by + 52f * sc)
-        ui.pushButton(c, playBtn, "Play", true)
-        ui.pushButton(c, favBtn, if (fav()) "Unfavourite" else "Favourite", false)
+        build()
+        page.draw(c, ui, r)
     }
 
-    override fun onAct(a: Act): Boolean {
-        if (a == Act.OK) {
-            play()
-            return true
-        }
-        return false
-    }
+    override fun onAct(a: Act): Boolean = page.act(a)
 
-    override fun onTap(x: Float, y: Float): Boolean {
-        if (favBtn.contains(x, y)) toggleFav() else play()
-        return true
-    }
+    override fun onTap(x: Float, y: Float): Boolean = page.tap(rect(), x, y)
+
+    override fun onScroll(dy: Float) = page.drag(dy)
 }
 
 // ================================================================================================
