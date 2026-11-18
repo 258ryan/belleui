@@ -193,24 +193,24 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     /** The promo strip: album covers 144 px high, each with a black 80% name bar along its bottom (PromoPanel, landscape). */
     private inner class HeroCell(private val tiles: List<Pair<String, List<Track>>>) : com.belleui.kit.Cell() {
         private var hsel = 0
-        override fun height(ui: Ui, w: Float) = 144f * ui.sc
+        // PromoPanel (landscape): six squares, each a sixth of the width, so the strip always fills the page exactly - no tile is cut or squeezed
+        override fun height(ui: Ui, w: Float) = w / 6f + 8f * ui.sc
         override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
             val sc = ui.sc
-            val side = r.height()
+            val side = r.width() / 6f
             var x = r.left
             for ((i, t) in tiles.withIndex()) {
                 if (x >= r.right) break
-                val box = RectF(x, r.top, min(x + side, r.right), r.bottom)
+                val box = RectF(x, r.top, x + side, r.top + side)
                 val bmp = ArtCache.peek(t.second.first())
-                if (bmp != null) ui.drawBitmapCover(c, bmp, RectF(x, r.top, x + side, r.bottom).also { c.save(); c.clipRect(box) })
+                if (bmp != null) ui.drawBitmapCover(c, bmp, box)
                 else {
                     ArtCache.load(act, t.second.first(), 240) { shell.invalidate() }
                     ui.fill(c, box, 0xFFE4E5E7.toInt())
-                    ui.gfx.fit(c, "qgn_graf_mup_npv_defalbumart", RectF(box.left + 14f * sc, box.top + 14f * sc, box.right - 14f * sc, box.bottom - 40f * sc))
+                    ui.gfx.fit(c, "qgn_graf_mup_npv_defalbumart", RectF(box.left + 10f * sc, box.top + 8f * sc, box.right - 10f * sc, box.bottom - 30f * sc))
                 }
-                if (bmp != null) c.restore()
-                // the name bar
-                ui.fill(c, RectF(box.left, box.bottom - 26f * sc, box.right, box.bottom), 0xCC000000.toInt())
+                // the name bar (#99000000, 26 px)
+                ui.fill(c, RectF(box.left, box.bottom - 26f * sc, box.right, box.bottom), 0x99000000.toInt())
                 ui.onDark { ui.text(c, t.first, box.left + 10f * sc, ui.baselineFor(box.bottom - 13f * sc, 18f * sc), 18f * sc, 0xFFFFFFFF.toInt(), maxW = box.width() - 20f * sc) }
                 if (focused && i == hsel) {
                     ui.p.style = Paint.Style.STROKE
@@ -229,7 +229,8 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         }
         override fun onClick() { tiles.getOrNull(hsel)?.let { shell.push(TrackListScreen(act, it.first, it.second)) } }
         override fun onTapAt(x: Float, y: Float, r: RectF): Boolean {
-            val i = ((x - r.left) / r.height()).toInt()
+            if (y > r.top + r.width() / 6f) return false
+            val i = ((x - r.left) / (r.width() / 6f)).toInt()
             tiles.getOrNull(i)?.let { hsel = i; onClick(); return true }
             return false
         }
@@ -291,7 +292,9 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             val bmp = track?.let { ArtCache.peek(it) }
             if (bmp != null) ui.drawBitmapCover(c, bmp, cover) else {
                 track?.let { ArtCache.load(act, it, 120) { shell.invalidate() } }
-                if (!ui.gfx.draw(c, "ns_empty_thumb", cover)) ui.fill(c, cover, 0xFFE4E5E7.toInt())
+                // no cover yet: a visible placeholder (a light tile with the default album picture), not an empty box
+                ui.fill(c, cover, 0xFFE4E5E7.toInt())
+                ui.gfx.fit(c, "qgn_graf_mup_npv_defalbumart", RectF(cover.left + 6f * sc, cover.top + 6f * sc, cover.right - 6f * sc, cover.bottom - 6f * sc))
             }
             val x = r.left + 96f * sc
             val maxW = r.right - x - 12f * sc
