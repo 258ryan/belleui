@@ -60,6 +60,7 @@ jobs:
           $BT/apksigner sign --ks keystore/aosp-platform.jks --ks-pass pass:android --ks-key-alias platform --key-pass pass:android --out module/extra/framework/BelleUIDialogs.apk dialogs-aligned.apk
           mkdir -p module/system/system_ext/etc/permissions
           cp magisk/sysui/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml module/system/system_ext/etc/permissions/
+          cp magisk/sysui/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml module/extra/privapp-permissions-belleui-sysui.xml
           rm -f module/README.md
           (cd module && zip -qr ../BelleUI-Complete-Magisk.zip .)
           ls -la BelleUI-Complete-Magisk.zip

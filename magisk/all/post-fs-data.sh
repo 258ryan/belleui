@@ -103,8 +103,17 @@ if [ -n "$src" ] && [ -f "$src" ]; then
   chmod 644 $T/SystemUI.apk
   touch $T/.replace
 fi
-# the extra permission whitelist is only for the from-scratch one
-if [ "$variant" != "belle" ]; then
-  rm -f $MODDIR/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml
+# The permission whitelist (REBOOT, SHUTDOWN ... for com.android.systemui) belongs to the from-scratch System UI only. It is kept in extra/ and put in place
+# (or taken away) at EVERY boot to match the variant: without it system_server refuses to start when the Belle System UI is used ("Signature|privileged
+# permissions not in privapp-permissions whitelist"), which is a boot loop. (It used to be deleted for other variants and never restored.)
+W=$MODDIR/system/system_ext/etc/permissions
+if [ "$variant" = "belle" ] && [ -f $MODDIR/extra/privapp-permissions-belleui-sysui.xml ]; then
+  mkdir -p $W
+  cp $MODDIR/extra/privapp-permissions-belleui-sysui.xml $W/privapp-permissions-belleui-sysui.xml
+  chmod 644 $W/privapp-permissions-belleui-sysui.xml
+  chown 0:0 $W/privapp-permissions-belleui-sysui.xml
+  chcon u:object_r:system_file:s0 $W/privapp-permissions-belleui-sysui.xml 2>/dev/null
+else
+  rm -f $W/privapp-permissions-belleui-sysui.xml
 fi
 echo "$(date): System UI variant $variant (boot count $n)" >> $D/sysui.log
