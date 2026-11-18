@@ -136,6 +136,12 @@ abstract class Screen {
     /** Light list look allowed (the Styles "Light lists" switch). Screens with photos, video or games stay dark. */
     open val lightOk: Boolean get() = false
 
+    /** A screen that is always a light page (the Nokia Music and Nokia Store clients), whatever the light-lists setting says. */
+    open val forceLight: Boolean get() = false
+
+    /** The page colour of a light screen; null = the kit's own light grey. */
+    open val lightBg: Int? get() = null
+
     open fun tools(): List<Tool> = emptyList()
     open fun menu(): List<MenuItem> = emptyList()
     open fun onShow() {}
@@ -171,10 +177,15 @@ abstract class Screen {
 /** The finger's movement of the gesture in progress, so any list a screen scrolls can follow it in pixels and keep its momentum. */
 object Scroll {
     var dy = 0f
-    var last: ListState? = null
+    var last: Flingable? = null
 }
 
-class ListState(val rowH: Float = Belle.ROW_H) {
+/** Whatever was just scrolled by a finger and should coast on after a flick. */
+interface Flingable {
+    fun fling(vy: Float)
+}
+
+class ListState(val rowH: Float = Belle.ROW_H) : Flingable {
     var sel = 0
     var top = 0
     private var topAnim = 0f
@@ -188,7 +199,7 @@ class ListState(val rowH: Float = Belle.ROW_H) {
     private var lastVis = 1
 
     /** Called by the shell when a fling ends with [vy] px/s: the list coasts on. */
-    fun fling(vy: Float) {
+    override fun fling(vy: Float) {
         if (!free) return
         vel = -vy / (rowH * lastSc)
         lastNs = System.nanoTime()
@@ -1202,10 +1213,10 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
         val tabsH = if (s.tabs.isNotEmpty()) Belle.TAB_H * ui.sc else 0f
         val statusH = Belle.statusH() * ui.sc
 
-        val light = Belle.lightLists && s.lightOk
+        val light = (Belle.lightLists && s.lightOk) || s.forceLight
         if (!s.transparentContent) {
             ui.rf.set(0f, statusH, w, contentBottom)
-            ui.fill(c, ui.rf, if (light) Belle.LIGHT_BG else Color.BLACK)
+            ui.fill(c, ui.rf, if (light) (s.lightBg ?: Belle.LIGHT_BG) else Color.BLACK)
         }
         ui.lightMode = light
         // a screen that throws while drawing must not take the whole app down: show what happened instead
