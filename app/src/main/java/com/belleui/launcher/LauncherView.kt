@@ -2041,8 +2041,8 @@ class LauncherView(private val act: Activity) : View(act) {
             }
             8 -> openOther("com.belleui.clock")
             9 -> toggleSilent()
-            10 -> if (!tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS))) showToast("Not available")
-            11 -> if (!tryStart(Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)) && !tryStart(Intent(Settings.ACTION_WIRELESS_SETTINGS))) showToast("Not available")
+            10 -> if (!startOk(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS))) showToast("Not available")
+            11 -> if (!startOk(Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)) && !startOk(Intent(Settings.ACTION_WIRELESS_SETTINGS))) showToast("Not available")
             12 -> toggleStopwatch()
             5 -> when (widgetSub) {
                 0 -> if (noteIdx > 0) noteIdx--
@@ -2520,6 +2520,11 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     // ---- the extra Homescreen Widgets (Silent / Offline / 3G toggles, Stopwatch): 2 x 2 cells -------------------
+
+    private fun startOk(i: Intent): Boolean = try {
+        act.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: Exception) { false }
 
     private fun silentOn(): Boolean = try {
         (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL
