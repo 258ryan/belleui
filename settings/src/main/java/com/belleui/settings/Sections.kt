@@ -90,6 +90,7 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Accounts & sync", "Sync and accounts", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
             Row("Developer options", "USB debugging, animations, touches", icon = g.get("qgn_prop_set_apps_usb"), drill = true),
             Row("Power & restart", "Restart, recovery, quick reboot (root)", icon = g.get("qgn_indi_battery_strength"), drill = true),
+            Row("This console", "Controls, USB mode, game mode, SD card check", icon = g.get("qgn_prop_set_default_sub"), drill = true),
             Row("Connected devices", "Bluetooth, USB, pairing", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
             Row("Privacy", "Permissions, usage, ads", icon = g.get("qgn_prop_set_device_sub"), drill = true),
             Row("System", "Languages, backup, reset, updates", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
@@ -121,9 +122,10 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             16 -> shell.push(AccountsScreen(act))
             17 -> shell.push(DeveloperScreen(act))
             18 -> shell.push(PowerScreen(act))
-            19 -> if (!act.androidActivity("ConnectedDeviceDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))) shell.toast("Not available")
-            20 -> if (!act.tryStart(Intent("android.settings.PRIVACY_SETTINGS"))) shell.toast("Not available")
-            21 -> if (!act.androidActivity("SystemDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_DATE_SETTINGS))) shell.toast("Not available")
+            19 -> shell.push(ConsoleScreen(act))
+            20 -> if (!act.androidActivity("ConnectedDeviceDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))) shell.toast("Not available")
+            21 -> if (!act.tryStart(Intent("android.settings.PRIVACY_SETTINGS"))) shell.toast("Not available")
+            22 -> if (!act.androidActivity("SystemDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_DATE_SETTINGS))) shell.toast("Not available")
             else -> if (!act.tryStart(Intent(Settings.ACTION_SETTINGS))) shell.toast("Not available")
         }
     }
@@ -736,5 +738,47 @@ class PerformanceScreen(act: SettingsActivity) : RowsScreen(act) {
                 }.start()
             }
         }
+    }
+}
+
+
+// ================================================================================================
+// this console: the tools this ROM adds to its own Settings home (each is a small app with a Settings entry)
+// ================================================================================================
+
+class ConsoleScreen(act: SettingsActivity) : RowsScreen(act) {
+    override val title get() = "This console"
+
+    private class Tool(val title: String, val sub: String, val pkg: String, val cls: String)
+
+    private val tools = listOf(
+        Tool("Quick start guide", "Buttons, shortcuts, your games", "org.andr36oid.guide", ".GuideActivity"),
+        Tool("Controls", "Button mapping, sticks, controllers", "org.andr36oid.controllers", ".ControllersActivity"),
+        Tool("Game mode", "Comfort and game settings", "org.andr36oid.gamecomfort", ".GameModeActivity"),
+        Tool("Performance overlay", "Show FPS, CPU and temperature", "org.andr36oid.perfoverlay", ".OverlayActivity"),
+        Tool("CPU overclock", "CPU speed limit and overclock", "org.andr36oid.cpuoverclock", ".OverclockActivity"),
+        Tool("Kernel tweaks", "Advanced kernel options", "org.andr36oid.kerneltweaks", ".KernelTweaksActivity"),
+        Tool("USB mode (beta)", "How this console acts over USB", "org.andr36oid.usbmode", ".UsbModeActivity"),
+        Tool("SD card check", "Test the memory card", "org.andr36oid.cardcheck", ".CardActivity"),
+        Tool("Save backup", "Back up saves and states", "org.andr36oid.savebackup", ".MainActivity"),
+        Tool("Play time", "How long you played", "org.andr36oid.playtime", ".PlayTimeActivity"),
+        Tool("Free up space", "Storage care", "org.andr36oid.storagecare", ".FreeSpaceActivity"),
+        Tool("Battery details", "Health and usage", "org.andr36oid.batterydetails", ".DetailsActivity"),
+        Tool("Status light", "LED and light effects", "org.andr36oid.statuslight", ".StatusLightActivity"),
+        Tool("Deep sleep", "Sleep behaviour", "org.andr36oid.deepsleep", ".DeepSleepActivity"),
+        Tool("Look", "Personalisation", "org.andr36oid.look", ".LookActivity"),
+        Tool("BIOS check", "Check emulator BIOS files", "org.andr36oid.bioscheck", ".BiosActivity"),
+        Tool("Ethernet", "Wired network", "org.andr36oid.ethernet", ".EthernetActivity"),
+        Tool("Report a problem", "Collect a report", "org.andr36oid.report", ".ReportActivity"),
+    )
+
+    private fun installed(t: Tool) = try { act.packageManager.getPackageInfo(t.pkg, 0); true } catch (_: Exception) { false }
+
+    override fun rows(): List<Row> = tools.map { Row(it.title, it.sub, iconKind = com.belleui.kit.Ic.PLAY, iconColor = Belle.BLUE, drill = true, dim = !installed(it)) }
+
+    override fun open(i: Int) {
+        val t = tools.getOrNull(i) ?: return
+        val cls = if (t.cls.startsWith(".")) t.pkg + t.cls else t.cls
+        if (!act.tryStart(Intent().setClassName(t.pkg, cls))) shell.toast("Not available on this device")
     }
 }
