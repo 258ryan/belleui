@@ -36,13 +36,30 @@ if [ "$n" -ge 5 ]; then
   touch $MODDIR/skip_mount
   echo "$(date): $n unconfirmed boots, the whole module is switched off (skip_mount)" >> $D/sysui.log
 fi
+# Compatibility gate. The framework overlay, the font, the dialog layout and the System UI replacement are built against ONE ROM: Android 11 whose
+# framework-res.apk is signed with the public AOSP platform key (the System UI shares android.uid.systemui, the overlays must match the key, and the
+# dialog layout names private framework ids from that exact framework-res.apk). On any other ROM they can wedge the boot, so they stay off there.
+BB=/data/adb/magisk/busybox
+[ -x $BB ] || BB=busybox
+SDK=$(getprop ro.build.version.sdk)
+CERT=$($BB unzip -p /system/framework/framework-res.apk 'META-INF/*.RSA' 2>/dev/null | $BB md5sum 2>/dev/null | cut -d' ' -f1)
+FWMD5=$($BB md5sum /system/framework/framework-res.apk 2>/dev/null | cut -d' ' -f1)
+compat_ok=0
+dialogs_ok=0
+if [ "$SDK" = "30" ] && [ "$CERT" = "ca440efe2d2e0164fc054448b1eabed4" ]; then compat_ok=1; fi
+if [ "$compat_ok" = "1" ] && [ "$FWMD5" = "463b110f0cde1a924626c9c55191ea7d" ]; then dialogs_ok=1; fi
+echo "sdk=$SDK cert=$CERT framework=$FWMD5 compat_ok=$compat_ok dialogs_ok=$dialogs_ok" > $D/compat
+if [ "$compat_ok" != "1" ]; then
+  variant=none
+  echo "$(date): this ROM is not the one the module was built for (sdk=$SDK cert=$CERT): framework overlay, font, dialogs and System UI stay off" >> $D/sysui.log
+fi
 echo $variant > $D/variant
 
 # The Android framework in Belle dress: the colour/controls overlay (/product/overlay) and the Nokia Sans font. Rebuilt every boot from extra/,
 # so framework=0 / font=0 in $D/config (or the guard above) take effect on the next boot.
 rm -rf $MODDIR/system/product/overlay $MODDIR/system/fonts
 if [ ! -f $D/guard_tripped ]; then
-  if [ "$framework" != "0" ] && [ -f $MODDIR/extra/framework/BelleUIFramework.apk ]; then
+  if [ "$compat_ok" = "1" ] && [ "$framework" != "0" ] && [ -f $MODDIR/extra/framework/BelleUIFramework.apk ]; then
     mkdir -p $MODDIR/system/product/overlay
     cp $MODDIR/extra/framework/BelleUIFramework.apk $MODDIR/system/product/overlay/BelleUIFramework.apk
     chmod 755 $MODDIR/system/product $MODDIR/system/product/overlay
@@ -50,7 +67,7 @@ if [ ! -f $D/guard_tripped ]; then
     chown -R 0:0 $MODDIR/system/product
     chcon -R u:object_r:system_file:s0 $MODDIR/system/product 2>/dev/null
   fi
-  if [ "$dialogs" != "0" ] && [ ! -f $D/dialogs_tripped ] && [ -f $MODDIR/extra/framework/BelleUIDialogs.apk ]; then
+  if [ "$dialogs_ok" = "1" ] && [ "$dialogs" != "0" ] && [ ! -f $D/dialogs_tripped ] && [ -f $MODDIR/extra/framework/BelleUIDialogs.apk ]; then
     mkdir -p $MODDIR/system/product/overlay
     cp $MODDIR/extra/framework/BelleUIDialogs.apk $MODDIR/system/product/overlay/BelleUIDialogs.apk
     chmod 755 $MODDIR/system/product $MODDIR/system/product/overlay
@@ -58,7 +75,7 @@ if [ ! -f $D/guard_tripped ]; then
     chown -R 0:0 $MODDIR/system/product
     chcon -R u:object_r:system_file:s0 $MODDIR/system/product 2>/dev/null
   fi
-  if [ "$font" != "0" ] && [ -f $MODDIR/extra/fonts/nosnr60.ttf ]; then
+  if [ "$compat_ok" = "1" ] && [ "$font" != "0" ] && [ -f $MODDIR/extra/fonts/nosnr60.ttf ]; then
     mkdir -p $MODDIR/system/fonts
     for f in Roboto-Thin Roboto-Light Roboto-Regular; do
       [ -f /system/fonts/$f.ttf ] && cp $MODDIR/extra/fonts/nosnr60.ttf $MODDIR/system/fonts/$f.ttf

@@ -1,6 +1,6 @@
 id=belleui_all
 name=BelleUI - the whole set
-version=v0.6
-versionCode=6
+version=v0.7
+versionCode=7
 author=BelleUI
 description=Installs the Belle launcher, every Belle app and the Belle System UI (status bar, pull-down, power menu, volume) as system apps, dresses the Android framework in Belle (colours, controls, the Nokia Sans font), gives them the access they need at boot, and (optionally) makes the Belle launcher and keyboard the defaults. Android 11+.

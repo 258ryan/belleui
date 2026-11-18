@@ -152,6 +152,7 @@ rm -f $DIR/crash_collected_stale 2>/dev/null
   echo "date: $(date)"
   echo "module: $(grep '^version=' $MODDIR/module.prop)"
   echo "variant: $(cat $DIR/variant 2>/dev/null)   boots unconfirmed: $(cat $DIR/sysui_boots 2>/dev/null)"
+  echo "compat: $(cat $DIR/compat 2>/dev/null)"
   echo "dialogs_tripped: $([ -f $DIR/dialogs_tripped ] && echo yes || echo no)   dialogs=${dialogs:-1}"
   echo "guard_tripped: $([ -f $DIR/guard_tripped ] && echo yes || echo no)   skip_mount: $([ -f $MODDIR/skip_mount ] && echo yes || echo no)"
   echo "--- config"; cat $CONF
