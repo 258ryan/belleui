@@ -22,6 +22,14 @@ class SettingsActivity : BelleActivity() {
         false
     }
 
+    /** Opens one of Android Settings' own screens by its fragment (also the ROM's: CRT effect, panel overclock, console details); false when it can't be started. */
+    fun androidFragment(fragment: String): Boolean =
+        tryStart(Intent().setClassName("com.android.settings", "com.android.settings.SubSettings").putExtra(":settings:show_fragment", fragment))
+
+    /** One of Android Settings' top-level activities (Settings\$Name), e.g. SystemDashboardActivity. */
+    fun androidActivity(name: String): Boolean =
+        tryStart(Intent().setClassName("com.android.settings", "com.android.settings.Settings\$$name"))
+
     fun systemPanel(panel: String, fallback: String): Boolean =
         tryStart(Intent(if (Build.VERSION.SDK_INT >= 29) panel else fallback))
 

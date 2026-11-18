@@ -90,6 +90,9 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Accounts & sync", "Sync and accounts", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
             Row("Developer options", "USB debugging, animations, touches", icon = g.get("qgn_prop_set_apps_usb"), drill = true),
             Row("Power & restart", "Restart, recovery, quick reboot (root)", icon = g.get("qgn_indi_battery_strength"), drill = true),
+            Row("Connected devices", "Bluetooth, USB, pairing", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
+            Row("Privacy", "Permissions, usage, ads", icon = g.get("qgn_prop_set_device_sub"), drill = true),
+            Row("System", "Languages, backup, reset, updates", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
             Row("Android settings", "Everything else", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
         )
     }
@@ -118,6 +121,9 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             16 -> shell.push(AccountsScreen(act))
             17 -> shell.push(DeveloperScreen(act))
             18 -> shell.push(PowerScreen(act))
+            19 -> if (!act.androidActivity("ConnectedDeviceDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))) shell.toast("Not available")
+            20 -> if (!act.tryStart(Intent("android.settings.PRIVACY_SETTINGS"))) shell.toast("Not available")
+            21 -> if (!act.androidActivity("SystemDashboardActivity") && !act.tryStart(Intent(Settings.ACTION_DATE_SETTINGS))) shell.toast("Not available")
             else -> if (!act.tryStart(Intent(Settings.ACTION_SETTINGS))) shell.toast("Not available")
         }
     }
@@ -488,6 +494,8 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
         out.add(Row("Auto-rotate", check = rotation(), dim = !canWrite))
         out.add(Row("Font size", fontName(), drill = true, dim = !canWrite))
         out.add(Row("Wallpaper", "Choose a wallpaper", drill = true))
+        out.add(Row("CRT effect", "Scanlines and curvature (this console)", drill = true))
+        out.add(Row("Panel overclock", "Refresh rate of the panel (this console)", drill = true))
         out.add(Row("More in Android settings", "Dark theme", drill = true))
         return out
     }
@@ -545,7 +553,9 @@ class DisplayScreen(act: SettingsActivity) : RowsScreen(act) {
                 })
             } else act.askWriteSettings()
             5 -> if (!act.tryStart(Intent(Intent.ACTION_SET_WALLPAPER))) shell.toast("Not available")
-            6 -> if (!act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
+            6 -> if (!act.androidFragment("com.android.settings.display.CrtEffectFragment") && !act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
+            7 -> if (!act.androidFragment("com.android.settings.display.PanelOverclockFragment") && !act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
+            8 -> if (!act.tryStart(Intent(Settings.ACTION_DISPLAY_SETTINGS))) shell.toast("Not available")
         }
     }
 }
@@ -635,8 +645,13 @@ class AboutScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Memory", "${Sys.fmtSize(avail)} free of ${Sys.fmtSize(total)}"),
             Row("Screen", "${dm.widthPixels} x ${dm.heightPixels} - ${dm.densityDpi} dpi - ${"%.0f".format(display.refreshRate)} Hz"),
             Row("Up time", Sys.uptime()),
+            Row("Console details", "Android settings (this console)", drill = true),
             Row("System settings", "BelleUI 0.1"),
         )
+    }
+
+    override fun open(i: Int) {
+        if (rows().getOrNull(i)?.title == "Console details" && !act.androidFragment("com.android.settings.deviceinfo.consoledetails.ConsoleDetailsFragment") && !act.tryStart(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))) shell.toast("Not available")
     }
 }
 
