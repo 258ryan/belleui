@@ -1477,13 +1477,13 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5, 6 -> 4 to 2; 8 -> 2 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5, 6 -> 4 to 2; 8, 9, 10, 11, 12 -> 2 to 2; else -> 4 to 1 }
 
     /** Widgets with up to three buttons the focus steps through: music, quick switches, notes, favourite contacts. */
     private fun hasSubs(t: Int) = t == 2 || t == 4 || t == 5 || t == 6
 
     /** The heights (in rows) each widget looks right at. */
-    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); 6 -> intArrayOf(2, 3); 8 -> intArrayOf(2, 3); else -> intArrayOf(1) }
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); 6 -> intArrayOf(2, 3); 8 -> intArrayOf(2, 3); 9, 10, 11, 12 -> intArrayOf(2); else -> intArrayOf(1) }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1994,8 +1994,8 @@ class LauncherView(private val act: Activity) : View(act) {
             items += PopupItem(if (cur.widget) "Remove widget" else "Remove shortcut") { removeCurrent() }
         }
         items += PopupItem("Add widget") {
-            val names = arrayOf("Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes", "Favourite contacts", "Profile", "Analogue clock")
-            val order = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
+            val names = arrayOf("Flip clock", "Today", "Music player", "Notifications", "Quick switches", "Notes", "Favourite contacts", "Profile", "Analogue clock", "Silent", "Offline", "3G", "Stopwatch")
+            val order = intArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
             popup = Popup("Add widget", order.map { t -> PopupItem(names[t]) { addWidget(t) } }, 0)
         }
         if (repo.homeViewCount < 6) items += PopupItem("Add home screen") { addHomeView() }
@@ -2040,6 +2040,10 @@ class LauncherView(private val act: Activity) : View(act) {
                 tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))
             }
             8 -> openOther("com.belleui.clock")
+            9 -> toggleSilent()
+            10 -> if (!tryStart(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS))) showToast("Not available")
+            11 -> if (!tryStart(Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)) && !tryStart(Intent(Settings.ACTION_WIRELESS_SETTINGS))) showToast("Not available")
+            12 -> toggleStopwatch()
             5 -> when (widgetSub) {
                 0 -> if (noteIdx > 0) noteIdx--
                 2 -> if (noteIdx < notesList.size - 1) noteIdx++
@@ -2069,6 +2073,10 @@ class LauncherView(private val act: Activity) : View(act) {
             6 -> drawContacts(c, r)
             7 -> drawProfile(c, r)
             8 -> drawAnalog(c, r)
+            9 -> drawToggle(c, r, "audio", silentOn(), if (silentOn()) "Silent" else "Sound on")
+            10 -> drawToggle(c, r, "signal", !airplaneOn(), if (airplaneOn()) "Offline" else "Online")
+            11 -> drawToggle(c, r, "signal", dataOn(), if (dataOn()) "3G on" else "3G off")
+            12 -> drawStopwatch(c, r)
             else -> drawSwitches(c, r)
         }
     }
@@ -2509,6 +2517,60 @@ class LauncherView(private val act: Activity) : View(act) {
             rf.set(r.right - 9f * sc, r.top + 8f * sc, r.right - 5f * sc, r.top + 8f * sc + (r.height() - 16f) * list.size / total)
             c.drawRoundRect(rf, 2f * sc, 2f * sc, p)
         }
+    }
+
+    // ---- the extra Homescreen Widgets (Silent / Offline / 3G toggles, Stopwatch): 2 x 2 cells -------------------
+
+    private fun silentOn(): Boolean = try {
+        (act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL
+    } catch (_: Exception) { false }
+
+    private fun dataOn(): Boolean = try {
+        (act.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager).isDataEnabled
+    } catch (_: Throwable) { false }
+
+    private fun toggleSilent() {
+        try {
+            val am = act.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.ringerMode = if (am.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL) android.media.AudioManager.RINGER_MODE_VIBRATE else android.media.AudioManager.RINGER_MODE_NORMAL
+        } catch (_: Exception) {
+            tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))
+        }
+    }
+
+    /** One big Belle panel switch in a dark card with its name under it, like the toggle widgets of the Belle home screen. */
+    private fun drawToggle(c: Canvas, r: RectF, art: String, on: Boolean, label: String) {
+        darkCard(c, r, 14f * sc)
+        val h = min(r.height() - 40f * sc, r.width() - 24f * sc)
+        val w = h * 58f / 66f
+        rf.set(r.centerX() - w / 2f, r.top + 8f * sc, r.centerX() + w / 2f, r.top + 8f * sc + h)
+        gfx.draw(c, "qtg_graf_panel_switch_${art}_${if (on) "on" else "off"}", rf)
+        text(c, label, r.centerX(), r.bottom - 11f * sc, 20f * sc, Color.WHITE, Paint.Align.CENTER, r.width() - 12f * sc, face = light)
+    }
+
+    private var stopRunning = false
+    private var stopStart = 0L
+    private var stopAccum = 0L
+
+    private fun toggleStopwatch() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        when {
+            stopRunning -> { stopAccum += now - stopStart; stopRunning = false }
+            stopAccum > 0L -> stopAccum = 0L // a second press when stopped resets it
+            else -> { stopStart = now; stopRunning = true }
+        }
+    }
+
+    private fun drawStopwatch(c: Canvas, r: RectF) {
+        darkCard(c, r, 14f * sc)
+        val ms = stopAccum + if (stopRunning) android.os.SystemClock.elapsedRealtime() - stopStart else 0L
+        val m = ms / 60000
+        val s = (ms / 1000) % 60
+        val d = (ms / 100) % 10
+        text(c, "%02d:%02d".format(m, s), r.centerX(), baselineFor(r.centerY() - 6f * sc, 48f * sc), 48f * sc, Color.WHITE, Paint.Align.CENTER, face = light)
+        text(c, ".$d", r.centerX(), r.centerY() + 38f * sc, 26f * sc, al(Color.WHITE, 200), Paint.Align.CENTER, face = light)
+        text(c, if (stopRunning) "Stop" else if (stopAccum > 0L) "Reset" else "Start", r.centerX(), r.bottom - 11f * sc, 20f * sc, al(Color.WHITE, 200), Paint.Align.CENTER, face = light)
+        if (stopRunning) postInvalidateDelayed(100)
     }
 
     private fun drawSwitches(c: Canvas, r: RectF) {
