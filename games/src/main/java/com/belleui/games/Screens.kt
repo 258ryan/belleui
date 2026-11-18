@@ -197,8 +197,10 @@ private fun startGame(act: GamesActivity, shell: com.belleui.kit.BelleShell, g: 
 
 class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
-    // the Ovi / Nokia Store client is a light page
+    // the Store tab is the Nokia Store client's light page
     override val lightOk: Boolean get() = true
+    override val forceLight: Boolean get() = tab == 0
+    override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
     override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Library", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
@@ -412,7 +414,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
         }
         val r = rect()
         when (tab) {
-            0 -> return featured.tap(x, y)
+            0 -> return featured.tap(r, x, y)
             1 -> {
                 val i = systemList.hit(shell.ui, r, y, entries().size)
                 if (i < 0) return false
@@ -432,7 +434,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     override fun onScroll(dy: Float) {
         val d = if (dy > 0) 1 else -1
         when (tab) {
-            0 -> featured.scroll(d)
+            0 -> featured.drag(dy)
             1 -> systemList.scrollBy(d, entries().size, systemList.visible(shell.ui, shell.contentBottom - shell.contentTop))
             else -> emuList.scrollBy(d, emuRows().size, emuList.visible(shell.ui, shell.contentBottom - shell.contentTop))
         }
@@ -499,97 +501,143 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             for (i in hsel.indices) hsel[i] = hsel[i].coerceIn(0, max(0, (shelves.getOrNull(i)?.tiles?.size ?: 1) - 1))
         }
 
-        private fun tops(): FloatArray {
-            val t = FloatArray(shelves.size + 1)
-            for (i in shelves.indices) t[i + 1] = t[i] + (if (i == 0) heroH else shelfH)
-            return t
+        // ---- the Nokia Store client's page (from its package): FEATURED banner, grey group bars, 100 px store items, pivot rows ----
+        private val page = com.belleui.kit.FlowPage()
+        private var cellsFor = -1
+        private var heroIdx = 0
+        private val ink = 0xFF282828.toInt()
+        private val grey = 0xFF666666.toInt()
+
+        /** The blue "down" look of a selected item (citem.gbackground.down: #1080DD fading to #53A4E7), with the text turning white. */
+        private fun selBg(c: Canvas, ui: Ui, r: RectF) {
+            ui.p.style = Paint.Style.FILL
+            ui.p.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom, 0xFF1080DD.toInt(), 0xFF53A4E7.toInt(), android.graphics.Shader.TileMode.CLAMP)
+            c.drawRect(r, ui.p)
+            ui.p.shader = null
+        }
+
+        private fun info(g: Game): String = g.system.name + (genreOf(g)?.let { " - $it" } ?: "")
+
+        private fun stars(c: Canvas, ui: Ui, x: Float, y: Float, rating: Float) {
+            val sc = ui.sc
+            val w = 16f * sc * 1.25f
+            val h = 13f * sc * 1.25f
+            val n = Math.round(rating.coerceIn(0f, 1f) * 5f)
+            for (i in 0 until 5) {
+                ui.gfx.draw(c, if (i < n) "ns_star" else "ns_star_bg", RectF(x + i * (w + 3f * sc), y, x + i * (w + 3f * sc) + w, y + h))
+            }
+        }
+
+        private inner class BannerCell(private val heroes: List<Tile>) : com.belleui.kit.Cell() {
+            override fun height(ui: Ui, w: Float) = 120f * ui.sc
+            private fun cur() = heroes[heroIdx.coerceIn(0, heroes.size - 1)]
+            fun game(): Game? = cur().game
+            override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
+                val sc = ui.sc
+                if (focused) selBg(c, ui, r) else ui.fill(c, r, 0xFF4A4B4D.toInt())
+                val g = cur().game ?: return
+                val icon = 96f * sc
+                val box = RectF(r.right - 12f * sc - icon, r.top + 12f * sc, r.right - 12f * sc, r.top + 12f * sc + icon)
+                drawArt(c, ui, act, shell, g, box)
+                val x = r.left + 12f * sc
+                val maxW = box.left - x - 8f * sc
+                val played = (act.prefs.peek(g.rep.path)?.launches ?: 0) > 0
+                ui.text(c, if (played) "CONTINUE PLAYING" else "FEATURED", x, r.top + 30f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
+                ui.text(c, g.title, x, r.top + 66f * sc, 30f * sc, 0xFFFFFFFF.toInt(), maxW = maxW)
+                ui.text(c, info(g), x, r.top + 98f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
+                // which of the featured games this is
+                val n = heroes.size
+                for (i in 0 until n) {
+                    ui.p.color = if (i == heroIdx) 0xFFFFFFFF.toInt() else 0x66FFFFFF
+                    c.drawCircle(r.left + 12f * sc + 4f * sc + i * 12f * sc, r.bottom - 8f * sc, 3f * sc, ui.p)
+                }
+            }
+            override fun onKey(a: Act): Boolean = when (a) {
+                Act.LEFT -> { heroIdx = (heroIdx - 1 + heroes.size) % heroes.size; true }
+                Act.RIGHT -> { heroIdx = (heroIdx + 1) % heroes.size; true }
+                else -> false
+            }
+            override fun onClick() { use(cur()) }
+        }
+
+        private inner class HeaderCell(private val text: String) : com.belleui.kit.Cell() {
+            override val focusable get() = false
+            override fun height(ui: Ui, w: Float) = 43f * ui.sc
+            override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
+                ui.p.style = Paint.Style.FILL
+                ui.p.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom, 0xFFDFDFDF.toInt(), 0xFFCFCFCF.toInt(), android.graphics.Shader.TileMode.CLAMP)
+                c.drawRect(r, ui.p)
+                ui.p.shader = null
+                ui.text(c, text, r.left + 12f * ui.sc, ui.baselineFor(r.centerY(), 24f * ui.sc), 24f * ui.sc, ink, maxW = r.width() - 24f * ui.sc)
+            }
+        }
+
+        /** StoreItem: 100 px, a 76 px icon, a 30 px title, a 24 px light grey line, the stars along the bottom and the play count on the right. */
+        private inner class ItemCell(private val tile: Tile) : com.belleui.kit.Cell() {
+            val game get() = tile.game
+            override fun height(ui: Ui, w: Float) = 100f * ui.sc
+            override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
+                val sc = ui.sc
+                if (focused) selBg(c, ui, r)
+                val g = tile.game ?: return
+                val box = RectF(r.left + 8f * sc, r.centerY() - 38f * sc, r.left + 84f * sc, r.centerY() + 38f * sc)
+                drawArt(c, ui, act, shell, g, box)
+                val x = r.left + 100f * sc
+                val maxW = r.right - x - 14f * sc
+                val white = 0xFFFFFFFF.toInt()
+                ui.text(c, g.title, x, r.top + 5f * sc + 26f * sc, 30f * sc, if (focused) white else ink, maxW = maxW)
+                val launches = act.prefs.peek(g.rep.path)?.launches ?: 0
+                val right = if (launches > 0) "Played ${launches}x" else ""
+                val rw = if (right.isEmpty()) 0f else ui.measure(right, 24f * sc, ui.light) + 10f * sc
+                ui.text(c, info(g), x, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, maxW = maxW - rw, face = ui.light)
+                if (right.isNotEmpty()) ui.text(c, right, r.right - 14f * sc, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, Paint.Align.RIGHT, face = ui.light)
+                val rating = g.rep.meta?.rating ?: 0f
+                if (rating > 0f) stars(c, ui, x, r.bottom - 12f * sc - 16f * sc, rating)
+                if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
+            }
+            override fun onClick() { use(tile) }
+        }
+
+        /** PivotBar: 100 px with an icon, 82 without; the label at 30 px and the arrow on the right. */
+        private inner class PivotCell(private val tile: Tile) : com.belleui.kit.Cell() {
+            override fun height(ui: Ui, w: Float) = 82f * ui.sc
+            override fun draw(c: Canvas, ui: Ui, r: RectF, focused: Boolean, pressed: Boolean) {
+                val sc = ui.sc
+                if (focused) selBg(c, ui, r)
+                val box = RectF(r.left + 8f * sc, r.centerY() - 28f * sc, r.left + 64f * sc, r.centerY() + 28f * sc)
+                ui.iconFrame(c, box, tile.color, tile.kind)
+                val x = r.left + 76f * sc
+                ui.text(c, tile.title, x, ui.baselineFor(r.centerY() - 10f * sc, 30f * sc), 30f * sc, if (focused) 0xFFFFFFFF.toInt() else ink, maxW = r.right - x - 44f * sc)
+                ui.text(c, tile.sub, x, ui.baselineFor(r.centerY() + 18f * sc, 24f * sc, ui.light), 24f * sc, if (focused) 0xFFFFFFFF.toInt() else grey, maxW = r.right - x - 44f * sc, face = ui.light)
+                ui.gfx.draw(c, "ns_pivot_arrow", RectF(r.right - 14f * sc - 10f * sc, r.centerY() - 9f * sc, r.right - 14f * sc, r.centerY() + 9f * sc))
+                if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
+            }
+            override fun onClick() { use(tile) }
+        }
+
+        private fun buildCells() {
+            if (cellsFor == act.version) return
+            cellsFor = act.version
+            build()
+            val out = ArrayList<com.belleui.kit.Cell>()
+            val hero = shelves.firstOrNull()?.tiles?.filter { it.game != null } ?: emptyList()
+            if (hero.isNotEmpty()) out.add(BannerCell(hero))
+            for (s in shelves.drop(1)) {
+                val games = s.tiles.filter { it.game != null }
+                if (games.isNotEmpty()) {
+                    out.add(HeaderCell(s.title))
+                    for (tl in games.take(3)) out.add(ItemCell(tl))
+                } else if (s.tiles.isNotEmpty()) {
+                    out.add(HeaderCell(when (s.title) { "Browse by genre" -> "Categories"; "Browse by system" -> "Systems"; else -> s.title }))
+                    for (tl in s.tiles) out.add(PivotCell(tl))
+                }
+            }
+            page.cells = out
         }
 
         fun draw(c: Canvas, ui: Ui, r: RectF) {
-            build()
-            hits.clear()
-            val sc = ui.sc
-            val tops = tops()
-            val total = tops[shelves.size] * sc
-            vTarget = (tops[shelfSel] * sc).coerceIn(0f, max(0f, total - r.height()))
-            vAnim += (vTarget - vAnim) * ui.k
-            if (abs(vTarget - vAnim) < 0.5f) vAnim = vTarget else ui.busy = true
-            c.save()
-            c.clipRect(r)
-            for ((si, shelf) in shelves.withIndex()) {
-                val top = r.top + tops[si] * sc - vAnim
-                val h = (if (si == 0) heroH else shelfH) * sc
-                if (top + h < r.top || top > r.bottom) continue
-                if (si == 0) drawHero(c, ui, r, top, shelf) else drawShelf(c, ui, r, si, top, shelf)
-            }
-            c.restore()
-            if (total > r.height()) ui.scrollbar(c, r.right, r.top, r.bottom, vAnim / (total - r.height()), r.height() / total)
-        }
-
-        private fun drawHero(c: Canvas, ui: Ui, r: RectF, top: Float, shelf: Shelf) {
-            val sc = ui.sc
-            val tile = shelf.tiles.getOrNull(hsel[0]) ?: return
-            val g = tile.game ?: return
-            val card = RectF(r.left + 14f * sc, top + 8f * sc, r.right - 14f * sc, top + 154f * sc)
-            if (shelfSel == 0) ui.highlight(c, RectF(card).apply { inset(-5f * sc, -5f * sc) }, 14f)
-            ui.p.style = Paint.Style.FILL
-            ui.p.shader = null
-            ui.p.color = Belle.PANEL
-            c.drawRoundRect(card, 8f * sc, 8f * sc, ui.p)
-            ui.p.color = g.system.color
-            c.drawRect(card.left, card.top + 8f * sc, card.left + 5f * sc, card.bottom - 8f * sc, ui.p)
-            val side = card.height() - 20f * sc
-            val art = RectF(card.left + 20f * sc, card.top + 10f * sc, card.left + 20f * sc + side, card.top + 10f * sc + side)
-            drawArt(c, ui, act, shell, g, art)
-            val x = art.right + 20f * sc
-            val maxW = card.right - x - 16f * sc
-            val played = (act.prefs.peek(g.rep.path)?.launches ?: 0) > 0
-            ui.text(c, if (played) "CONTINUE PLAYING" else "FEATURED GAME", x, card.top + 30f * sc, 13f * sc, Belle.BLUE_LIGHT, face = ui.medium)
-            ui.text(c, g.title, x, card.top + 62f * sc, 26f * sc, maxW = maxW)
-            val genre = genreOf(g)
-            ui.text(c, g.system.name + (genre?.let { " - $it" } ?: ""), x, card.top + 88f * sc, 18f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-            val st = act.prefs.peek(g.rep.path)
-            val line = if (st != null && st.launches > 0) "Played ${st.launches}x - ${playTime(st.playMs)}" else "Not played yet"
-            ui.text(c, line, x, card.top + 112f * sc, 16f * sc, Belle.TEXT_MID, maxW = maxW, face = ui.light)
-            val btn = RectF(card.right - 130f * sc, card.bottom - 52f * sc, card.right - 14f * sc, card.bottom - 10f * sc)
-            ui.pushButton(c, btn, "Play", shelfSel == 0)
-            val n = shelf.tiles.size
-            val cx = card.centerX()
-            for (i in 0 until n) {
-                ui.p.color = if (i == hsel[0]) Color.WHITE else ui.al(Color.WHITE, 90)
-                c.drawCircle(cx + (i - (n - 1) / 2f) * 14f * sc, card.bottom + 12f * sc, 3.2f * sc, ui.p)
-            }
-            hits.add(RectF(card) to tile)
-        }
-
-        private fun drawShelf(c: Canvas, ui: Ui, r: RectF, si: Int, top: Float, shelf: Shelf) {
-            val sc = ui.sc
-            // the store's section bar: a full-width grey gradient strip with the heading in it
-            ui.p.style = Paint.Style.FILL
-            ui.p.shader = android.graphics.LinearGradient(0f, top + 4f * sc, 0f, top + 36f * sc,
-                if (ui.lightOn) 0xFFE6E6E6.toInt() else 0xFF3A3A3A.toInt(), if (ui.lightOn) 0xFFCFCFCF.toInt() else 0xFF262626.toInt(), android.graphics.Shader.TileMode.CLAMP)
-            c.drawRect(r.left, top + 4f * sc, r.right, top + 36f * sc, ui.p)
-            ui.p.shader = null
-            ui.text(c, shelf.title, r.left + 12f * sc, ui.baselineFor(top + 20f * sc, 20f * sc), 20f * sc, face = ui.medium)
-            val tile = 112f * sc
-            val pitch = 128f * sc
-            val vis = max(1, ((r.width() - 28f * sc) / pitch).toInt())
-            if (hsel[si] < hTarget[si]) hTarget[si] = hsel[si] else if (hsel[si] >= hTarget[si] + vis) hTarget[si] = hsel[si] - vis + 1
-            hAnim[si] += (hTarget[si] - hAnim[si]) * ui.k
-            if (abs(hTarget[si] - hAnim[si]) < 0.004f) hAnim[si] = hTarget[si].toFloat() else ui.busy = true
-            for ((i, t) in shelf.tiles.withIndex()) {
-                val x = r.left + 18f * sc + (i - hAnim[si]) * pitch
-                if (x + tile < r.left || x > r.right) continue
-                val box = RectF(x, top + 46f * sc, x + tile, top + 46f * sc + tile)
-                val sel = shelfSel == si && hsel[si] == i
-                val hit = RectF(box.left - 6f * sc, box.top - 6f * sc, box.right + 6f * sc, box.bottom + 50f * sc)
-                if (sel) ui.highlight(c, hit, 12f)
-                val art = if (sel) RectF(box).apply { inset(4f * sc, 4f * sc) } else box
-                if (t.game != null) drawArt(c, ui, act, shell, t.game, art) else ui.iconFrame(c, art, t.color, t.kind)
-                ui.text(c, t.title, box.centerX(), box.bottom + 20f * sc, 15f * sc, Color.WHITE, Paint.Align.CENTER, tile + 8f * sc)
-                ui.text(c, t.sub, box.centerX(), box.bottom + 38f * sc, 13f * sc, Belle.TEXT_MID, Paint.Align.CENTER, tile + 8f * sc, face = ui.light)
-                hits.add(hit to t)
-            }
+            buildCells()
+            page.draw(c, ui, r)
         }
 
         private fun use(t: Tile) {
@@ -598,30 +646,17 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
         fun act(a: Act): Boolean {
             if (shelves.isEmpty()) return false
-            val sh = shelves[shelfSel]
-            when (a) {
-                Act.UP -> if (shelfSel > 0) shelfSel-- else return false
-                Act.DOWN -> if (shelfSel < shelves.size - 1) shelfSel++ else return false
-                Act.LEFT -> if (shelfSel == 0) hsel[0] = (hsel[0] - 1 + sh.tiles.size) % sh.tiles.size else if (hsel[shelfSel] > 0) hsel[shelfSel]--
-                Act.RIGHT -> if (shelfSel == 0) hsel[0] = (hsel[0] + 1) % sh.tiles.size else if (hsel[shelfSel] < sh.tiles.size - 1) hsel[shelfSel]++
-                Act.OK -> sh.tiles.getOrNull(hsel[shelfSel])?.let { use(it) }
-                else -> return false
-            }
-            return true
+            return page.act(a)
         }
 
-        fun tap(x: Float, y: Float): Boolean {
-            for ((rect, t) in hits) if (rect.contains(x, y)) {
-                use(t)
-                return true
-            }
-            return false
-        }
+        fun tap(r: RectF, x: Float, y: Float): Boolean = page.tap(r, x, y)
 
-        fun focused(): Game? = shelves.getOrNull(shelfSel)?.tiles?.getOrNull(hsel[shelfSel])?.game
+        fun drag(dy: Float) = page.drag(dy)
 
-        fun scroll(d: Int) {
-            shelfSel = (shelfSel + d).coerceIn(0, max(0, shelves.size - 1))
+        fun focused(): Game? = when (val cell = page.cells.getOrNull(page.sel)) {
+            is BannerCell -> cell.game()
+            is ItemCell -> cell.game
+            else -> null
         }
     }
 }
