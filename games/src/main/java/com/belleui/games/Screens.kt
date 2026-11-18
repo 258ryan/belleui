@@ -191,13 +191,14 @@ class RootScreen(private val act: GamesActivity) : Screen() {
     override val title get() = "Games"
     // the Store tab is the Nokia Store client's light page
     override val lightOk: Boolean get() = true
-    override val forceLight: Boolean get() = tab == 0
+    // every page of the app is the Store's light page, so nothing flips between light and dark
+    override val forceLight: Boolean get() = true
     override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
     override val tabs = listOf(TabDef("Store", Ic.HOME), TabDef("Library", Ic.GRID), TabDef("Emulators", Ic.TOOLS))
 
     private val featured = Featured()
-    private val systemList = ListState()
-    private val emuList = ListState()
+    private val systemList = ListState(100f)
+    private val emuList = ListState(100f)
     private var remoteStatus: String? = null
     private var started = false
 
@@ -306,10 +307,8 @@ class RootScreen(private val act: GamesActivity) : Screen() {
             return
         }
         val list = entries()
-        systemList.draw(c, ui, r, list.size) { i ->
-            val e = list[i]
-            Row(e.title, e.sub, iconKind = e.kind, iconColor = e.color, drill = true)
-        }
+        systemList.rowDrawer = { cv, u, rect, i, sel -> val e = list[i]; drawStorePivotRow(cv, u, rect, e.title, e.sub, e.color, e.kind, sel, false, true) }
+        systemList.draw(c, ui, r, list.size) { i -> Row(list[i].title) }
     }
 
     private fun openEntry(i: Int) {
@@ -337,6 +336,7 @@ class RootScreen(private val act: GamesActivity) : Screen() {
 
     private fun drawEmulators(c: Canvas, ui: Ui, r: RectF) {
         val rows = emuRows()
+        emuList.rowDrawer = { cv, u, rect, i, sel -> val rw = rows[i]; drawStorePivotRow(cv, u, rect, rw.title, rw.subtitle, rw.iconColor, if (rw.iconKind >= 0) rw.iconKind else Ic.LIST, sel, rw.dim, rw.drill) }
         emuList.draw(c, ui, r, rows.size) { rows[it] }
     }
 
@@ -990,6 +990,9 @@ class GameScreen(private val act: GamesActivity, game0: Game) : Screen() {
 // ================================================================================================
 
 class SettingsScreen(private val act: GamesActivity) : Screen() {
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
+    override val lightOk: Boolean get() = true
     override val title get() = "Settings"
     private val list = ListState()
 
@@ -1052,6 +1055,9 @@ class SettingsScreen(private val act: GamesActivity) : Screen() {
 }
 
 class FoldersScreen(private val act: GamesActivity) : Screen() {
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF1F1F1.toInt()
+    override val lightOk: Boolean get() = true
     override val title get() = "ROM folders"
     private val list = ListState()
     private var roots = act.prefs.roots

@@ -646,6 +646,8 @@ private fun limitText(sec: Int) = if (sec <= 0) "Off - show all songs" else "Sho
 
 /** Music settings, in Belle SelectionListItem style. */
 class SettingsScreen(private val act: MusicActivity) : Screen() {
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF0F1F2.toInt()
     override val lightOk: Boolean get() = true
     override val title get() = "Settings"
     private val list = ListState()
@@ -706,6 +708,8 @@ class SettingsScreen(private val act: MusicActivity) : Screen() {
 
 /** The folders music is taken from; none chosen means everything on the device. */
 class FoldersScreen(private val act: MusicActivity) : Screen() {
+    override val forceLight: Boolean get() = true
+    override val lightBg: Int? get() = 0xFFF0F1F2.toInt()
     override val lightOk: Boolean get() = true
     override val title get() = "Music folders"
     private val list = ListState()

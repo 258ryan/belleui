@@ -220,3 +220,25 @@ internal class StoreInfoCell(private val label: String, private val value: Strin
         ui.fill(c, RectF(r.left + 4f * sc, r.bottom - 1f, r.right - 4f * sc, r.bottom), 0xFFE0E0E0.toInt())
     }
 }
+
+/** PivotBar as a plain list row (Library, Emulators): an icon frame, a 30 px label, a 24 px light note and the arrow; the blue selection when focused. */
+internal fun drawStorePivotRow(c: Canvas, ui: Ui, r: RectF, title: String, note: String?, color: Int, kind: Int, focused: Boolean, dim: Boolean, arrow: Boolean) {
+    val sc = ui.sc
+    if (focused) storeSelBg(c, ui, r)
+    val box = RectF(r.left + 8f * sc, r.centerY() - 32f * sc, r.left + 72f * sc, r.centerY() + 32f * sc)
+    ui.iconFrame(c, box, color, kind)
+    val x = r.left + 86f * sc
+    val maxW = r.right - x - (if (arrow) 44f else 14f) * sc
+    val white = 0xFFFFFFFF.toInt()
+    val ink = if (dim) 0xFF9A9A9A.toInt() else STORE_INK
+    ui.sel(focused) {
+        if (note.isNullOrEmpty()) {
+            ui.text(c, title, x, ui.baselineFor(r.centerY(), 30f * sc), 30f * sc, if (focused) white else ink, maxW = maxW)
+        } else {
+            ui.text(c, title, x, ui.baselineFor(r.centerY() - 14f * sc, 30f * sc), 30f * sc, if (focused) white else ink, maxW = maxW)
+            ui.text(c, note, x, ui.baselineFor(r.centerY() + 20f * sc, 24f * sc, ui.light), 24f * sc, if (focused) white else STORE_GREY, maxW = maxW, face = ui.light)
+        }
+    }
+    if (arrow) ui.gfx.draw(c, "ns_pivot_arrow", RectF(r.right - 14f * sc - 10f * sc, r.centerY() - 9f * sc, r.right - 14f * sc, r.centerY() + 9f * sc))
+    if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
+}
