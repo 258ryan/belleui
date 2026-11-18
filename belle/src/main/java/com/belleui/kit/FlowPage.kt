@@ -128,8 +128,12 @@ class FlowPage : Flingable {
                 if (i in cells.indices) {
                     sel = i
                     ensureVisible(i)
+                    return true
                 }
-                return true
+                // nothing left to focus that way: scroll the page, so text and rows that cannot take the focus (a description, details) can still be read
+                val before = scroll
+                scroll = clamp(scroll + (if (a == Act.DOWN) 1f else -1f) * viewH * 0.6f)
+                return scroll != before
             }
             Act.OK -> {
                 cells.getOrNull(sel)?.onClick()
