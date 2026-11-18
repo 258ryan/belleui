@@ -3,6 +3,8 @@
     android:sharedUserId="android.uid.systemui">
 
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
+    <!-- the status bar names the app on screen: it must be able to see every app to read its label -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
