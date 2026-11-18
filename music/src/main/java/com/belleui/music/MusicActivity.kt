@@ -8,8 +8,6 @@ import com.belleui.kit.BelleShell
 import com.belleui.kit.Screen
 
 class MusicActivity : BelleActivity() {
-    override val appAccent: Int? get() = 0xFFD2409A.toInt()
-
     val library by lazy { Library(this) }
 
     /** Set when a setting changed what the library should contain; the main screen reloads on return. */

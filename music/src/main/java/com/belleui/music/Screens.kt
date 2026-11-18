@@ -22,7 +22,11 @@ import com.belleui.kit.Ui
 import kotlin.math.max
 import kotlin.math.min
 
-private const val MAGENTA = 0xFFE9338A.toInt()
+// the Belle player uses the theme blue for selection, progress and icons (the real screenshots), not a colour of its own
+private val MAGENTA get() = Belle.BLUE
+
+/** Albums are a list (cover, artist, album), as in the real Belle player; the old cover grid is kept behind this switch. */
+private const val ALBUM_GRID = false
 private const val ORANGE = 0xFFE8761A.toInt()
 private const val GREEN = 0xFF4C9A2E.toInt()
 
@@ -113,7 +117,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 Thread {
                     if (act.library.folders.isNotEmpty()) act.library.indexFolders()
                     act.library.load()
-                    albums = act.library.albums()
+                    albums = act.library.albums().sortedWith(compareBy({ it.second.first().artist.lowercase() }, { it.first.lowercase() }))
                     artists = act.library.artists()
                     genres = act.library.genres()
                     playlists = act.library.playlists()
@@ -138,21 +142,22 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         else -> playlists.size
     }
 
-    override fun tools(): List<Tool> = listOf(
-        Tool(Ic.NOWPLAY, { openNowPlaying() }, Player.current != null),
-        playPauseTool { Player.toggle() },
-    )
+    private fun shuffleAll() {
+        val all = act.library.tracks
+        if (all.isEmpty()) return
+        Player.shuffle = true
+        Player.playQueue(act, all, (all.indices).random())
+        openNowPlaying()
+    }
+
+    // the real toolbar: back, shuffle, menu (Now playing joins it while something plays)
+    override fun tools(): List<Tool> =
+        listOf(Tool(Ic.SHUFFLE, { shuffleAll() }, state == 1 && act.library.tracks.isNotEmpty())) +
+            (if (Player.current != null) listOf(Tool(Ic.NOWPLAY, { openNowPlaying() })) else emptyList())
 
     override fun menu(): List<MenuItem> {
         val items = ArrayList<MenuItem>()
-        if (state == 1 && act.library.tracks.isNotEmpty()) {
-            items.add(MenuItem("Shuffle all") {
-                Player.shuffle = true
-                val all = act.library.tracks
-                Player.playQueue(act, all, (all.indices).random())
-                openNowPlaying()
-            })
-        }
+        if (state == 1 && act.library.tracks.isNotEmpty()) items.add(MenuItem("Shuffle play all") { shuffleAll() })
         if (Player.current != null) items.add(MenuItem("Go to Now playing") { openNowPlaying() })
         items.add(MenuItem("Refresh") { request() })
         items.add(MenuItem("Settings") { shell.push(SettingsScreen(act)) })
@@ -171,7 +176,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         when (state) {
             0 -> message(c, ui, r, "Loading music...")
             2 -> message(c, ui, r, com.belleui.kit.Keys.hint("Music needs access to your audio files.\nPress A to allow."))
-            else -> if (count() == 0) message(c, ui, r, when (tab) { 3 -> "No genres"; 4 -> "No playlists"; else -> "No music found" }) else if (tab == 1) drawAlbums(c, ui, b) else {
+            else -> if (count() == 0) message(c, ui, r, when (tab) { 3 -> "No genres"; 4 -> "No playlists"; else -> "No music found" }) else if (ALBUM_GRID && tab == 1) drawAlbums(c, ui, b) else {
                 lists[tab].draw(c, ui, b, count()) { i -> rowAt(i) }
                 alpha[tab].set((0 until count()).mapNotNull { lists[tab].sectionOf?.invoke(it) })
                 alpha[tab].draw(c, ui, b, lists[tab].sectionOf?.let { f -> (lists[tab].sel downTo 0).firstNotNullOfOrNull { f(it) } })
@@ -218,9 +223,10 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     private fun rowAt(i: Int): Row {
         val gfx = shell.ui.gfx
         return when (tab) {
-            0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = cover(it, gfx.get("qgn_indi_mp_vc_song")), iconKind = Ic.NOTE, iconColor = MAGENTA, right = it.durText) }
+            0 -> act.library.tracks[i].let { Row(it.title, it.sub, icon = cover(it, gfx.get("qgn_indi_mp_vc_song")), iconKind = Ic.NOTE, iconColor = MAGENTA) }
             3 -> genres[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_album"), iconKind = Ic.ALBUMS, iconColor = GREEN, drill = true) }
             4 -> playlists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = gfx.get("qgn_indi_mp_vc_playlist"), iconKind = Ic.LIST, iconColor = MAGENTA, drill = true) }
+            1 -> albums[i].let { (name, ts) -> Row(ts.first().artist, name, icon = cover(ts.first(), gfx.get("qgn_indi_mp_vc_album")), iconKind = Ic.DISC, iconColor = MAGENTA, drill = true) }
             else -> artists[i].let { (name, ts) -> Row(name, "${ts.size} songs", icon = cover(ts.first(), gfx.get("qgn_indi_mp_vc_artist")), iconKind = Ic.PERSON, iconColor = GREEN, drill = true) }
         }
     }
@@ -246,7 +252,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
             return true
         }
         if (state != 1 || count() == 0) return false
-        if (tab == 1) {
+        if (ALBUM_GRID && tab == 1) {
             if (a == Act.OK) {
                 open(albumGrid.sel)
                 return true
@@ -270,7 +276,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
         }
         if (mini.tap(x, y, shell)) return true
         val r = contentRect()
-        if (tab == 1) {
+        if (ALBUM_GRID && tab == 1) {
             val i = albumGrid.hit(r, x, y, albums.size)
             if (i < 0) return false
             albumGrid.sel = i
@@ -289,7 +295,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
     }
 
     override fun onScroll(dy: Float) {
-        if (tab == 1) {
+        if (ALBUM_GRID && tab == 1) {
             albumGrid.scrollBy(if (dy > 0) 1 else -1, albums.size, contentRect())
             return
         }
@@ -325,7 +331,7 @@ class TrackListScreen(private val act: MusicActivity, private val name: String, 
     override fun draw(c: Canvas, ui: Ui, r: RectF) {
         list.draw(c, ui, r, tracks.size) { i ->
             val t = tracks[i]
-            Row(t.title, t.artist, icon = ui.gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA, right = t.durText)
+            Row(t.title, t.artist, icon = ui.gfx.get("qgn_indi_mp_vc_song"), iconKind = Ic.NOTE, iconColor = MAGENTA)
         }
     }
 
