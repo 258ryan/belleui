@@ -22,6 +22,12 @@ if [ "$n" -ge 3 ] && [ ! -f $D/guard_tripped ]; then
   touch $D/guard_tripped
   echo "$(date): $n unconfirmed boots: framework overlay and system font switched off" >> $D/sysui.log
 fi
+# The Belle layout of Android's own dialogs (dialogs-overlay) is the newest and riskiest piece, so it goes first: on the 2nd unconfirmed boot.
+# That tells you what broke: if the phone then boots, it was the dialog layout. Back on with reset_guard=1 (belleui.conf) or by deleting $D/dialogs_tripped.
+if [ "$n" -ge 2 ] && [ ! -f $D/dialogs_tripped ]; then
+  touch $D/dialogs_tripped
+  echo "$(date): $n unconfirmed boots: the Belle dialog layout is switched off (dialogs_tripped)" >> $D/sysui.log
+fi
 if [ "$n" -ge 4 ]; then
   variant=none
   echo "$(date): $n unconfirmed boots, using the stock System UI" >> $D/sysui.log
@@ -41,6 +47,14 @@ if [ ! -f $D/guard_tripped ]; then
     cp $MODDIR/extra/framework/BelleUIFramework.apk $MODDIR/system/product/overlay/BelleUIFramework.apk
     chmod 755 $MODDIR/system/product $MODDIR/system/product/overlay
     chmod 644 $MODDIR/system/product/overlay/BelleUIFramework.apk
+    chown -R 0:0 $MODDIR/system/product
+    chcon -R u:object_r:system_file:s0 $MODDIR/system/product 2>/dev/null
+  fi
+  if [ "$dialogs" != "0" ] && [ ! -f $D/dialogs_tripped ] && [ -f $MODDIR/extra/framework/BelleUIDialogs.apk ]; then
+    mkdir -p $MODDIR/system/product/overlay
+    cp $MODDIR/extra/framework/BelleUIDialogs.apk $MODDIR/system/product/overlay/BelleUIDialogs.apk
+    chmod 755 $MODDIR/system/product $MODDIR/system/product/overlay
+    chmod 644 $MODDIR/system/product/overlay/BelleUIDialogs.apk
     chown -R 0:0 $MODDIR/system/product
     chcon -R u:object_r:system_file:s0 $MODDIR/system/product 2>/dev/null
   fi

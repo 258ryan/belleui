@@ -20,6 +20,8 @@ install_vector_module=1
 # the Android framework in Belle dress: 1 = on (default), 0 = off. They act on the whole system, so after three boots that
 # do not come up they are switched off by themselves (until you delete /data/adb/belleui/guard_tripped)
 framework=1
+# the Belle layout of Android's own dialogs (blue title, equal buttons): 1 = on (default), 0 = off. The boot guard switches it off first, after 2 unconfirmed boots.
+dialogs=1
 font=1
 EOT
 fi
@@ -115,7 +117,7 @@ fi
 SD=/sdcard/Download
 CF=$SD/belleui.conf
 if [ -f $CF ]; then
-  for k in framework font system_ui set_default_home set_default_keyboard install_system_ui; do
+  for k in framework dialogs font system_ui set_default_home set_default_keyboard install_system_ui; do
     v=$(grep -E "^$k=" $CF | tail -1 | cut -d= -f2 | tr -d '\r ')
     if [ -n "$v" ]; then
       sed -i "/^$k=/d" $CONF
@@ -124,7 +126,7 @@ if [ -f $CF ]; then
     fi
   done
   if grep -q '^reset_guard=1' $CF; then
-    rm -f $DIR/guard_tripped $MODDIR/skip_mount
+    rm -f $DIR/guard_tripped $DIR/dialogs_tripped $MODDIR/skip_mount
     echo 0 > $DIR/sysui_boots
     echo "$(date): guard reset (from belleui.conf)" >> $DIR/sysui.log
   fi
@@ -150,6 +152,7 @@ rm -f $DIR/crash_collected_stale 2>/dev/null
   echo "date: $(date)"
   echo "module: $(grep '^version=' $MODDIR/module.prop)"
   echo "variant: $(cat $DIR/variant 2>/dev/null)   boots unconfirmed: $(cat $DIR/sysui_boots 2>/dev/null)"
+  echo "dialogs_tripped: $([ -f $DIR/dialogs_tripped ] && echo yes || echo no)   dialogs=${dialogs:-1}"
   echo "guard_tripped: $([ -f $DIR/guard_tripped ] && echo yes || echo no)   skip_mount: $([ -f $MODDIR/skip_mount ] && echo yes || echo no)"
   echo "--- config"; cat $CONF
   echo "--- overlay in module:"; ls -la $MODDIR/system/product/overlay 2>&1

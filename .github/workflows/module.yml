@@ -54,6 +54,10 @@ jobs:
           mkdir -p module/extra/framework module/extra/fonts
           cp framework-overlay/build/outputs/apk/debug/framework-overlay-debug.apk module/extra/framework/BelleUIFramework.apk
           cp belle/src/main/assets/fonts/nosnr60.ttf belle/src/main/assets/fonts/nssb60.ttf module/extra/fonts/
+          # the Belle layout of Android's own dialogs: its own overlay (built against the ROM's framework, see dialogs-overlay/build.sh), signed with the platform key
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          $BT/zipalign -f -p 4 dialogs-overlay/BelleUIDialogs-unsigned.apk dialogs-aligned.apk
+          $BT/apksigner sign --ks keystore/aosp-platform.jks --ks-pass pass:android --ks-key-alias platform --key-pass pass:android --out module/extra/framework/BelleUIDialogs.apk dialogs-aligned.apk
           mkdir -p module/system/system_ext/etc/permissions
           cp magisk/sysui/system/system_ext/etc/permissions/privapp-permissions-belleui-sysui.xml module/system/system_ext/etc/permissions/
           rm -f module/README.md

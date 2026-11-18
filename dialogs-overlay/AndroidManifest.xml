@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.belleui.overlay.dialogs">
+    <!-- the Belle dialog layout (blue title with a rule, equal flush buttons) as its own overlay, so it can be switched off alone: config dialogs=0, or the boot guard after 2 failed boots -->
+    <overlay android:isStatic="true" android:priority="1001" android:targetPackage="android" />
+    <application android:hasCode="false" android:label="Belle dialogs" />
+</manifest>
