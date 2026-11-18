@@ -542,9 +542,11 @@ class RootScreen(private val act: GamesActivity) : Screen() {
                 val x = r.left + 12f * sc
                 val maxW = box.left - x - 8f * sc
                 val played = (act.prefs.peek(g.rep.path)?.launches ?: 0) > 0
-                ui.text(c, if (played) "CONTINUE PLAYING" else "FEATURED", x, r.top + 30f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
-                ui.text(c, g.title, x, r.top + 66f * sc, 30f * sc, 0xFFFFFFFF.toInt(), maxW = maxW)
-                ui.text(c, info(g), x, r.top + 98f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
+                ui.onDark {
+                    ui.text(c, if (played) "CONTINUE PLAYING" else "FEATURED", x, r.top + 30f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
+                    ui.text(c, g.title, x, r.top + 66f * sc, 30f * sc, 0xFFFFFFFF.toInt(), maxW = maxW)
+                    ui.text(c, info(g), x, r.top + 98f * sc, 24f * sc, 0xFFB5B5B6.toInt(), maxW = maxW, face = ui.light)
+                }
                 // which of the featured games this is
                 val n = heroes.size
                 for (i in 0 until n) {
@@ -585,12 +587,16 @@ class RootScreen(private val act: GamesActivity) : Screen() {
                 val x = r.left + 100f * sc
                 val maxW = r.right - x - 14f * sc
                 val white = 0xFFFFFFFF.toInt()
-                ui.text(c, g.title, x, r.top + 5f * sc + 26f * sc, 30f * sc, if (focused) white else ink, maxW = maxW)
+                val sel = focused
+                fun tx(s: String, px: Float, py: Float, size: Float, col: Int, al: Paint.Align = Paint.Align.LEFT, mw: Float = 0f, face: android.graphics.Typeface = ui.sans) {
+                    if (sel) ui.onDark { ui.text(c, s, px, py, size, col, al, mw, face) } else ui.text(c, s, px, py, size, col, al, mw, face)
+                }
+                tx(g.title, x, r.top + 5f * sc + 26f * sc, 30f * sc, if (focused) white else ink, mw = maxW)
                 val launches = act.prefs.peek(g.rep.path)?.launches ?: 0
                 val right = if (launches > 0) "Played ${launches}x" else ""
                 val rw = if (right.isEmpty()) 0f else ui.measure(right, 24f * sc, ui.light) + 10f * sc
-                ui.text(c, info(g), x, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, maxW = maxW - rw, face = ui.light)
-                if (right.isNotEmpty()) ui.text(c, right, r.right - 14f * sc, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, Paint.Align.RIGHT, face = ui.light)
+                tx(info(g), x, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, mw = maxW - rw, face = ui.light)
+                if (right.isNotEmpty()) tx(right, r.right - 14f * sc, r.top + 5f * sc + 26f * sc + 28f * sc, 24f * sc, if (focused) white else grey, Paint.Align.RIGHT, face = ui.light)
                 val rating = g.rep.meta?.rating ?: 0f
                 if (rating > 0f) stars(c, ui, x, r.bottom - 12f * sc - 16f * sc, rating)
                 if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
@@ -607,8 +613,11 @@ class RootScreen(private val act: GamesActivity) : Screen() {
                 val box = RectF(r.left + 8f * sc, r.centerY() - 28f * sc, r.left + 64f * sc, r.centerY() + 28f * sc)
                 ui.iconFrame(c, box, tile.color, tile.kind)
                 val x = r.left + 76f * sc
-                ui.text(c, tile.title, x, ui.baselineFor(r.centerY() - 10f * sc, 30f * sc), 30f * sc, if (focused) 0xFFFFFFFF.toInt() else ink, maxW = r.right - x - 44f * sc)
-                ui.text(c, tile.sub, x, ui.baselineFor(r.centerY() + 18f * sc, 24f * sc, ui.light), 24f * sc, if (focused) 0xFFFFFFFF.toInt() else grey, maxW = r.right - x - 44f * sc, face = ui.light)
+                val draw = {
+                    ui.text(c, tile.title, x, ui.baselineFor(r.centerY() - 10f * sc, 30f * sc), 30f * sc, if (focused) 0xFFFFFFFF.toInt() else ink, maxW = r.right - x - 44f * sc)
+                    ui.text(c, tile.sub, x, ui.baselineFor(r.centerY() + 18f * sc, 24f * sc, ui.light), 24f * sc, if (focused) 0xFFFFFFFF.toInt() else grey, maxW = r.right - x - 44f * sc, face = ui.light)
+                }
+                if (focused) ui.onDark { draw() } else draw()
                 ui.gfx.draw(c, "ns_pivot_arrow", RectF(r.right - 14f * sc - 10f * sc, r.centerY() - 9f * sc, r.right - 14f * sc, r.centerY() + 9f * sc))
                 if (!focused) ui.fill(c, RectF(r.left, r.bottom - 1f, r.right, r.bottom), 0xFFD9D9D9.toInt())
             }

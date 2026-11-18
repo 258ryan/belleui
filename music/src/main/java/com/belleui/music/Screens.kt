@@ -217,7 +217,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 if (bmp != null) c.restore()
                 // the name bar
                 ui.fill(c, RectF(box.left, box.bottom - 26f * sc, box.right, box.bottom), 0xCC000000.toInt())
-                ui.text(c, t.first, box.left + 10f * sc, ui.baselineFor(box.bottom - 13f * sc, 18f * sc), 18f * sc, 0xFFFFFFFF.toInt(), maxW = box.width() - 20f * sc)
+                ui.onDark { ui.text(c, t.first, box.left + 10f * sc, ui.baselineFor(box.bottom - 13f * sc, 18f * sc), 18f * sc, 0xFFFFFFFF.toInt(), maxW = box.width() - 20f * sc) }
                 if (focused && i == hsel) {
                     ui.p.style = Paint.Style.STROKE
                     ui.p.strokeWidth = 4f * sc
@@ -264,7 +264,7 @@ class RootScreen(private val act: MusicActivity) : Screen() {
                 c.drawPath(path, ui.p)
                 ui.p.shader = null
                 if (i > 0) { ui.p.color = 0xFF111111.toInt(); c.drawRect(seg.left, seg.top, seg.left + 1f * sc, seg.bottom, ui.p) }
-                ui.text(c, modeNames[i], seg.centerX(), ui.baselineFor(seg.centerY(), 20f * sc), 20f * sc, 0xFFFFFFFF.toInt(), Paint.Align.CENTER, maxW = seg.width() - 6f * sc)
+                ui.onDark { ui.text(c, modeNames[i], seg.centerX(), ui.baselineFor(seg.centerY(), 20f * sc), 20f * sc, 0xFFFFFFFF.toInt(), Paint.Align.CENTER, maxW = seg.width() - 6f * sc) }
             }
             if (focused) {
                 ui.p.style = Paint.Style.STROKE
