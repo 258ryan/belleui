@@ -393,7 +393,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         }
         // the Belle Now playing view: album art left; artist, title and album, the bar and three big buttons right
         val pad = 20f * ui.sc
-        val side = min(r.height() - 2 * pad, 214f * ui.sc)
+        val side = min(r.height() - 2 * pad, 300f * ui.sc)
         val art = RectF(r.left + pad, r.top + pad, r.left + pad + side, r.top + pad + side)
         val bmp = ArtCache.peek(t)
         if (bmp != null) {
@@ -414,7 +414,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
 
         val x = art.right + pad
         val maxW = r.right - x - pad
-        var y = art.top + 24f * ui.sc
+        var y = art.top + 34f * ui.sc
         // artist, title and album are centred, the title the largest, as in the Belle player
         val mid = x + maxW / 2f
         ui.text(c, t.artist, mid, y, 19f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = maxW, face = ui.light)
@@ -423,7 +423,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         y += 28f * ui.sc
         ui.text(c, t.album, mid, y, 18f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, maxW = maxW, face = ui.light)
 
-        val barY = art.top + 112f * ui.sc
+        val barY = r.top + r.height() * 0.46f
         progress.set(x, barY, x + maxW, barY + 26f * ui.sc)
         ui.progressBar(c, progress, if (Player.duration > 0) pos.toFloat() / Player.duration else 0f)
         ui.text(c, fmtTime(pos), x, barY + 44f * ui.sc, 18f * ui.sc, Color.WHITE, face = ui.light)
@@ -437,7 +437,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
         ui.p.shader = null
 
         // transport: previous, play / pause, next as round keys (shuffle and repeat live in the toolbar)
-        val bt = art.top + 204f * ui.sc
+        val bt = r.top + r.height() * 0.80f
         val cxm = x + maxW / 2f
         val dx = min(112f * ui.sc, maxW * 0.34f)
         val ds = floatArrayOf(66f * ui.sc, 92f * ui.sc, 66f * ui.sc)
@@ -447,7 +447,7 @@ class NowPlayingScreen(private val act: MusicActivity) : Screen() {
             val hh = ds[i] / 2f + 4f * ui.sc
             transport[i + 1].set(xs[i] - hh, bt - hh, xs[i] + hh, bt + hh)
         }
-        ui.text(c, "${Player.index + 1} of ${Player.queue.size}", x, art.bottom + 2f * ui.sc, 16f * ui.sc, Belle.TEXT_MID, face = ui.light)
+        ui.text(c, "${Player.index + 1} of ${Player.queue.size}", mid, y + 26f * ui.sc, 15f * ui.sc, Belle.TEXT_MID, Paint.Align.CENTER, face = ui.light)
 
         // transient volume indicator
         if (SystemClock.uptimeMillis() < volumeUntil) {
