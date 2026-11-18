@@ -3,5 +3,7 @@
     <!-- lets every Belle app read the theme colour and sound setting offered by Styles -->
     <queries>
         <provider android:authorities="com.belleui.styles.theme" />
+        <!-- the apps tell the Belle status bar (System UI) what their screen is called; without this Android hides it from apps that are not privileged -->
+        <package android:name="com.android.systemui" />
     </queries>
 </manifest>
