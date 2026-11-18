@@ -1653,7 +1653,7 @@ class LauncherView(private val act: Activity) : View(act) {
             out.set(sub)
             out.inset(-5f * sc, -5f * sc)
         } else {
-            out.set(it.rect)
+            out.set(if (it.widget && it.type == 0) flipBox(it.rect) else it.rect)
             out.inset(-4f * sc, -3f * sc)
         }
         return out
@@ -1817,12 +1817,7 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun homeTap(x: Float, y: Float, selectOnly: Boolean): Boolean {
         layoutHome()
         // the flip clock is drawn taller than its cell (the tiles hang 14 px below the top and run past the bottom): its hit area is the drawn tiles
-        fun hitRect(it: HomeItem): RectF {
-            if (!it.widget || it.type != 0) return it.rect
-            val bw = min(400f * sc, width - 8f * sc)
-            val bottom = it.rect.top + 14f * sc + bw / (624f / 254f)
-            return RectF(it.rect.left, it.rect.top, it.rect.right, max(it.rect.bottom, bottom))
-        }
+        fun hitRect(it: HomeItem): RectF = if (it.widget && it.type == 0) flipBox(it.rect) else it.rect
         val idx = homeItems.indexOfLast { hitRect(it).contains(x, y) }
         if (homeEdit) {
             val cur = homeItems.getOrNull(homeIdx)
@@ -2263,6 +2258,12 @@ class LauncherView(private val act: Activity) : View(act) {
     }
 
     /** Two flip cards: the Belle digital clock widget background and clock digits, with the AM/PM mark and the date. */
+    /** Where the flip clock's two tiles are drawn inside its widget cell [r]: the focus and the touch area follow this, not the whole cell. */
+    private fun flipBox(r: RectF): RectF {
+        val bw = min(400f * sc, width - 8f * sc)
+        return RectF(r.centerX() - bw / 2f, r.top + 14f * sc, r.centerX() + bw / 2f, r.top + 14f * sc + bw / (624f / 254f))
+    }
+
     private fun drawFlip(c: Canvas, r: RectF) {
         val hh = clockStr.substringBefore(':')
         val mm = clockStr.substringAfter(':', "00")
@@ -2272,9 +2273,7 @@ class LauncherView(private val act: Activity) : View(act) {
         }
         // the widget picture keeps its own proportions, centred
         // the reference: two tiles about 392 x 152 px, centred, the top 17 px below the widget's top edge (they may reach past it)
-        val bgAspect = 624f / 254f
-        val bw = min(400f * sc, width - 8f * sc)
-        val box = RectF(r.centerX() - bw / 2f, r.top + 14f * sc, r.centerX() + bw / 2f, r.top + 14f * sc + bw / bgAspect)
+        val box = flipBox(r)
         if (!gfx.draw(c, "qgn_graf_hs_digital_bg_8x3", box)) {
             darkCard(c, RectF(box.left, box.top, box.centerX() - 4f * sc, box.bottom), 14f * sc)
             darkCard(c, RectF(box.centerX() + 4f * sc, box.top, box.right, box.bottom), 14f * sc)
