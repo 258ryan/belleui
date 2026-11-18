@@ -172,6 +172,19 @@ class BelleGfx(private val ctx: Context) {
         return true
     }
 
+    /** Draws [name] inside [to] at its own proportions (centred, never stretched); false when there is no such graphic. */
+    fun fit(c: Canvas, name: String, to: RectF, alpha: Int = 255): Boolean {
+        val bmp = get(name) ?: return false
+        val s = min(to.width() / bmp.width, to.height() / bmp.height)
+        val w = bmp.width * s
+        val h = bmp.height * s
+        dst.set(to.centerX() - w / 2f, to.centerY() - h / 2f, to.centerX() + w / 2f, to.centerY() + h / 2f)
+        paint.alpha = alpha
+        c.drawBitmap(bmp, null, dst, paint)
+        paint.alpha = 255
+        return true
+    }
+
     /** Draws a graphic at its natural 1x size scaled by [scale], top-left at (x, y). */
     fun draw(c: Canvas, name: String, to: RectF, alpha: Int = 255): Boolean {
         val bmp = get(name) ?: return false

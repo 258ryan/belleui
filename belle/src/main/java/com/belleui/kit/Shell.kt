@@ -27,7 +27,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** Gamepad / keyboard actions. TOOL1 and TOOL2 are the two customisable toolbar buttons. */
-enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, TOOL1, TOOL2, PREV, NEXT }
+enum class Act { UP, DOWN, LEFT, RIGHT, OK, BACK, OPTIONS, TOOL1, TOOL2, TOOL3, PREV, NEXT }
 
 object Keys {
     /** How many times the key being handled has repeated (0 for the first press). */
@@ -1047,7 +1047,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     // ---- input --------------------------------------------------------------------------------
 
     private fun toolKinds(): IntArray {
-        val tools = screen.tools().take(2)
+        val tools = screen.tools().take(3)
         val k = IntArray(2 + tools.size)
         k[0] = Ic.BACK
         for ((i, t) in tools.withIndex()) k[1 + i] = t.kind
@@ -1070,7 +1070,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
             when (best) {
                 0 -> perform(Act.BACK)
                 kinds.size - 1 -> perform(Act.OPTIONS)
-                else -> perform(if (best == 1) Act.TOOL1 else Act.TOOL2)
+                else -> perform(when (best) { 1 -> Act.TOOL1; 2 -> Act.TOOL2; else -> Act.TOOL3 })
             }
             return
         }
@@ -1122,7 +1122,7 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
     private fun isNavKey(a: Act) = a == Act.UP || a == Act.DOWN || a == Act.LEFT || a == Act.RIGHT || a == Act.OK
 
     private fun soundFor(a: Act): Int = when (a) {
-        Act.OK, Act.TOOL1, Act.TOOL2 -> Sounds.SELECT
+        Act.OK, Act.TOOL1, Act.TOOL2, Act.TOOL3 -> Sounds.SELECT
         Act.BACK -> Sounds.BACK
         Act.OPTIONS -> Sounds.OPEN
         else -> Sounds.TICK
@@ -1155,6 +1155,10 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
             }
             Act.TOOL2 -> {
                 s.tools().getOrNull(1)?.let { if (it.enabled) it.onClick() }
+                true
+            }
+            Act.TOOL3 -> {
+                s.tools().getOrNull(2)?.let { if (it.enabled) it.onClick() }
                 true
             }
             Act.BACK -> {
@@ -1247,12 +1251,12 @@ class BelleShell(val activity: BelleActivity) : View(activity) {
             Belle.publishTitle(activity, s.title)
         }
 
-        val tools = s.tools().take(2)
+        val tools = s.tools().take(3)
         val kinds = toolKinds()
         val enabled = BooleanArray(kinds.size) { i -> if (i == 0 || i == kinds.size - 1) true else tools[i - 1].enabled }
         val letters = arrayOfNulls<String>(kinds.size)
         letters[0] = if (swapPad) "A" else "B"
-        for (i in tools.indices) letters[1 + i] = if (i == 0) (if (swapPad) "X" else "Y") else "St"
+        for (i in tools.indices) letters[1 + i] = when (i) { 0 -> if (swapPad) "X" else "Y"; 1 -> "St"; else -> null }
         letters[kinds.size - 1] = if (swapPad) "Y" else "X"
         ui.toolbar(c, w, h - Belle.TOOL_H * ui.sc, kinds, enabled, letters)
 

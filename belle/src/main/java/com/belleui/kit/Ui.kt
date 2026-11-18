@@ -183,6 +183,13 @@ object Ic {
     const val SYNC = 90
     const val CALL = 91
     const val UNMARK = 92
+    const val NM_PREV = 200
+    const val NM_NEXT = 201
+    const val NM_PLAY = 202
+    const val NM_PAUSE = 203
+    const val NM_HOME = 204
+    const val NM_LIST = 205
+    const val NM_SEARCH = 206
 
     val stock = mapOf(
         BACK to "toolbar_back", MENU to "toolbar_menu", SETTINGS to "toolbar_settings", ADD to "toolbar_add",
@@ -205,6 +212,8 @@ object Ic {
         DETAILS to "qtg_toolbar_details", SORT to "qgn_indi_tb_fmgr_sort", EJECT to "qgn_indi_tb_fmgr_eject",
         BLUETOOTH to "qtg_toolbar_bluetooth_on", SIGNAL to "qtg_toolbar_signal_on", LOCK to "qtg_toolbar_lock",
         SYNC to "qtg_toolbar_sync", CALL to "qtg_toolbar_call", UNMARK to "qtg_toolbar_unmark",
+        // the Nokia Music client's own toolbar icons (rendered from its SVGs)
+        NM_PREV to "nm_prev", NM_NEXT to "nm_next", NM_PLAY to "nm_play", NM_PAUSE to "nm_pause", NM_HOME to "nm_home", NM_LIST to "nm_list", NM_SEARCH to "nm_search",
     )
 }
 
