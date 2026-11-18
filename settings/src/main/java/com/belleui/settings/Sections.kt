@@ -91,7 +91,7 @@ class RootScreen(act: SettingsActivity) : RowsScreen(act) {
             Row("Developer options", "USB debugging, animations, touches", icon = g.get("qgn_prop_set_apps_usb"), drill = true),
             Row("Power & restart", "Restart, recovery, quick reboot (root)", icon = g.get("qgn_indi_battery_strength"), drill = true),
             Row("This console", "Controls, USB mode, game mode, SD card check", icon = g.get("qgn_prop_set_default_sub"), drill = true),
-            Row("Connected devices", "Bluetooth, USB, pairing", icon = g.get("qgn_prop_set_conn_sub"), drill = true),
+            Row("Connected devices", "Bluetooth, USB, pairing", icon = g.get("qgn_menu_bt"), drill = true),
             Row("Privacy", "Permissions, usage, ads", icon = g.get("qgn_prop_set_device_sub"), drill = true),
             Row("System", "Languages, backup, reset, updates", icon = g.get("qgn_prop_set_gene_sub"), drill = true),
             Row("Android settings", "Everything else", icon = g.get("qgn_prop_set_apps_sub"), drill = true),
@@ -749,32 +749,32 @@ class PerformanceScreen(act: SettingsActivity) : RowsScreen(act) {
 class ConsoleScreen(act: SettingsActivity) : RowsScreen(act) {
     override val title get() = "This console"
 
-    private class Tool(val title: String, val sub: String, val pkg: String, val cls: String)
+    private class Tool(val title: String, val sub: String, val pkg: String, val cls: String, val icon: String)
 
     private val tools = listOf(
-        Tool("Quick start guide", "Buttons, shortcuts, your games", "org.andr36oid.guide", ".GuideActivity"),
-        Tool("Controls", "Button mapping, sticks, controllers", "org.andr36oid.controllers", ".ControllersActivity"),
-        Tool("Game mode", "Comfort and game settings", "org.andr36oid.gamecomfort", ".GameModeActivity"),
-        Tool("Performance overlay", "Show FPS, CPU and temperature", "org.andr36oid.perfoverlay", ".OverlayActivity"),
-        Tool("CPU overclock", "CPU speed limit and overclock", "org.andr36oid.cpuoverclock", ".OverclockActivity"),
-        Tool("Kernel tweaks", "Advanced kernel options", "org.andr36oid.kerneltweaks", ".KernelTweaksActivity"),
-        Tool("USB mode (beta)", "How this console acts over USB", "org.andr36oid.usbmode", ".UsbModeActivity"),
-        Tool("SD card check", "Test the memory card", "org.andr36oid.cardcheck", ".CardActivity"),
-        Tool("Save backup", "Back up saves and states", "org.andr36oid.savebackup", ".MainActivity"),
-        Tool("Play time", "How long you played", "org.andr36oid.playtime", ".PlayTimeActivity"),
-        Tool("Free up space", "Storage care", "org.andr36oid.storagecare", ".FreeSpaceActivity"),
-        Tool("Battery details", "Health and usage", "org.andr36oid.batterydetails", ".DetailsActivity"),
-        Tool("Status light", "LED and light effects", "org.andr36oid.statuslight", ".StatusLightActivity"),
-        Tool("Deep sleep", "Sleep behaviour", "org.andr36oid.deepsleep", ".DeepSleepActivity"),
-        Tool("Look", "Personalisation", "org.andr36oid.look", ".LookActivity"),
-        Tool("BIOS check", "Check emulator BIOS files", "org.andr36oid.bioscheck", ".BiosActivity"),
-        Tool("Ethernet", "Wired network", "org.andr36oid.ethernet", ".EthernetActivity"),
-        Tool("Report a problem", "Collect a report", "org.andr36oid.report", ".ReportActivity"),
+        Tool("Quick start guide", "Buttons, shortcuts, your games", "org.andr36oid.guide", ".GuideActivity", "qgn_menu_about"),
+        Tool("Controls", "Button mapping, sticks, controllers", "org.andr36oid.controllers", ".ControllersActivity", "qgn_prop_set_gene_sensor"),
+        Tool("Game mode", "Comfort and game settings", "org.andr36oid.gamecomfort", ".GameModeActivity", "qgn_prop_set_default_sub"),
+        Tool("Performance overlay", "Show FPS, CPU and temperature", "org.andr36oid.perfoverlay", ".OverlayActivity", "qgn_prop_set_gene_sub"),
+        Tool("CPU overclock", "CPU speed limit and overclock", "org.andr36oid.cpuoverclock", ".OverclockActivity", "qgn_prop_set_gene_sub"),
+        Tool("Kernel tweaks", "Advanced kernel options", "org.andr36oid.kerneltweaks", ".KernelTweaksActivity", "qgn_menu_group_tools"),
+        Tool("USB mode (beta)", "How this console acts over USB", "org.andr36oid.usbmode", ".UsbModeActivity", "qgn_prop_set_apps_usb"),
+        Tool("SD card check", "Test the memory card", "org.andr36oid.cardcheck", ".CardActivity", "qgn_prop_fmgr_memc_sub"),
+        Tool("Save backup", "Back up saves and states", "org.andr36oid.savebackup", ".MainActivity", "qgn_prop_set_apps_sub"),
+        Tool("Play time", "How long you played", "org.andr36oid.playtime", ".PlayTimeActivity", "qgn_menu_wclk"),
+        Tool("Free up space", "Storage care", "org.andr36oid.storagecare", ".FreeSpaceActivity", "qgn_prop_fmgr_phone_memc_sub"),
+        Tool("Battery details", "Health and usage", "org.andr36oid.batterydetails", ".DetailsActivity", "qgn_indi_battery_strength"),
+        Tool("Status light", "LED and light effects", "org.andr36oid.statuslight", ".StatusLightActivity", "qgn_prop_set_gene_phone"),
+        Tool("Deep sleep", "Sleep behaviour", "org.andr36oid.deepsleep", ".DeepSleepActivity", "qgn_prop_set_datim_sub"),
+        Tool("Look", "Personalisation", "org.andr36oid.look", ".LookActivity", "qgn_menu_theme"),
+        Tool("BIOS check", "Check emulator BIOS files", "org.andr36oid.bioscheck", ".BiosActivity", "qgn_prop_set_device_sub"),
+        Tool("Ethernet", "Wired network", "org.andr36oid.ethernet", ".EthernetActivity", "qgn_prop_set_network_sub"),
+        Tool("Report a problem", "Collect a report", "org.andr36oid.report", ".ReportActivity", "qgn_menu_about"),
     )
 
     private fun installed(t: Tool) = try { act.packageManager.getPackageInfo(t.pkg, 0); true } catch (_: Exception) { false }
 
-    override fun rows(): List<Row> = tools.map { Row(it.title, it.sub, iconKind = com.belleui.kit.Ic.PLAY, iconColor = Belle.BLUE, drill = true, dim = !installed(it)) }
+    override fun rows(): List<Row> = tools.map { Row(it.title, it.sub, icon = shell.ui.gfx.get(it.icon), iconKind = com.belleui.kit.Ic.LIST, iconColor = Belle.BLUE, drill = true, dim = !installed(it)) }
 
     override fun open(i: Int) {
         val t = tools.getOrNull(i) ?: return
