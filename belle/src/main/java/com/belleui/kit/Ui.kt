@@ -906,6 +906,7 @@ class Ui(val ctx: Context) {
         p.color = al(Color.BLACK, 120)
         rf.set(r.left - 3f * sc, r.top - 1f * sc, r.right + 3f * sc, r.bottom + 6f * sc)
         c.drawRoundRect(rf, rad + 3f * sc, rad + 3f * sc, p)
+        p.color = Color.BLACK // the shadow's alpha must not leak into the (opaque) plate
         p.shader = LinearGradient(0f, r.top, 0f, r.bottom, intArrayOf(0xFF525252.toInt(), 0xFF303030.toInt(), 0xFF1D1D1D.toInt(), 0xFF1B1B1B.toInt()), floatArrayOf(0f, 0.05f, 0.14f, 1f), Shader.TileMode.CLAMP)
         c.drawRoundRect(r, rad, rad, p)
         p.shader = null
