@@ -190,6 +190,9 @@ class ListState(val rowH: Float = Belle.ROW_H) : Flingable {
     var top = 0
     private var topAnim = 0f
 
+    /** When set, draws each row itself instead of the stock list row: (canvas, ui, row rect, index, selected). Rows are [rowH] tall. */
+    var rowDrawer: ((Canvas, Ui, RectF, Int, Boolean) -> Unit)? = null
+
     // touch scrolling: the list follows the finger in pixels, then coasts (fling) and slows down; a key press goes back to row steps
     private var free = false
     private var vel = 0f          // rows per second
@@ -347,7 +350,8 @@ class ListState(val rowH: Float = Belle.ROW_H) : Flingable {
                 val y = r.top + (i - topAnim) * h
                 if (y + h < r.top || y > r.bottom) continue
                 ui.rf.set(r.left, y, r.right, y + h)
-                ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
+                val rd = rowDrawer
+                if (rd != null) rd(c, ui, RectF(ui.rf), i, showSel && i == sel) else ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
             }
         } else {
             val base = offAt(topAnim, count)
@@ -361,7 +365,8 @@ class ListState(val rowH: Float = Belle.ROW_H) : Flingable {
                     ui.sectionHeader(c, ui.rf, label)
                 }
                 ui.rf.set(r.left, y1 - h, r.right, y1)
-                ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
+                val rd = rowDrawer
+                if (rd != null) rd(c, ui, RectF(ui.rf), i, showSel && i == sel) else ui.listRow(c, ui.rf, showSel && i == sel, rowAt(i))
             }
         }
         c.restore()
