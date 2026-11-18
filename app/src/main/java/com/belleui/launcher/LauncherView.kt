@@ -1498,8 +1498,17 @@ class LauncherView(private val act: Activity) : View(act) {
         for (it in homeItems) homeCell(it.col, it.row, it.w, it.h, it.rect)
     }
 
+    /** The rows an item really covers: the flip clock's tiles hang below its one-row cell, so nothing may be placed under them. */
+    private fun coveredRows(it: HomeItem): Int {
+        if (!it.widget || it.type != 0) return it.h
+        val rowH = ((cBot - 6f * sc) - (cTop + 6f * sc)) / HR
+        val bw = min(400f * sc, width - 8f * sc)
+        val need = Math.ceil(((14f * sc + bw / (624f / 254f)) / rowH).toDouble()).toInt()
+        return max(it.h, min(HR, need))
+    }
+
     private fun occupied(col: Int, row: Int, w: Int, h: Int, ignore: HomeItem?): Boolean =
-        homeItems.any { it !== ignore && col < it.col + it.w && col + w > it.col && row < it.row + it.h && row + h > it.row }
+        homeItems.any { it !== ignore && col < it.col + it.w && col + w > it.col && row < it.row + coveredRows(it) && row + h > it.row }
 
     private fun findFree(w: Int, h: Int): Pair<Int, Int>? {
         for (r in 0..HR - h) for (c in 0..HC - w) if (!occupied(c, r, w, h, null)) return c to r
