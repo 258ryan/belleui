@@ -57,6 +57,15 @@ object Bar {
         private set
     var alarm = false
         private set
+    /** USB cable connected (not just a charger). */
+    var usb = false
+        private set
+    /** Battery saver on: the status bar shows the power-saving battery pictures. */
+    var powerSave = false
+        private set
+    /** Cell signal 0..7 (the Belle signal pictures have eight steps), or -1 with no SIM / no permission / no radio. */
+    var signal = -1
+        private set
     private var warned = 100
 
     fun start(c: Context) {
@@ -192,6 +201,15 @@ object Bar {
         cls.getField("providedInsets").set(lp, arr)
     }
 
+    /** The cell signal for the bar: needs a SIM and the permission; any failure just means "no bars", never an error. */
+    private fun readSignal() {
+        signal = try {
+            val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            if (airplane || tm.simState != android.telephony.TelephonyManager.SIM_STATE_READY) -1
+            else ((tm.signalStrength?.level ?: -1).let { if (it < 0) -1 else (it * 7 + 2) / 4 }).coerceIn(-1, 7)
+        } catch (_: Throwable) { -1 }
+    }
+
     private fun receivers() {
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
@@ -202,6 +220,7 @@ object Bar {
             addAction(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             addAction(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
+            addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         // the first values, before any change arrives
         try {
@@ -209,7 +228,9 @@ object Bar {
             airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
             alarm = (ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).nextAlarmClock != null
             bluetooth = android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+            powerSave = (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode
         } catch (_: Throwable) { }
+        readSignal()
         ctx.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 if (i.action == Intent.ACTION_BATTERY_CHANGED) {
@@ -217,6 +238,7 @@ object Bar {
                     val scale = i.getIntExtra("scale", 100).coerceAtLeast(1)
                     batteryPct = level * 100 / scale
                     charging = i.getIntExtra("plugged", 0) != 0
+                    usb = i.getIntExtra("plugged", 0) == 2
                     // the low battery warnings: 15 % and 5 %, once each until the phone charges again
                     if (charging) warned = 100
                     else if (batteryPct <= 5 && warned > 5) { warned = 5; Hud.showNote(ctx, ctx, "Battery almost empty", "$batteryPct% left - charge now") }
@@ -225,7 +247,9 @@ object Bar {
                 when (i.action) {
                     "android.bluetooth.adapter.action.STATE_CHANGED" -> bluetooth = i.getIntExtra("android.bluetooth.adapter.extra.STATE", 10) == 12
                     android.media.AudioManager.RINGER_MODE_CHANGED_ACTION -> silent = i.getIntExtra(android.media.AudioManager.EXTRA_RINGER_MODE, 2) != 2
-                    Intent.ACTION_AIRPLANE_MODE_CHANGED -> airplane = i.getBooleanExtra("state", false)
+                    Intent.ACTION_AIRPLANE_MODE_CHANGED -> { airplane = i.getBooleanExtra("state", false); readSignal() }
+                    android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> powerSave = (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode
+                    Intent.ACTION_TIME_TICK -> readSignal()
                     android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> alarm = (ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).nextAlarmClock != null
                 }
                 view?.invalidate()

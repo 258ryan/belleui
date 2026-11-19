@@ -58,8 +58,9 @@ class BarView(context: Context, private val barH: Int) : View(context) {
         val bw = Math.round(h * 24f / 26f).toFloat()
         val bRight = clockLeft - pad34
         r.set(bRight - bw, cy - ch / 2f, bRight, cy + ch / 2f)
-        val bg = ui.gfx.get("qtg_graf_battery_level_bg")
-        val full = ui.gfx.get("qtg_graf_battery_level_full")
+        val psm = if (Bar.powerSave) "_psm" else ""
+        val bg = ui.gfx.get("qtg_graf_battery_level${psm}_bg")
+        val full = ui.gfx.get("qtg_graf_battery_level${psm}_full")
         val level = if (Bar.charging) ((System.currentTimeMillis() % 3500L) * 800L / 3500L).toInt() / 100 else ((Bar.batteryPct * 7 + 50) / 100).coerceIn(0, 7)
         if (bg != null) c.drawBitmap(bg, null, fit(bg, r), null)
         if (full != null) {
@@ -69,6 +70,22 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             c.restore()
         }
         var x = r.left - pad34
+
+        // signal strength: the Qt Components signal pictures (19/18 of the content height wide), the full bars clipped to the level (0..7)
+        if (Bar.signal >= 0) {
+            val sw = ch * 19f / 18f
+            r.set(x - sw, cy - ch / 2f, x, cy + ch / 2f)
+            val sbg = ui.gfx.get("qtg_graf_signal_level_bg")
+            val sfull = ui.gfx.get("qtg_graf_signal_level_full")
+            if (sbg != null) c.drawBitmap(sbg, null, fit(sbg, r), null)
+            if (sfull != null) {
+                c.save()
+                c.clipRect(r.left, r.top, r.left + r.width() * (Bar.signal + 1) / 8f, r.bottom)
+                c.drawBitmap(sfull, null, fit(sfull, r), null)
+                c.restore()
+            }
+            x = r.left - pad34
+        }
 
         // universal indicators: at most three (maxIndicatorCount), content-height squares, a quarter padding apart
         var shown = 0
@@ -99,6 +116,7 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             x -= ew + pad14
             shown++
         }
+        if (Bar.usb && shown < 3) { usbGlyph(c, x - ch / 2f, cy, ch); x -= ch + pad14; shown++ }
         if (Bar.wifi) glyph("qtg_toolbar_wlan_on")
         if (Bar.bluetooth) glyph("qtg_toolbar_bluetooth_on")
         if (Bar.silent) glyph("qtg_toolbar_audio_off")
@@ -106,6 +124,29 @@ class BarView(context: Context, private val barH: Int) : View(context) {
         if (Bar.airplane) glyph("qtg_toolbar_network_off")
 
         if (Bar.charging) postInvalidateDelayed(220)
+    }
+
+    /** The USB trident, as a small white glyph: stem, arrow head, a circle on the left branch and a square on the right one. */
+    private fun usbGlyph(c: Canvas, cx: Float, cy: Float, s: Float) {
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = maxOf(1.4f, s * 0.09f)
+        p.strokeCap = Paint.Cap.ROUND
+        p.color = Color.WHITE
+        val top = cy - s * 0.42f
+        val bot = cy + s * 0.34f
+        c.drawLine(cx, top, cx, bot, p)
+        c.drawLine(cx, cy + s * 0.08f, cx - s * 0.26f, cy - s * 0.06f, p)
+        c.drawLine(cx, cy - s * 0.02f, cx + s * 0.26f, cy - s * 0.16f, p)
+        p.style = Paint.Style.FILL
+        c.drawCircle(cx, bot + s * 0.05f, s * 0.1f, p)
+        c.drawCircle(cx - s * 0.28f, cy - s * 0.08f, s * 0.07f, p)
+        c.drawRect(cx + s * 0.25f, cy - s * 0.25f, cx + s * 0.35f, cy - s * 0.15f, p)
+        val path = android.graphics.Path()
+        path.moveTo(cx, top - s * 0.1f)
+        path.lineTo(cx - s * 0.1f, top + s * 0.08f)
+        path.lineTo(cx + s * 0.1f, top + s * 0.08f)
+        path.close()
+        c.drawPath(path, p)
     }
 
     /** [bmp] fitted inside [box], aspect kept and centred (Image.PreserveAspectFit). */
