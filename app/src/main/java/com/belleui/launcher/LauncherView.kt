@@ -1457,7 +1457,7 @@ class LauncherView(private val act: Activity) : View(act) {
     // the Belle home screen: a grid of shortcuts and widgets you arrange yourself
     // =====================================================================================
 
-    private class HomeItem(val widget: Boolean, val id: String, var col: Int, var row: Int, var w: Int = 1, var h: Int = 1) {
+    private class HomeItem(val widget: Boolean, val id: String, var col: Int, var row: Int, var w: Int = 3, var h: Int = 3) {
         val rect = RectF()
         val subs = Array(3) { RectF() }
         val type get() = id.toIntOrNull() ?: -1
@@ -1475,19 +1475,21 @@ class LauncherView(private val act: Activity) : View(act) {
     private var dragging = false
     private var homeLoaded = false
     private var curWidget = -1
-    private val HC = 4
-    private val HR = 3
+    // The firmware's grid (hsps widget definitions, private/200159c0): 12 columns by 6 rows. A shortcut is 3 x 3, the digital clock 8 x 3, the music widget 6 x 6,
+    // the favourite contacts 12 x 3, the toggles 2 x 2 (the "size" of each widget's xuikon definition); positions are cell numbers.
+    private val HC = 12
+    private val HR = 6
     private var appMap: Map<String, AppEntry> = emptyMap()
 
     private fun appFor(it: HomeItem): AppEntry? = if (it.widget) null else (appMap[it.id] ?: repo.apps.firstOrNull { a -> a.key == it.id }?.also { a -> appMap = appMap + (a.key to a) })
 
-    private fun widgetSizeOf(t: Int) = when (t) { 3 -> 4 to 3; 2 -> 2 to 3; 1, 5, 6 -> 4 to 2; 8, 9, 10, 11, 12 -> 2 to 2; else -> 4 to 1 }
+    private fun widgetSizeOf(t: Int) = when (t) { 0 -> 8 to 3; 1 -> 8 to 6; 2 -> 6 to 6; 3 -> 8 to 6; 4 -> 12 to 2; 5 -> 8 to 6; 6 -> 12 to 3; 7 -> 6 to 2; 8 -> 4 to 3; 9, 10, 11 -> 2 to 2; 12 -> 4 to 3; else -> 8 to 3 }
 
     /** Widgets with up to three buttons the focus steps through: music, quick switches, notes, favourite contacts. */
     private fun hasSubs(t: Int) = t == 2 || t == 4 || t == 5 || t == 6
 
     /** The heights (in rows) each widget looks right at. */
-    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(1, 2); 1 -> intArrayOf(1, 2); 2 -> intArrayOf(3, 2); 3 -> intArrayOf(2, 3); 5 -> intArrayOf(2, 3); 6 -> intArrayOf(2, 3); 8 -> intArrayOf(2, 3); 9, 10, 11, 12 -> intArrayOf(2); else -> intArrayOf(1) }
+    private fun widgetHeights(t: Int) = when (t) { 0 -> intArrayOf(3, 6); 1 -> intArrayOf(6, 2); 2 -> intArrayOf(6, 3); 3 -> intArrayOf(6, 3); 4 -> intArrayOf(2, 3); 5 -> intArrayOf(6, 3); 6 -> intArrayOf(3, 6); 7 -> intArrayOf(2); 8 -> intArrayOf(3, 6); 9, 10, 11 -> intArrayOf(2); 12 -> intArrayOf(3); else -> intArrayOf(3) }
 
     private fun homeCell(col: Int, row: Int, w: Int, h: Int, out: RectF): RectF {
         val top = cTop + 6f * sc
@@ -1523,38 +1525,101 @@ class LauncherView(private val act: Activity) : View(act) {
         repo.setHomeLayoutOf(homeView, homeItems.joinToString(";") { "${if (it.widget) "w" else "a"},${it.id},${it.col},${it.row},${it.w},${it.h}" })
     }
 
-    /** The ROM's default content of home views 2..6 (the views in rootconfiguration.xml), with Android's equivalents. */
+    private fun appByPkg(pkg: String): AppEntry? = repo.apps.firstOrNull { it.component.packageName == pkg }
+
+    private fun shortcutAt(pkg: String, x: Int, y: Int) {
+        val a = appByPkg(pkg) ?: return
+        if (homeItems.none { !it.widget && it.id == a.key }) homeItems.add(HomeItem(false, a.key, x, y, 3, 3))
+    }
+
+    /**
+     * The firmware's default home screens (view1..view6 of private/200159c0, each a viewconfiguration.xml), cell for cell on its 12 x 6 grid:
+     *   1 digital clock at (2,0) and four shortcuts along the bottom half (Messaging, Browser, Contacts, Camera);
+     *   2 two shortcuts on top (Social, New message) and the favourite contacts underneath;
+     *   3 the e-mail widget (8 x 6) and one contact (4 x 3); 4 the calendar; 5 the music widget (6 x 6) with Photos and Video; 6 empty.
+     * Each application is the nearest Belle app we have.
+     */
     private fun defaultView(v: Int) {
         when (v) {
-            1 -> homeItems.add(HomeItem(true, "6", 0, 1, 4, 2))              // contactfavorites
-            2 -> {
-                homeItems.add(HomeItem(true, "3", 0, 0, 4, 2))                // emailwidget
-                homeItems.add(HomeItem(true, "7", 0, 2, 4, 1))                // profiles
+            0 -> {
+                homeItems.add(HomeItem(true, "0", 2, 0, 8, 3))                   // digitalclock
+                shortcutAt("com.belleui.notes", 0, 3)                              // Messaging
+                shortcutAt("com.belleui.browser", 3, 3)                            // Browser
+                shortcutAt("com.belleui.files", 6, 3)                              // Contacts
+                shortcutAt("com.belleui.gallery", 9, 3)                            // Camera
+                if (homeItems.count { !it.widget } < 2) {
+                    var i = 0
+                    for (app in repo.favoriteEntries()) {
+                        if (homeItems.none { !it.widget && it.id == app.key }) { homeItems.add(HomeItem(false, app.key, i * 3, 3, 3, 3)); i++ }
+                        if (i >= 4) break
+                    }
+                }
             }
-            3 -> homeItems.add(HomeItem(true, "1", 0, 0, 4, 2))              // organizer
+            1 -> {
+                shortcutAt("com.belleui.games", 3, 0)                              // Social
+                shortcutAt("com.belleui.clock", 6, 0)                              // New message
+                homeItems.add(HomeItem(true, "6", 0, 3, 12, 3))                   // contactfavorites
+            }
+            2 -> homeItems.add(HomeItem(true, "3", 0, 0, 8, 6))                   // emailwidget (our notifications widget)
+            3 -> homeItems.add(HomeItem(true, "1", 0, 0, 8, 6))                   // organizer
             4 -> {
-                homeItems.add(HomeItem(true, "2", 0, 0, 2, 3))                // musicwidget
-                var i = 0
-                for (app in repo.favoriteEntries().take(2)) { homeItems.add(HomeItem(false, app.key, 2 + i, 2)); i++ }
+                homeItems.add(HomeItem(true, "2", 0, 0, 6, 6))                    // musicwidget
+                shortcutAt("com.belleui.gallery", 6, 3)                            // Photos
+                shortcutAt("com.belleui.video", 9, 3)                              // Video player
             }
-            else -> {}                                                          // view 6 is empty
+            else -> {}                                                              // view 6 is empty
         }
+    }
+
+    /** Puts every home view back to the firmware's defaults. */
+    private fun resetHomeDefaults() {
+        for (i in 0 until 6) repo.setHomeLayoutOf(i, null)
+        repo.homeViewCount = 6
+        repo.homeGrid = 2
+        homeView = 0
+        homeIdx = 0
+        homeEdit = false
+        carrying = false
+        loadHome()
+        showToast("Home screens reset")
+        invalidate()
+    }
+
+    /** One-time move of layouts saved on the old 4 x 3 grid onto the 12 x 6 one: columns x 3, rows x 2, the real widget sizes, shortcuts 3 x 3. */
+    private fun migrateGrid() {
+        for (v in 0 until 6) {
+            val raw = repo.homeLayoutOf(v) ?: continue
+            val out = ArrayList<String>()
+            for (rec in raw.split(';')) {
+                val f = rec.split(',')
+                if (f.size != 6) continue
+                try {
+                    val isW = f[0] == "w"
+                    val c = f[2].toInt()
+                    val r = f[3].toInt()
+                    if (isW) {
+                        val type = f[1].toIntOrNull() ?: -1
+                        val (w, h) = widgetSizeOf(type)
+                        val x = if (f[4].toInt() >= 4) (12 - w) / 2 else (c * 3).coerceAtMost(12 - w)
+                        out.add("w,${f[1]},$x,${(r * 2).coerceAtMost(6 - h)},$w,$h")
+                    } else {
+                        val y = when (r) { 0 -> 0; 1 -> 2; else -> 3 }
+                        out.add("a,${f[1]},${(c * 3).coerceAtMost(9)},$y,3,3")
+                    }
+                } catch (_: NumberFormatException) {
+                }
+            }
+            repo.setHomeLayoutOf(v, out.joinToString(";"))
+        }
+        repo.homeGrid = 2
     }
 
     private fun loadHome() {
         homeItems.clear()
+        if (repo.homeGrid < 2) migrateGrid()
         val raw = repo.homeLayoutOf(homeView)
         if (raw == null) {
-            if (homeView == 0) {
-                // first run: a flip clock on top and the old four shortcuts underneath
-                homeItems.add(HomeItem(true, "0", 0, 0, 4, 1))
-                var i = 0
-                for (app in repo.favoriteEntries()) {
-                    homeItems.add(HomeItem(false, app.key, i % HC, 2))
-                    i++
-                    if (i >= HC) break
-                }
-            } else defaultView(homeView)
+            defaultView(homeView)
             saveHome()
         } else {
             for (rec in raw.split(';')) {
@@ -1602,8 +1667,8 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun addHomeApp(key: String): Boolean {
         if (homeHas(key)) return true
-        val at = findFree(1, 1) ?: return false
-        homeItems.add(HomeItem(false, key, at.first, at.second))
+        val at = findFree(3, 3) ?: return false
+        homeItems.add(HomeItem(false, key, at.first, at.second, 3, 3))
         saveHome()
         return true
     }
@@ -1666,7 +1731,8 @@ class LauncherView(private val act: Activity) : View(act) {
             out.set(sub)
             out.inset(-5f * sc, -5f * sc)
         } else {
-            out.set(if (it.widget && it.type == 0) flipBox(it.rect) else it.rect)
+            // a shortcut's cell is tall (3 rows); the highlight hugs what is drawn in it, the bottom 160 px
+            out.set(if (it.widget && it.type == 0) flipBox(it.rect) else if (!it.widget) RectF(it.rect.left, maxOf(it.rect.top, it.rect.bottom - 160f * sc), it.rect.right, it.rect.bottom) else it.rect)
             out.inset(-4f * sc, -3f * sc)
         }
         return out
@@ -1971,12 +2037,12 @@ class LauncherView(private val act: Activity) : View(act) {
                 val app = appFor(it)
                 if (app != null) {
                     val r = it.rect
-                    // icon and label plate form one stack, centred in the cell (the reference's 88 + 34 px, shrunk only if the cell is shorter)
-                    val fit = min(1f, (r.height() - 6f * sc) / (126f * sc))
+                    // a 3 x 3 cell: the icon sits 111 px above the bottom and the 34 px label plate along the bottom (measured on the real Home screen)
+                    val fit = min(1f, r.height() / (160f * sc))
                     val isz = 88f * sc * fit
                     val plateH = 34f * sc * fit
-                    val stackTop = r.centerY() - (isz + 4f * sc * fit + plateH) / 2f
-                    val iconCy = stackTop + isz / 2f
+                    val stackTop = r.bottom - 155f * sc * fit
+                    val iconCy = r.bottom - 111f * sc * fit
                     drawIcon(c, app.icon, r.centerX(), iconCy, isz)
                     // the home screen label: a dark translucent plate, 107 x 34
                     val tsz = 22f * sc * fit
@@ -2075,6 +2141,10 @@ class LauncherView(private val act: Activity) : View(act) {
             popup = Popup("Add widget", order.map { t -> PopupItem(names[t]) { addWidget(t) } }, 0)
         }
         if (repo.homeViewCount < 6) items += PopupItem("Add home screen") { addHomeView() }
+        items += PopupItem("Reset home screens") {
+            popup = null
+            resetHomeDefaults()
+        }
         if (repo.homeViewCount > 1) items += PopupItem("Remove this home screen") { removeHomeView() }
         items += PopupItem("Add shortcut") {
             setPage(1)

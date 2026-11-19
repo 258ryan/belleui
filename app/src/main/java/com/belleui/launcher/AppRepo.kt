@@ -487,6 +487,13 @@ class AppRepo(private val ctx: Context) {
             prefs.edit().putString("homeLayout", v).apply()
         }
 
+    /** 1 = layouts saved on the old 4 x 3 grid, 2 = the firmware's 12 x 6 grid; a launcher with no saved layout starts on 2. */
+    var homeGrid: Int
+        get() = prefs.getInt("homeGrid", if (prefs.contains("homeLayout")) 1 else 2)
+        set(v) {
+            prefs.edit().putInt("homeGrid", v).apply()
+        }
+
     /** How many home views there are: up to six, as in the firmware's root configuration (max_child="6"). */
     var homeViewCount: Int
         get() = prefs.getInt("homeViews", 6).coerceIn(1, 6)
