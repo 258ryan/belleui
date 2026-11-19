@@ -1467,6 +1467,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private var homeIdx = 0
     private var homeEdit = false
     private var carrying = false
+    private var wasEdit = false
+    private var wasCarry = false
+    private var editStartMs = 0L
+    private var carryStartMs = 0L
     private var okLong = false
     private var dragging = false
     private var homeLoaded = false
@@ -1715,23 +1719,33 @@ class LauncherView(private val act: Activity) : View(act) {
         else if (a == Act.RIGHT) { if (homeView < repo.homeViewCount - 1) switchHomeView(1) else setPage(1) }
     }
 
+    /** The home screen as it is now, as a picture for the transitions. */
+    private fun snapHome(): Bitmap? = try {
+        val bw = width
+        val bh = (cBot - cTop).toInt()
+        if (bw > 0 && bh > 0) {
+            val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bmp)
+            cv.translate(0f, -cTop)
+            drawHome(cv)
+            bmp
+        } else null
+    } catch (_: Throwable) {
+        null
+    }
+
+    // How the home view changes (activeidle_viewswitch_*.fxml of the E6): 0 slide 0.225 s out-quad, 1 a new page scales 0.9 -> 1 and fades in over the old
+    // one in 0.2 s (add_page), 2 the old page fades out in 0.4 s linear (remove_page)
+    private var viewMode = 0
+    private var viewDurMs = 225f
+
     /** Shows home view [homeView] + [d]: the old one slides out and the new one in (activeidle_viewswitch_*.fxml: 0.225 s out-quad). */
     private fun switchHomeView(d: Int) {
         val n = homeView + d
         if (n < 0 || n >= repo.homeViewCount) return
-        viewShot = try {
-            val bw = width
-            val bh = (cBot - cTop).toInt()
-            if (bw > 0 && bh > 0) {
-                val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-                val cv = Canvas(bmp)
-                cv.translate(0f, -cTop)
-                drawHome(cv)
-                bmp
-            } else null
-        } catch (_: Throwable) {
-            null
-        }
+        viewShot = snapHome()
+        viewMode = 0
+        viewDurMs = 225f
         saveHome()
         homeView = n
         homeIdx = 0
@@ -1745,19 +1759,41 @@ class LauncherView(private val act: Activity) : View(act) {
 
     private fun drawHomeView(c: Canvas) {
         val shot = viewShot
-        val t = ((System.currentTimeMillis() - viewStartMs) / 225f).coerceIn(0f, 1f)
+        val t = ((System.currentTimeMillis() - viewStartMs) / viewDurMs).coerceIn(0f, 1f)
         if (shot == null || t >= 1f) {
             viewShot = null
+            viewMode = 0
+            viewDurMs = 225f
             drawHome(c)
             return
         }
         val e = 1f - (1f - t) * (1f - t)
         val w = width.toFloat()
-        c.save()
-        c.translate(viewDir * w * (1f - e), 0f)
-        drawHome(c)
-        c.restore()
-        c.drawBitmap(shot, -viewDir * w * e, cTop, null)
+        when (viewMode) {
+            1 -> {
+                // add_page: the old view stays; the new one grows from 90 % and fades in
+                c.drawBitmap(shot, 0f, cTop, null)
+                val saved = c.saveLayerAlpha(0f, cTop, w, cBot, (255 * t).toInt())
+                val s = 0.9f + 0.1f * e
+                c.scale(s, s, w / 2f, (cTop + cBot) / 2f)
+                drawHome(c)
+                c.restoreToCount(saved)
+            }
+            2 -> {
+                // remove_page: the old view fades out (0.4 s linear) over the one that takes its place
+                drawHome(c)
+                p.alpha = (255 * (1f - t)).toInt()
+                c.drawBitmap(shot, 0f, cTop, p)
+                p.alpha = 255
+            }
+            else -> {
+                c.save()
+                c.translate(viewDir * w * (1f - e), 0f)
+                drawHome(c)
+                c.restore()
+                c.drawBitmap(shot, -viewDir * w * e, cTop, null)
+            }
+        }
         postInvalidateOnAnimation()
     }
 
@@ -1765,6 +1801,10 @@ class LauncherView(private val act: Activity) : View(act) {
         val n = repo.homeViewCount
         if (n >= 6) return
         saveHome()
+        viewShot = snapHome()
+        viewMode = 1
+        viewDurMs = 200f
+        viewStartMs = System.currentTimeMillis()
         repo.setHomeLayoutOf(n, "")      // an added view starts empty
         repo.homeViewCount = n + 1
         homeView = n
@@ -1777,6 +1817,10 @@ class LauncherView(private val act: Activity) : View(act) {
     private fun removeHomeView() {
         val n = repo.homeViewCount
         if (n <= 1) return
+        viewShot = snapHome()
+        viewMode = 2
+        viewDurMs = 400f
+        viewStartMs = System.currentTimeMillis()
         for (i in homeView until n - 1) repo.setHomeLayoutOf(i, repo.homeLayoutOf(i + 1) ?: "")
         repo.setHomeLayoutOf(n - 1, "")
         repo.homeViewCount = n - 1
@@ -1876,13 +1920,20 @@ class LauncherView(private val act: Activity) : View(act) {
         layoutHome()
         p.style = Paint.Style.FILL
         p.shader = null
+        val nowE = System.currentTimeMillis()
+        if (homeEdit && !wasEdit) editStartMs = nowE
+        wasEdit = homeEdit
+        if (carrying && !wasCarry) carryStartMs = nowE
+        wasCarry = carrying
         if (homeEdit) {
-            // the arranging grid, as in the Belle guidelines
-            p.color = al(Color.BLACK, 110)
+            // the arranging grid, as in the Belle guidelines; it fades in over 0.25 s (activeidle_viewswitch_open_editmode.fxml)
+            val ef = ((nowE - editStartMs) / 250f).coerceIn(0f, 1f)
+            if (ef < 1f) postInvalidateOnAnimation()
+            p.color = al(Color.BLACK, (110 * ef).toInt())
             c.drawRect(0f, cTop, w, cBot, p)
             p.style = Paint.Style.STROKE
             p.strokeWidth = 1f * sc
-            p.color = al(Color.WHITE, 60)
+            p.color = al(Color.WHITE, (60 * ef).toInt())
             for (cc in 0 until HC) for (rr in 0 until HR) {
                 homeCell(cc, rr, 1, 1, rf)
                 c.drawRect(rf, p)
@@ -1894,6 +1945,22 @@ class LauncherView(private val act: Activity) : View(act) {
         if (!subFocus) drawFocus(c, homeFocus.cur, 12f * sc)
         for (it in homeItems) {
             val lift = if (homeEdit && carrying && it === cur) 5f * sc else 0f
+            if (homeEdit && carrying && it === cur) {
+                // activeidle_editmode_move_widget.fxml: an outer glow (#fffafa, 2.5 px) rising to 40 % over one second, out-quad
+                val gt = ((nowE - carryStartMs) / 1000f).coerceIn(0f, 1f)
+                val ga = 0.4f * (1f - (1f - gt) * (1f - gt))
+                p.style = Paint.Style.STROKE
+                for (k in 0..2) {
+                    p.strokeWidth = (2.5f + k * 2.5f) * sc
+                    p.color = al(0xFFFFFAFA.toInt(), (255 * ga / (k + 1.6f)).toInt())
+                    rf.set(it.rect)
+                    rf.offset(0f, -lift)
+                    rf.inset(-(1.2f + k * 1.6f) * sc, -(1.2f + k * 1.6f) * sc)
+                    c.drawRoundRect(rf, 12f * sc, 12f * sc, p)
+                }
+                p.style = Paint.Style.FILL
+                if (gt < 1f) postInvalidateOnAnimation()
+            }
             c.save()
             c.translate(0f, -lift)
             if (it.widget) {
