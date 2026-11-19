@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android" android:constantSize="true">
+    <!-- switch.qml: the handle is `visible: root.enabled`; the disabled tracks (qtg_graf_switchbutton_disabled_on / _off) carry their own handle -->
+    <item android:state_enabled="false"><shape android:shape="rectangle"><size android:width="30dp" android:height="30dp" /><solid android:color="#00000000" /></shape></item>
     <item android:state_pressed="true"><layer-list><item android:width="30dp" android:height="30dp" android:gravity="center" android:drawable="@drawable/belle_switch_handle_pressed" /></layer-list></item>
     <item><layer-list><item android:width="30dp" android:height="30dp" android:gravity="center" android:drawable="@drawable/belle_switch_handle" /></layer-list></item>
 </selector>
