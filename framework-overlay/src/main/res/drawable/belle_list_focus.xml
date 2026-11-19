@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Belle selection blue (qtg_fr_list_pressed: #1080DD fading to #53A4E7), 75 % opaque. Android draws the default focus highlight OVER the content of a focused row
+     (View.getDefaultFocusHighlightDrawable = selectableItemBackground), so the focus state must let the row's text and switch show through. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#BF1080DD" android:endColor="#BF53A4E7" />
+</shape>
