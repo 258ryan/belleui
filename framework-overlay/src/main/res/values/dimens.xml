@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Belle text sizes. The E6 draws primary text at 28 px and secondary at 24 px on its 640x480 screen (font-size-medium / -small in the firmware layout);
+     this panel is 178 dpi, so one sp is 1.11 px. Android's stock sizes (16 / 14 sp = 18 / 16 px) are far smaller than the rows they sit in. -->
+<resources>
+    <dimen name="text_size_subhead_material">21sp</dimen>
+    <dimen name="text_size_body_1_material">18sp</dimen>
+    <dimen name="text_size_body_2_material">18sp</dimen>
+    <dimen name="text_size_caption_material">15sp</dimen>
+    <dimen name="text_size_menu_material">21sp</dimen>
+    <dimen name="text_size_menu_header_material">15sp</dimen>
+    <dimen name="text_size_button_material">18sp</dimen>
+    <dimen name="text_size_title_material">24sp</dimen>
+    <dimen name="text_size_title_material_toolbar">24sp</dimen>
+    <dimen name="text_size_subtitle_material_toolbar">18sp</dimen>
+</resources>

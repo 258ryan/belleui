@@ -48,4 +48,10 @@
     <color name="highlighted_text_light">#800072b2</color>
     <color name="highlighted_text_holo_dark">#800072b2</color>
     <color name="highlighted_text_holo_light">#800072b2</color>
+    <!-- the Material blue-grey the Android Settings and its theme use for page backgrounds: Belle pages are black -->
+    <color name="material_blue_grey_950">#ff000000</color>
+    <color name="material_blue_grey_900">#ff0d0d0d</color>
+    <color name="material_blue_grey_800">#ff191919</color>
+    <color name="material_blue_grey_700">#ff262626</color>
+    <color name="background_cache_hint_selector_device_default">#ff000000</color>
 </resources>
