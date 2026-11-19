@@ -97,56 +97,24 @@ class BarView(context: Context, private val barH: Int) : View(context) {
             shown++
         }
         if (Bar.notifications > 0 && shown < 3) {
-            // an envelope, with the count beside it
+            // the Avkon mail icon (avkon2.mif of the E6), with the count beside it
             val label = if (Bar.notifications > 99) "99+" else Bar.notifications.toString()
             val ts = ch * 0.85f
             val tw = ui.measure(label, ts)
             ui.text(c, label, x, ui.baselineFor(cy, ts), ts, Color.WHITE, Paint.Align.RIGHT)
             x -= tw + pad14
-            val ew = ch
-            val eh = ch * 0.7f
-            r.set(x - ew, cy - eh / 2f, x, cy + eh / 2f)
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 1.6f
-            p.color = Color.WHITE
-            c.drawRect(r, p)
-            c.drawLine(r.left, r.top, r.centerX(), r.centerY(), p)
-            c.drawLine(r.right, r.top, r.centerX(), r.centerY(), p)
-            p.style = Paint.Style.FILL
-            x -= ew + pad14
-            shown++
+            glyph("av_mail")
         }
-        if (Bar.usb && shown < 3) { usbGlyph(c, x - ch / 2f, cy, ch); x -= ch + pad14; shown++ }
-        if (Bar.wifi) glyph("qtg_toolbar_wlan_on")
-        if (Bar.bluetooth) glyph("qtg_toolbar_bluetooth_on")
-        if (Bar.silent) glyph("qtg_toolbar_audio_off")
-        if (Bar.alarm && shown < 3) { ui.glyph(c, com.belleui.kit.Ic.BELL, x - ch / 2f, cy, ch); x -= ch + pad14; shown++ }
-        if (Bar.airplane) glyph("qtg_toolbar_network_off")
+        // the universal indicators are the E6's own Avkon icons (avkon2.mif, decoded from NVG)
+        if (Bar.usb) glyph("av_usb")
+        if (Bar.wifi) glyph("av_wlan")
+        if (Bar.bluetooth) glyph("av_bluetooth")
+        if (Bar.headset) glyph("av_headset")
+        if (Bar.silent) glyph("av_mute")
+        if (Bar.alarm) glyph("av_alarm")
+        if (Bar.airplane) glyph("av_offline")
 
         if (Bar.charging) postInvalidateDelayed(220)
-    }
-
-    /** The USB trident, as a small white glyph: stem, arrow head, a circle on the left branch and a square on the right one. */
-    private fun usbGlyph(c: Canvas, cx: Float, cy: Float, s: Float) {
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = maxOf(1.4f, s * 0.09f)
-        p.strokeCap = Paint.Cap.ROUND
-        p.color = Color.WHITE
-        val top = cy - s * 0.42f
-        val bot = cy + s * 0.34f
-        c.drawLine(cx, top, cx, bot, p)
-        c.drawLine(cx, cy + s * 0.08f, cx - s * 0.26f, cy - s * 0.06f, p)
-        c.drawLine(cx, cy - s * 0.02f, cx + s * 0.26f, cy - s * 0.16f, p)
-        p.style = Paint.Style.FILL
-        c.drawCircle(cx, bot + s * 0.05f, s * 0.1f, p)
-        c.drawCircle(cx - s * 0.28f, cy - s * 0.08f, s * 0.07f, p)
-        c.drawRect(cx + s * 0.25f, cy - s * 0.25f, cx + s * 0.35f, cy - s * 0.15f, p)
-        val path = android.graphics.Path()
-        path.moveTo(cx, top - s * 0.1f)
-        path.lineTo(cx - s * 0.1f, top + s * 0.08f)
-        path.lineTo(cx + s * 0.1f, top + s * 0.08f)
-        path.close()
-        c.drawPath(path, p)
     }
 
     /** [bmp] fitted inside [box], aspect kept and centred (Image.PreserveAspectFit). */

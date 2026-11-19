@@ -60,6 +60,9 @@ object Bar {
     /** USB cable connected (not just a charger). */
     var usb = false
         private set
+    /** A wired headset or headphones plugged in. */
+    var headset = false
+        private set
     /** Battery saver on: the status bar shows the power-saving battery pictures. */
     var powerSave = false
         private set
@@ -221,6 +224,7 @@ object Bar {
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             addAction(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
             addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            addAction("android.intent.action.HEADSET_PLUG")
         }
         // the first values, before any change arrives
         try {
@@ -250,6 +254,7 @@ object Bar {
                     Intent.ACTION_AIRPLANE_MODE_CHANGED -> { airplane = i.getBooleanExtra("state", false); readSignal() }
                     android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> powerSave = (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode
                     Intent.ACTION_TIME_TICK -> readSignal()
+                    "android.intent.action.HEADSET_PLUG" -> headset = i.getIntExtra("state", 0) == 1
                     android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> alarm = (ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).nextAlarmClock != null
                 }
                 view?.invalidate()
